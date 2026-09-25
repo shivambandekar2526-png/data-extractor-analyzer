@@ -119,7 +119,7 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str) -> None:
             "result_date": meta.result_date,
             "total_students": len(students),
             "checksum_summary": checksum_summary,
-            "students": flat_records[:100],  # preview top 100
+            "students": flat_records,
             "duration_seconds": duration,
             "catalog": meta.catalog.to_dict() if meta.catalog else [],
             "audit_logs": jobs.get(job_id, {}).get("audit_logs", [])
@@ -369,6 +369,7 @@ def chat_with_dataset():
                 if os.path.isdir(folder_path):
                     csv_path = os.path.join(folder_path, f"{clean_folder}_extracted_data.csv")
                     excel_path = os.path.join(folder_path, f"{clean_folder}_extracted_data.xlsx")
+                    cat_path = os.path.join(folder_path, f"{clean_folder}_catalog.json")
                     keys = list(updated[0].keys())
                     with open(csv_path, "w", newline="", encoding="utf-8") as f:
                         writer = csv.DictWriter(f, fieldnames=keys)
@@ -380,10 +381,43 @@ def chat_with_dataset():
                         df.to_excel(excel_path, index=False)
                     except Exception:
                         pass
+                    # Sync total_students in catalog JSON
+                    if os.path.isfile(cat_path):
+                        try:
+                            with open(cat_path, "r", encoding="utf-8") as f:
+                                cdata = json.load(f)
+                            cdata["total_students"] = len(updated)
+                            with open(cat_path, "w", encoding="utf-8") as f:
+                                json.dump(cdata, f, indent=2)
+                        except Exception:
+                            pass
             except Exception as e:
                 print(f"Error persisting modified records: {e}")
 
     return jsonify(result)
+
+
+@app.route("/api/models", methods=["GET"])
+def get_available_models():
+    """List locally downloaded Ollama models and currently active model."""
+    client = OllamaClient()
+    models = client.list_models() if client.is_available() else []
+    return jsonify({
+        "success": True,
+        "active_model": client.model,
+        "models": models
+    })
+
+
+@app.route("/api/model/switch", methods=["POST"])
+def switch_model():
+    """Switch active Ollama model dynamically."""
+    data = request.get_json(silent=True) or {}
+    new_model = data.get("model", "").strip()
+    if not new_model:
+        return jsonify({"success": False, "error": "Model name is required."}), 400
+    os.environ["OLLAMA_MODEL"] = new_model
+    return jsonify({"success": True, "active_model": new_model})
 
 
 

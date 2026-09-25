@@ -21,6 +21,10 @@
       </div>
     </div>
     <div class="header-right">
+      <div class="model-picker-container" id="modelPickerContainer" style="display: none;">
+        <span class="model-picker-icon">⚡</span>
+        <select id="modelSelector" class="model-select-dropdown" title="Active Local Ollama Model"></select>
+      </div>
       <div id="aiStatusBadge" class="status-pill status-loading">
         <span class="status-dot"></span>
         <span id="aiStatusText">Connecting to Local AI...</span>
@@ -170,6 +174,11 @@
         <button type="button" class="chip-btn" data-prompt="remove failed students">✓ Remove Failed Students</button>
         <button type="button" class="chip-btn" data-prompt="sort by SGPI descending">📊 Sort by SGPI (Highest First)</button>
         <button type="button" class="chip-btn" data-prompt="how many students passed and failed?">❓ Passed vs Failed Count</button>
+        <button type="button" class="chip-btn" data-prompt="who is the topper?">🏆 Who is the Topper?</button>
+        <button type="button" class="chip-btn" data-prompt="what is the average SGPI?">📈 Average SGPI & Marks</button>
+        <button type="button" class="chip-btn" data-prompt="how many diploma students?">🎓 Diploma vs Regular Count</button>
+        <button type="button" class="chip-btn" data-prompt="who failed?">❌ List Failed Students</button>
+        <button type="button" class="chip-btn" data-prompt="give me an overview of the results">📋 Cohort Overview</button>
       </div>
 
       <!-- Chat History Stream -->

@@ -21,7 +21,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initChatbox();
 });
 
-// 1. Status Polling
+// 1. Status Polling & Model Switcher
 async function initStatus() {
   try {
     const res = await fetch("/api/status");
@@ -30,25 +30,69 @@ async function initStatus() {
     const badge = document.getElementById("aiStatusBadge");
     const statusText = document.getElementById("aiStatusText");
     const modelTag = document.getElementById("activeModelTag");
+    const chatModelTag = document.getElementById("chatModelTag");
     const auditGpuBadge = document.getElementById("auditGpuBadge");
     const auditGpuText = document.getElementById("auditGpuText");
     const telemEngine = document.getElementById("telemEngine");
+    const pickerContainer = document.getElementById("modelPickerContainer");
+    const modelSelector = document.getElementById("modelSelector");
 
     if (data.ollama_available) {
       badge.className = "status-pill status-trained";
       badge.querySelector(".status-dot").className = "status-dot green";
       statusText.textContent = `Local AI Active (${data.active_model})`;
-      modelTag.textContent = data.active_model;
+      if (modelTag) modelTag.textContent = data.active_model;
+      if (chatModelTag) chatModelTag.textContent = data.active_model;
       if (auditGpuBadge) {
         auditGpuBadge.querySelector(".status-dot").className = "status-dot green";
         auditGpuText.textContent = `Ollama Online (${data.active_model} on GPU)`;
       }
       if (telemEngine) telemEngine.textContent = `${data.active_model} on Local GPU`;
+
+      // Populate Model Picker Dropdown
+      if (pickerContainer && modelSelector && Array.isArray(data.available_models) && data.available_models.length > 0) {
+        pickerContainer.style.display = "flex";
+        modelSelector.innerHTML = "";
+        data.available_models.forEach(m => {
+          const opt = document.createElement("option");
+          opt.value = m;
+          opt.textContent = m;
+          if (m === data.active_model) opt.selected = true;
+          modelSelector.appendChild(opt);
+        });
+
+        // Add change listener if not already attached
+        if (!modelSelector.dataset.initialized) {
+          modelSelector.dataset.initialized = "true";
+          modelSelector.addEventListener("change", async (e) => {
+            const selected = e.target.value;
+            try {
+              const swRes = await fetch("/api/model/switch", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ model: selected })
+              });
+              const swData = await swRes.json();
+              if (swData.success) {
+                statusText.textContent = `Local AI Active (${swData.active_model})`;
+                if (modelTag) modelTag.textContent = swData.active_model;
+                if (chatModelTag) chatModelTag.textContent = swData.active_model;
+                if (auditGpuText) auditGpuText.textContent = `Ollama Online (${swData.active_model} on GPU)`;
+                if (telemEngine) telemEngine.textContent = `${swData.active_model} on Local GPU`;
+                appendChatMessage("assistant", `⚡ Switched active local model to <strong>${escapeHtml(swData.active_model)}</strong>.`);
+              }
+            } catch (err) {
+              console.error("Failed to switch model:", err);
+            }
+          });
+        }
+      }
     } else {
       badge.className = "status-pill status-trained";
       badge.querySelector(".status-dot").className = "status-dot green";
       statusText.textContent = "Possibility Engine Active (Fast Offline)";
-      modelTag.textContent = "Pre-Trained KB";
+      if (modelTag) modelTag.textContent = "Pre-Trained KB";
+      if (pickerContainer) pickerContainer.style.display = "none";
       if (auditGpuBadge) {
         auditGpuBadge.querySelector(".status-dot").className = "status-dot amber";
         auditGpuText.textContent = "Possibility Engine (Fast Offline)";

@@ -92,6 +92,38 @@ body {
   gap: 0.75rem;
 }
 
+.model-picker-container {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius-full);
+  font-size: 0.85rem;
+}
+
+.model-picker-icon {
+  font-size: 0.9rem;
+  color: var(--warning);
+}
+
+.model-select-dropdown {
+  background: transparent;
+  color: var(--text-color);
+  border: none;
+  outline: none;
+  font-size: 0.82rem;
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.model-select-dropdown option {
+  background: var(--bg-card);
+  color: var(--text-color);
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
