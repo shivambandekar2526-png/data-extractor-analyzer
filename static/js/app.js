@@ -19,6 +19,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initSearch();
   initAuditControls();
   initChatbox();
+  initCloudModal();
 });
 
 // 1. Status Polling & Model Switcher
@@ -36,6 +37,21 @@ async function initStatus() {
     const telemEngine = document.getElementById("telemEngine");
     const pickerContainer = document.getElementById("modelPickerContainer");
     const modelSelector = document.getElementById("modelSelector");
+
+    // Cloud AI Status Pill
+    const cloudBadge = document.getElementById("cloudStatusBadge");
+    const cloudText = document.getElementById("cloudStatusText");
+    if (cloudBadge && cloudText && data.cloud_ai) {
+      if (data.cloud_ai.is_configured) {
+        cloudBadge.className = "status-pill status-cloud-pill";
+        cloudBadge.querySelector(".status-dot").className = "status-dot green";
+        cloudText.textContent = `${data.cloud_ai.provider.toUpperCase()} (${data.cloud_ai.model})`;
+      } else {
+        cloudBadge.className = "status-pill status-cloud-pill";
+        cloudBadge.querySelector(".status-dot").className = "status-dot gray";
+        cloudText.textContent = "Cloud AI: Not Set";
+      }
+    }
 
     if (data.ollama_available) {
       badge.className = "status-pill status-trained";
@@ -646,7 +662,8 @@ async function handleChatSubmit(promptText) {
       body: JSON.stringify({
         prompt: promptText,
         students: currentRecords,
-        folder_name: currentFolderName
+        folder_name: currentFolderName,
+        session_id: currentFolderName || "active_session"
       })
     });
     const data = await res.json();
@@ -680,8 +697,9 @@ async function handleChatSubmit(promptText) {
       }]);
     }
 
-    const engineTag = data.engine_used ? ` <small class="text-muted">(${data.engine_used})</small>` : "";
-    appendChatMessage("assistant", `${escapeHtml(data.reply)}${engineTag}`);
+    const engineTag = data.engine_used ? `<div style="margin-top:0.4rem; font-size:0.75rem; color:var(--text-muted);">⚡ <em>${escapeHtml(data.engine_used)}</em></div>` : "";
+    const formattedReply = escapeHtml(data.reply).replace(/\n/g, '<br>');
+    appendChatMessage("assistant", `${formattedReply}${engineTag}`);
   } catch (err) {
     const thinkingElem = document.getElementById(thinkingId);
     if (thinkingElem) thinkingElem.remove();
@@ -723,5 +741,191 @@ function appendChatMessage(sender, htmlContent, isTemp = false) {
   container.appendChild(msgDiv);
   container.scrollTop = container.scrollHeight;
   return id;
+}
+
+// 10. Cloud AI & Hybrid Routing Setup Modal
+async function initCloudModal() {
+  const modalOverlay = document.getElementById("cloudModalOverlay");
+  const openBtn = document.getElementById("btnOpenCloudModal");
+  const closeBtn = document.getElementById("btnCloseCloudModal");
+  const cancelBtn = document.getElementById("btnCancelCloudModal");
+  const form = document.getElementById("cloudConfigForm");
+  const providerSelect = document.getElementById("cloudProviderSelect");
+  const customUrlGroup = document.getElementById("customUrlGroup");
+  const customUrlInput = document.getElementById("cloudCustomUrl");
+  const apiKeyInput = document.getElementById("cloudApiKey");
+  const maskedKeyPreview = document.getElementById("maskedKeyPreview");
+  const toggleEyeBtn = document.getElementById("btnToggleKeyVisibility");
+  const modelInput = document.getElementById("cloudModelInput");
+  const modelChipsContainer = document.getElementById("modelQuickChips");
+  const routingSelect = document.getElementById("cloudRoutingMode");
+  const testBtn = document.getElementById("btnTestCloudConn");
+  const testAlert = document.getElementById("cloudTestAlert");
+
+  const providerModels = {
+    gemini: ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"],
+    openai: ["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"],
+    groq: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"],
+    custom: []
+  };
+
+  function updateProviderUI(provider) {
+    if (provider === "custom") {
+      customUrlGroup.style.display = "flex";
+    } else {
+      customUrlGroup.style.display = "none";
+    }
+
+    const models = providerModels[provider] || [];
+    modelChipsContainer.innerHTML = "";
+    models.forEach(m => {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "chip-mini";
+      chip.textContent = m;
+      chip.addEventListener("click", () => {
+        modelInput.value = m;
+      });
+      modelChipsContainer.appendChild(chip);
+    });
+
+    if (models.length > 0 && (!modelInput.value || !models.includes(modelInput.value))) {
+      modelInput.value = models[0];
+    }
+  }
+
+  // Load current cloud config from server
+  async function loadCloudConfig() {
+    try {
+      const res = await fetch("/api/cloud/config");
+      const data = await res.json();
+      if (data) {
+        providerSelect.value = data.provider || "gemini";
+        modelInput.value = data.model || "gemini-2.0-flash";
+        routingSelect.value = data.routing_mode || "auto_hybrid";
+        customUrlInput.value = data.custom_base_url || "";
+        if (data.masked_key) {
+          maskedKeyPreview.textContent = `Current saved key: ${data.masked_key}`;
+        } else {
+          maskedKeyPreview.textContent = "No API key configured yet.";
+        }
+        updateProviderUI(providerSelect.value);
+      }
+    } catch (e) {
+      console.error("Failed to fetch cloud config:", e);
+    }
+  }
+
+  if (openBtn) {
+    openBtn.addEventListener("click", () => {
+      testAlert.classList.add("hidden");
+      testAlert.textContent = "";
+      loadCloudConfig();
+      modalOverlay.classList.remove("hidden");
+    });
+  }
+
+  function closeModal() {
+    modalOverlay.classList.add("hidden");
+    testAlert.classList.add("hidden");
+  }
+
+  if (closeBtn) closeBtn.addEventListener("click", closeModal);
+  if (cancelBtn) cancelBtn.addEventListener("click", closeModal);
+  modalOverlay.addEventListener("click", (e) => {
+    if (e.target === modalOverlay) closeModal();
+  });
+
+  if (toggleEyeBtn) {
+    toggleEyeBtn.addEventListener("click", () => {
+      apiKeyInput.type = apiKeyInput.type === "password" ? "text" : "password";
+      toggleEyeBtn.textContent = apiKeyInput.type === "password" ? "👁️" : "🔒";
+    });
+  }
+
+  providerSelect.addEventListener("change", (e) => {
+    updateProviderUI(e.target.value);
+  });
+
+  // Test connection button
+  if (testBtn) {
+    testBtn.addEventListener("click", async () => {
+      testAlert.className = "alert-box hidden";
+      testBtn.disabled = true;
+      testBtn.textContent = "⚡ Testing...";
+
+      try {
+        const payload = {
+          provider: providerSelect.value,
+          api_key: apiKeyInput.value.trim(),
+          model: modelInput.value.trim(),
+          custom_base_url: customUrlInput.value.trim()
+        };
+        const res = await fetch("/api/cloud/test", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const result = await res.json();
+
+        testAlert.classList.remove("hidden");
+        if (result.success) {
+          testAlert.className = "alert-box success";
+          testAlert.textContent = `✓ ${result.message}`;
+        } else {
+          testAlert.className = "alert-box error";
+          testAlert.textContent = `✗ ${result.message}`;
+        }
+      } catch (err) {
+        testAlert.className = "alert-box error";
+        testAlert.classList.remove("hidden");
+        testAlert.textContent = `✗ Network error during test: ${err.message}`;
+      } finally {
+        testBtn.disabled = false;
+        testBtn.textContent = "⚡ Test Connection";
+      }
+    });
+  }
+
+  // Save config form submit
+  if (form) {
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const saveBtn = document.getElementById("btnSaveCloudConfig");
+      if (saveBtn) saveBtn.disabled = true;
+
+      try {
+        const payload = {
+          provider: providerSelect.value,
+          model: modelInput.value.trim(),
+          routing_mode: routingSelect.value,
+          custom_base_url: customUrlInput.value.trim()
+        };
+        if (apiKeyInput.value.trim()) {
+          payload.api_key = apiKeyInput.value.trim();
+        }
+
+        const res = await fetch("/api/cloud/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          apiKeyInput.value = "";
+          closeModal();
+          initStatus(); // refresh header status badge
+          appendChatMessage("assistant", `🌐 **Cloud AI Configured**: Connected to <strong>${escapeHtml(data.config.provider.toUpperCase())} (${escapeHtml(data.config.model)})</strong> with <em>${escapeHtml(data.config.routing_mode)}</em>.`);
+        } else {
+          alert(`Error saving config: ${data.error || "Unknown error"}`);
+        }
+      } catch (err) {
+        alert(`Failed to save cloud config: ${err.message}`);
+      } finally {
+        if (saveBtn) saveBtn.disabled = false;
+      }
+    });
+  }
 }
 

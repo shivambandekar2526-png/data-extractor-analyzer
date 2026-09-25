@@ -37,6 +37,7 @@ from core.chat_assistant import process_chat_command
 from core.checksum_verifier import verify_batch
 from core.extractor import extract_pdf
 from core.ollama_client import OllamaClient
+from core.cloud_client import CloudClient
 from exporter import export_ai_extracted_data
 from models import CourseCatalog, ExamMeta, StudentRecord
 
@@ -149,10 +150,13 @@ def index_route():
 
 @app.route("/api/status", methods=["GET"])
 def get_ai_status():
-    """Check Ollama availability, active model, and knowledge base readiness."""
+    """Check Ollama availability, active model, Cloud AI readiness, and knowledge base."""
     client = OllamaClient()
     ollama_ok = client.is_available()
     models = client.list_models() if ollama_ok else []
+
+    cloud_client = CloudClient()
+    cloud_info = cloud_client.get_safe_config()
 
     kb_ready = os.path.isfile(os.path.join(KB_DIR, "archetypes.json"))
     ex_count = len(os.listdir(os.path.join(KB_DIR, "exemplars"))) if os.path.isdir(os.path.join(KB_DIR, "exemplars")) else 0
@@ -161,6 +165,7 @@ def get_ai_status():
         "ollama_available": ollama_ok,
         "active_model": client.model,
         "available_models": models,
+        "cloud_ai": cloud_info,
         "knowledge_base_ready": kb_ready,
         "exemplars_count": ex_count,
         "port": 5001
@@ -347,17 +352,25 @@ def download_extracted_file(folder, filename):
 
 @app.route("/api/chat", methods=["POST"])
 def chat_with_dataset():
-    """Interactive Chat with Ollama: edit, filter, or analyze the current dataset."""
+    """Interactive Chat with Hybrid Routing (Ollama + Cloud AI + Persistent Token Cache)."""
     data = request.get_json(silent=True) or {}
     user_prompt = data.get("prompt", "").strip()
     students = data.get("students", [])
     folder_name = data.get("folder_name", "")
+    session_id = data.get("session_id", folder_name or "active_session")
 
     if not user_prompt:
         return jsonify({"success": False, "error": "Prompt cannot be empty."}), 400
 
     client = OllamaClient()
-    result = process_chat_command(user_prompt, students, client=client)
+    cloud_client = CloudClient()
+    result = process_chat_command(
+        user_prompt=user_prompt,
+        students=students,
+        client=client,
+        cloud_client=cloud_client,
+        session_id=session_id
+    )
 
     # Persist dataset modification to disk if folder_name provided
     if result.get("success") and result.get("action") not in ("answer", "unrecognized", "none"):
@@ -395,6 +408,42 @@ def chat_with_dataset():
                 print(f"Error persisting modified records: {e}")
 
     return jsonify(result)
+
+
+@app.route("/api/cloud/config", methods=["GET"])
+def get_cloud_config():
+    """Get Cloud AI settings safe for frontend display."""
+    client = CloudClient()
+    return jsonify(client.get_safe_config())
+
+
+@app.route("/api/cloud/config", methods=["POST"])
+def save_cloud_config():
+    """Save Cloud AI API key and settings."""
+    data = request.get_json(silent=True) or {}
+    client = CloudClient()
+    ok, msg = client.save_config(data)
+    if not ok:
+        return jsonify({"success": False, "error": msg}), 400
+    return jsonify({"success": True, "message": msg, "config": client.get_safe_config()})
+
+
+@app.route("/api/cloud/test", methods=["POST"])
+def test_cloud_connection():
+    """Test remote connection to the configured Cloud AI."""
+    data = request.get_json(silent=True) or {}
+    client = CloudClient()
+    if data.get("api_key"):
+        client.config["api_key"] = data["api_key"].strip()
+    if data.get("provider"):
+        client.config["provider"] = data["provider"]
+    if data.get("model"):
+        client.config["model"] = data["model"]
+    if data.get("custom_base_url"):
+        client.config["custom_base_url"] = data["custom_base_url"]
+
+    ok, msg = client.test_connection()
+    return jsonify({"success": ok, "message": msg})
 
 
 @app.route("/api/models", methods=["GET"])

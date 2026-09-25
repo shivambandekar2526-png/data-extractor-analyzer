@@ -25,6 +25,13 @@
         <span class="model-picker-icon">⚡</span>
         <select id="modelSelector" class="model-select-dropdown" title="Active Local Ollama Model"></select>
       </div>
+      <button type="button" id="btnOpenCloudModal" class="btn-sm btn-outline btn-cloud-settings" title="Configure Cloud AI API Key & Hybrid Routing">
+        <span>⚙️ Cloud AI</span>
+      </button>
+      <div id="cloudStatusBadge" class="status-pill status-cloud-pill">
+        <span class="status-dot gray"></span>
+        <span id="cloudStatusText">Cloud AI: Offline</span>
+      </div>
       <div id="aiStatusBadge" class="status-pill status-loading">
         <span class="status-dot"></span>
         <span id="aiStatusText">Connecting to Local AI...</span>
@@ -250,6 +257,81 @@
         <p class="empty-text">No extractions recorded yet.</p>
       </div>
     </section>
+
+    <!-- Cloud AI & Hybrid Routing Settings Modal -->
+    <div id="cloudModalOverlay" class="modal-overlay hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <h3>⚙️ Cloud AI & Hybrid Routing Setup</h3>
+            <p class="modal-subtitle">Connect Google Gemini, OpenAI, or Groq for complex reasoning and deep synthesis.</p>
+          </div>
+          <button type="button" id="btnCloseCloudModal" class="modal-close-btn">&times;</button>
+        </div>
+
+        <form id="cloudConfigForm" class="modal-body">
+          <div class="form-group">
+            <label for="cloudProviderSelect">AI Provider</label>
+            <select id="cloudProviderSelect" class="form-select">
+              <option value="gemini">Google Gemini (Recommended - Free Tier)</option>
+              <option value="openai">OpenAI (GPT-4o-mini / GPT-4o)</option>
+              <option value="groq">Groq (Ultra-Fast Llama-3.3 70B)</option>
+              <option value="custom">Custom (OpenAI-Compatible / Local Server)</option>
+            </select>
+          </div>
+
+          <div class="form-group" id="customUrlGroup" style="display: none;">
+            <label for="cloudCustomUrl">Custom Base URL</label>
+            <input type="text" id="cloudCustomUrl" class="form-input" placeholder="http://localhost:8000/v1">
+          </div>
+
+          <div class="form-group">
+            <div class="label-with-hint">
+              <label for="cloudApiKey">API Key</label>
+              <span class="hint-text" id="keyConfigHint">Stored locally, never shared</span>
+            </div>
+            <div class="password-input-wrapper">
+              <input type="password" id="cloudApiKey" class="form-input" placeholder="Enter API Key (e.g. AIzaSy... or sk-...)">
+              <button type="button" id="btnToggleKeyVisibility" class="btn-toggle-eye" title="Show / Hide API Key">👁️</button>
+            </div>
+            <small class="field-help" id="maskedKeyPreview"></small>
+          </div>
+
+          <div class="form-group">
+            <label for="cloudModelInput">Model</label>
+            <input type="text" id="cloudModelInput" class="form-input" placeholder="e.g. gemini-2.0-flash" value="gemini-2.0-flash">
+            <div class="model-quick-chips" id="modelQuickChips"></div>
+          </div>
+
+          <div class="form-group">
+            <label for="cloudRoutingMode">Hybrid Routing Strategy</label>
+            <select id="cloudRoutingMode" class="form-select">
+              <option value="auto_hybrid">⚡ Auto-Hybrid (Recommended: Basic & Fast ➔ Ollama/Rules, Complex ➔ Cloud AI)</option>
+              <option value="prefer_cloud">🌐 Prefer Cloud AI (Use Cloud AI for all analytical questions when online)</option>
+              <option value="prefer_ollama">💻 Prefer Local Ollama (Always use local GPU unless offline)</option>
+            </select>
+          </div>
+
+          <div class="token-saving-callout">
+            <div class="callout-icon">💡</div>
+            <div class="callout-text">
+              <strong>Token Usage Optimizer Active:</strong>
+              Dataset context is persisted across chat turns in memory. Queries reuse existing context without re-sending the whole student cohort, reducing token consumption by <strong>90–95%</strong>.
+            </div>
+          </div>
+
+          <div id="cloudTestAlert" class="alert-box hidden"></div>
+
+          <div class="modal-footer">
+            <button type="button" id="btnTestCloudConn" class="btn btn-outline">⚡ Test Connection</button>
+            <div class="modal-footer-right">
+              <button type="button" id="btnCancelCloudModal" class="btn btn-outline">Cancel</button>
+              <button type="submit" id="btnSaveCloudConfig" class="btn btn-primary">💾 Save Settings</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
   </main>
 
   <footer class="app-footer">

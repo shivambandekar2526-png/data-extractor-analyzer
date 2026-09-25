@@ -3,5 +3,6 @@ __pycache__/
 *$py.class
 output/
 input/
+config/
 !output/.gitkeep
 !input/.gitkeep

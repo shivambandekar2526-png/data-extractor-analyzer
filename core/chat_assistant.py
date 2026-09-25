@@ -12,11 +12,14 @@ from typing import Any, Dict, List, Optional, Tuple
 
 try:
     from .ollama_client import OllamaClient
+    from .cloud_client import CloudClient
 except Exception:
     try:
         from data_extractor_AI.core.ollama_client import OllamaClient
+        from data_extractor_AI.core.cloud_client import CloudClient
     except Exception:
         from core.ollama_client import OllamaClient
+        from core.cloud_client import CloudClient
 
 CHAT_JSON_SCHEMA = {
     "type": "object",
@@ -548,22 +551,48 @@ def fallback_rule_engine(
     return None
 
 
+def is_complex_query(prompt: str) -> bool:
+    """
+    Determine if a query requires cloud-level multi-step reasoning, synthesis,
+    comparative analysis, or deep academic narrative formulation.
+    """
+    p = prompt.strip().lower()
+
+    # Complex keywords
+    complex_triggers = [
+        "compare", "comparison", "correlate", "correlation", "difference between",
+        "why did", "why are", "reason for", "explain why", "root cause",
+        "report", "draft", "formal letter", "hod", "principal", "recommendation",
+        "action plan", "remedial", "strategy", "curriculum", "syllabus",
+        "trend", "drop in pass", "identify weakness", "subject wise analysis",
+        "difficult subject", "easiest subject", "qualitative", "comprehensive review"
+    ]
+    if any(trigger in p for trigger in complex_triggers):
+        return True
+
+    # Multi-clause or long inquiries (>16 words)
+    words = p.split()
+    if len(words) >= 16:
+        return True
+
+    return False
+
+
 def process_chat_command(
     user_prompt: str,
     students: List[Dict[str, Any]],
     catalog: Optional[List[Dict[str, Any]]] = None,
-    client: Optional[OllamaClient] = None
+    client: Optional[OllamaClient] = None,
+    cloud_client: Optional[CloudClient] = None,
+    session_id: str = "default_session"
 ) -> Dict[str, Any]:
     """
-    Process natural-language dataset commands using Ollama (Qwen 2.5) with rich statistical fallback.
-    Returns: {
-        "success": bool,
-        "reply": str,
-        "action": str,
-        "total_students": int,
-        "students": list of modified dicts,
-        "engine_used": str
-    }
+    Process natural-language dataset commands using a smart Hybrid Routing strategy:
+    1. Instant Rule Engine (<1ms, 0 tokens) for deterministic commands and exact stats.
+    2. Cloud AI (Gemini / OpenAI) for complex reasoning, reports, or when cloud is preferred,
+       utilizing persistent session context caching to minimize token usage.
+    3. Seamless fallback to local Ollama (qwen2.5:7b) if offline or basic query.
+    4. Dataset Analytics Assistant if local LLM is also unavailable.
     """
     if not students:
         return {
@@ -574,7 +603,7 @@ def process_chat_command(
             "students": []
         }
 
-    # 1. First check deterministic rule engine for instantaneous sub-millisecond execution & exact stats
+    # 1. Deterministic Rule Engine for instantaneous sub-millisecond execution & exact stats
     rule_res = fallback_rule_engine(user_prompt, students)
     if rule_res is not None:
         updated_data, desc, action_type = rule_res
@@ -587,14 +616,69 @@ def process_chat_command(
             "engine_used": "Instant Analytics Engine"
         }
 
+    analytics = calculate_dataset_analytics(students)
+    context_summary = format_dataset_summary_for_prompt(analytics, students[:5])
+
+    if cloud_client is None:
+        cloud_client = CloudClient()
+
+    routing_mode = cloud_client.config.get("routing_mode", "auto_hybrid")
+    complex_query = is_complex_query(user_prompt)
+
+    # Determine if Cloud AI should handle this request
+    should_try_cloud = cloud_client.is_configured() and (
+        routing_mode == "prefer_cloud" or (routing_mode == "auto_hybrid" and complex_query)
+    )
+
+    cloud_error = None
+    if should_try_cloud:
+        try:
+            raw_json = cloud_client.generate(
+                user_prompt=user_prompt,
+                system_instruction=SYSTEM_PROMPT,
+                dataset_summary=context_summary,
+                students=students,
+                session_id=session_id,
+                format_json=True,
+                timeout=40
+            )
+            parsed = json.loads(raw_json)
+            action = parsed.get("action", "answer")
+            reply = parsed.get("reply", "Processed your request.")
+            params = parsed.get("params", {})
+            provider_label = cloud_client.config.get("provider", "Cloud").title()
+            model_label = cloud_client.config.get("model", "")
+
+            if action == "answer":
+                return {
+                    "success": True,
+                    "reply": reply,
+                    "action": "answer",
+                    "total_students": len(students),
+                    "students": students,
+                    "engine_used": f"Cloud AI ({provider_label} - {model_label})"
+                }
+
+            updated_data, detail_msg = apply_action(action, params, students)
+            cloud_client.notify_dataset_modified(session_id, detail_msg)
+            full_reply = f"{reply} ({detail_msg})" if reply else detail_msg
+            return {
+                "success": True,
+                "reply": full_reply,
+                "action": action,
+                "total_students": len(updated_data),
+                "students": updated_data,
+                "engine_used": f"Cloud AI ({provider_label} - {model_label})"
+            }
+        except Exception as e:
+            cloud_error = str(e)
+            # Cloud failed (network down, rate limit, quota) -> Fall through to Local Ollama!
+
     if client is None:
         client = OllamaClient()
 
-    # 2. If Ollama is available, invoke neural LLM with full cohort analytics context
+    # 3. Local Ollama Neural Fallback
     if client.is_available():
-        analytics = calculate_dataset_analytics(students)
-        context_summary = format_dataset_summary_for_prompt(analytics, students[:5])
-
         llm_prompt = (
             f"USER REQUEST: \"{user_prompt}\"\n\n"
             f"{context_summary}\n\n"
@@ -617,6 +701,10 @@ def process_chat_command(
             reply = parsed.get("reply", "Processed your request.")
             params = parsed.get("params", {})
 
+            engine_note = f"Local Ollama ({client.model})"
+            if cloud_error:
+                reply = f"*(Cloud AI offline or unavailable [{cloud_error[:60]}] — seamlessly routed to Local Ollama)*\n\n{reply}"
+
             if action == "answer":
                 return {
                     "success": True,
@@ -624,7 +712,7 @@ def process_chat_command(
                     "action": "answer",
                     "total_students": len(students),
                     "students": students,
-                    "engine_used": f"Ollama ({client.model})"
+                    "engine_used": engine_note
                 }
 
             updated_data, detail_msg = apply_action(action, params, students)
@@ -635,20 +723,23 @@ def process_chat_command(
                 "action": action,
                 "total_students": len(updated_data),
                 "students": updated_data,
-                "engine_used": f"Ollama ({client.model})"
+                "engine_used": engine_note
             }
         except Exception:
             pass
 
-    # 3. Fallback when LLM is offline or query is unhandled
-    analytics = calculate_dataset_analytics(students)
+    # 4. Final Fallback: Instant Dataset Analytics Assistant
+    reply_text = (
+        f"I analyzed your request ('{user_prompt}').\n"
+        f"Dataset has {analytics.get('total', len(students))} students ({analytics.get('passed_count', 0)} Passed, {analytics.get('failed_count', 0)} Failed, Avg SGPI: {analytics.get('avg_sgpi', 0.0):.2f}).\n"
+        "You can ask me questions like: 'how many passed and failed?', 'who is the topper?', 'average sgpi', 'diploma vs regular', or commands like 'remove first 2 records', 'filter passed', or 'sort by SGPI'."
+    )
+    if cloud_error:
+        reply_text = f"*(Cloud AI error: {cloud_error[:80]})*\n\n{reply_text}"
+
     return {
         "success": True,
-        "reply": (
-            f"I analyzed your request ('{user_prompt}').\n"
-            f"Dataset has {analytics.get('total', len(students))} students ({analytics.get('passed_count', 0)} Passed, {analytics.get('failed_count', 0)} Failed, Avg SGPI: {analytics.get('avg_sgpi', 0.0):.2f}).\n"
-            "You can ask me questions like: 'how many passed and failed?', 'who is the topper?', 'average sgpi', 'diploma vs regular', or commands like 'remove first 2 records', 'filter passed', or 'sort by SGPI'."
-        ),
+        "reply": reply_text,
         "action": "unrecognized",
         "total_students": len(students),
         "students": students,
