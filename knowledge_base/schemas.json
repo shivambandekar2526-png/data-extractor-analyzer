@@ -1,0 +1,1316 @@
+{
+  "version": "1.0",
+  "archetypes": {
+    "tabulation": {
+      "theory_heads": [
+        "SE",
+        "IA",
+        "TOT"
+      ],
+      "theory_with_tw_heads": [
+        "SE",
+        "IA",
+        "TOT",
+        "TW"
+      ],
+      "lab_heads": [
+        "TW",
+        "PO",
+        "TOT"
+      ],
+      "lab_tw_only_heads": [
+        "TW"
+      ],
+      "project_heads": [
+        "TW",
+        "PO",
+        "TOT"
+      ],
+      "summary_fields": [
+        "Credits_Earned",
+        "Total_CG",
+        "SGPI",
+        "Result_Status",
+        "Total_Marks"
+      ]
+    },
+    "gazette_classic": {
+      "theory_heads": [
+        "TH",
+        "IN",
+        "Total"
+      ],
+      "lab_heads": [
+        "TW",
+        "OR",
+        "Total"
+      ],
+      "project_heads": [
+        "TW",
+        "OR_PR",
+        "Total"
+      ],
+      "summary_fields": [
+        "Credits_Earned",
+        "Total_CG",
+        "SGPI",
+        "CGPI",
+        "Result_Status",
+        "Total_Marks"
+      ]
+    },
+    "gazette_spool": {
+      "theory_heads": [
+        "TH_OR",
+        "IA_TW",
+        "Total"
+      ],
+      "lab_heads": [
+        "TW"
+      ],
+      "summary_fields": [
+        "Credits_Earned",
+        "Total_CG",
+        "SGPI",
+        "Result_Status",
+        "Total_Marks"
+      ]
+    },
+    "gazette_nep": {
+      "component_prefixes": [
+        "E1",
+        "I1",
+        "T1",
+        "O1",
+        "TOT"
+      ],
+      "summary_fields": [
+        "Credits_Earned",
+        "Total_CG",
+        "SGPI",
+        "Result_Status",
+        "Total_Marks"
+      ]
+    }
+  },
+  "catalogs": {
+    "tabulation_V": {
+      "archetype": "tabulation",
+      "semester": "V",
+      "exam_title": "THIRD YEAR ARTIFICAL INTELLIGENCE & DATA SCIENCE SEMESTER - V (CBCGS) Examination held in DECEMBER 2023",
+      "college_name": "TERNA ENGINEERING COLLEGE",
+      "courses": [
+        {
+          "code": "CSC501",
+          "name": "Computer Network",
+          "heads": [
+            "SE",
+            "IA",
+            "TOT"
+          ],
+          "max_marks": {
+            "SE": 80,
+            "IA": 20,
+            "TOT": 100
+          },
+          "min_marks": {
+            "SE": 32,
+            "IA": 8,
+            "TOT": 40
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSC502",
+          "name": "Web Computing",
+          "heads": [
+            "SE",
+            "IA",
+            "TOT"
+          ],
+          "max_marks": {
+            "SE": 80,
+            "IA": 20,
+            "TOT": 100
+          },
+          "min_marks": {
+            "SE": 32,
+            "IA": 8,
+            "TOT": 40
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSC503",
+          "name": "Artificial Intelligence",
+          "heads": [
+            "SE",
+            "IA",
+            "TOT"
+          ],
+          "max_marks": {
+            "SE": 80,
+            "IA": 20,
+            "TOT": 100
+          },
+          "min_marks": {
+            "SE": 32,
+            "IA": 8,
+            "TOT": 40
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSC504",
+          "name": "Data Warehousing & Mining",
+          "heads": [
+            "SE",
+            "IA",
+            "TOT"
+          ],
+          "max_marks": {
+            "SE": 80,
+            "IA": 20,
+            "TOT": 100
+          },
+          "min_marks": {
+            "SE": 32,
+            "IA": 8,
+            "TOT": 40
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSDLO501X",
+          "name": "Department Level Optional Course- 1",
+          "heads": [
+            "SE",
+            "IA",
+            "TOT"
+          ],
+          "max_marks": {
+            "SE": 80,
+            "IA": 20,
+            "TOT": 100
+          },
+          "min_marks": {
+            "SE": 32,
+            "IA": 8,
+            "TOT": 40
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSL501",
+          "name": "Web Computing And Network Lab",
+          "heads": [
+            "TW",
+            "PO",
+            "TOT"
+          ],
+          "max_marks": {
+            "TW": 25,
+            "PO": 25,
+            "TOT": 50
+          },
+          "min_marks": {
+            "TW": 10,
+            "PO": 10,
+            "TOT": 20
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSL502",
+          "name": "Artificial Intelligence Lab",
+          "heads": [
+            "TW",
+            "PO",
+            "TOT"
+          ],
+          "max_marks": {
+            "TW": 25,
+            "PO": 25,
+            "TOT": 50
+          },
+          "min_marks": {
+            "TW": 10,
+            "PO": 10,
+            "TOT": 20
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSL503",
+          "name": "Data Warehousing & Mining Lab",
+          "heads": [
+            "TW",
+            "PO",
+            "TOT"
+          ],
+          "max_marks": {
+            "TW": 25,
+            "PO": 25,
+            "TOT": 50
+          },
+          "min_marks": {
+            "TW": 10,
+            "PO": 10,
+            "TOT": 20
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSL504",
+          "name": "Business Communication And Ethics - Ii",
+          "heads": [
+            "TW"
+          ],
+          "max_marks": {
+            "TW": 50
+          },
+          "min_marks": {
+            "TW": 20
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSM501",
+          "name": "Mini Project: 2 A",
+          "heads": [
+            "TW",
+            "PO",
+            "TOT"
+          ],
+          "max_marks": {
+            "TW": 25,
+            "PO": 25,
+            "TOT": 50
+          },
+          "min_marks": {
+            "TW": 10,
+            "PO": 10,
+            "TOT": 20
+          },
+          "credits": 0.0
+        }
+      ]
+    },
+    "tabulation_VI": {
+      "archetype": "tabulation",
+      "semester": "VI",
+      "exam_title": "THIRD YEAR ARTIFICAL INTELLIGENCE & DATA SCIENCE SEMESTER - V I (CBCGS) Examination held in MAY 2024",
+      "college_name": "TERNA ENGINEERING COLLEGE",
+      "courses": [
+        {
+          "code": "CSC601",
+          "name": "Data Analytics And Visualization",
+          "heads": [
+            "SE",
+            "IA",
+            "TOT"
+          ],
+          "max_marks": {
+            "SE": 80,
+            "IA": 20,
+            "TOT": 100
+          },
+          "min_marks": {
+            "SE": 32,
+            "IA": 8,
+            "TOT": 40
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSC602",
+          "name": "Cryptography And System Security",
+          "heads": [
+            "SE",
+            "IA",
+            "TOT"
+          ],
+          "max_marks": {
+            "SE": 80,
+            "IA": 20,
+            "TOT": 100
+          },
+          "min_marks": {
+            "SE": 32,
+            "IA": 8,
+            "TOT": 40
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSC603",
+          "name": "Software Engineering And Project Management",
+          "heads": [
+            "SE",
+            "IA",
+            "TOT"
+          ],
+          "max_marks": {
+            "SE": 80,
+            "IA": 20,
+            "TOT": 100
+          },
+          "min_marks": {
+            "SE": 32,
+            "IA": 8,
+            "TOT": 40
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSC604",
+          "name": "Machine Learning",
+          "heads": [
+            "SE",
+            "IA",
+            "TOT"
+          ],
+          "max_marks": {
+            "SE": 80,
+            "IA": 20,
+            "TOT": 100
+          },
+          "min_marks": {
+            "SE": 32,
+            "IA": 8,
+            "TOT": 40
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSDLO601X",
+          "name": "Department Level Optional Course -2",
+          "heads": [
+            "SE",
+            "IA",
+            "TOT"
+          ],
+          "max_marks": {
+            "SE": 80,
+            "IA": 20,
+            "TOT": 100
+          },
+          "min_marks": {
+            "SE": 32,
+            "IA": 8,
+            "TOT": 40
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSL601",
+          "name": "Data Analytics And Visualization Lab",
+          "heads": [
+            "TW",
+            "PO",
+            "TOT"
+          ],
+          "max_marks": {
+            "TW": 25,
+            "PO": 25,
+            "TOT": 50
+          },
+          "min_marks": {
+            "TW": 10,
+            "PO": 10,
+            "TOT": 20
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSL602",
+          "name": "Cryptography & System Security Lab",
+          "heads": [
+            "TW"
+          ],
+          "max_marks": {
+            "TW": 25
+          },
+          "min_marks": {
+            "TW": 10
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSL603",
+          "name": "Software Engineering And Project Management Lab",
+          "heads": [
+            "TW"
+          ],
+          "max_marks": {
+            "TW": 25
+          },
+          "min_marks": {
+            "TW": 10
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSL604",
+          "name": "Machine Learning Lab",
+          "heads": [
+            "TW",
+            "PO",
+            "TOT"
+          ],
+          "max_marks": {
+            "TW": 25,
+            "PO": 25,
+            "TOT": 50
+          },
+          "min_marks": {
+            "TW": 10,
+            "PO": 10,
+            "TOT": 20
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSL605",
+          "name": "Skill Base Lab Course: Cloud Computing",
+          "heads": [
+            "TW",
+            "PO",
+            "TOT"
+          ],
+          "max_marks": {
+            "TW": 50,
+            "PO": 25,
+            "TOT": 75
+          },
+          "min_marks": {
+            "TW": 20,
+            "PO": 10,
+            "TOT": 30
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSM601",
+          "name": "Mini Project Lab: 2b",
+          "heads": [
+            "TW",
+            "PRA",
+            "TOT"
+          ],
+          "max_marks": {
+            "TW": 25,
+            "PRA": 25,
+            "TOT": 50
+          },
+          "min_marks": {
+            "TW": 10,
+            "PRA": 10,
+            "TOT": 20
+          },
+          "credits": 0.0
+        }
+      ]
+    },
+    "gazette_spool_VII": {
+      "archetype": "gazette_spool",
+      "semester": "VII",
+      "exam_title": "OFFICE REGISTER OF THE B.E.(with credits) - Regular - CBCS(Artificial Intelligence and Data Science)- B.E. C-Scheme - Sem VII HELD IN Winter 2024     Result Decleration Date:09 Jan 2025",
+      "college_name": "",
+      "courses": [
+        {
+          "code": "42211",
+          "name": "Deep Leaning",
+          "heads": [
+            "TH_OR",
+            "IA_TW",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        },
+        {
+          "code": "42212",
+          "name": "Big Data Analytics",
+          "heads": [
+            "TH_OR",
+            "IA_TW",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        },
+        {
+          "code": "AIDSCSL701",
+          "name": "Deep Leaning Lab",
+          "heads": [
+            "TH_OR",
+            "IA_TW",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        },
+        {
+          "code": "AIDSCSL702",
+          "name": "Big Data Analytics Lab",
+          "heads": [
+            "TH_OR",
+            "IA_TW",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        },
+        {
+          "code": "AIDSCSP701",
+          "name": "Major Project1",
+          "heads": [
+            "TH_OR",
+            "IA_TW",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        },
+        {
+          "code": "42213",
+          "name": "Natural Language Processing",
+          "heads": [
+            "TH_OR",
+            "IA_TW",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        },
+        {
+          "code": "42217",
+          "name": "Blockchain Technologies",
+          "heads": [
+            "TH_OR",
+            "IA_TW",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        },
+        {
+          "code": "42225",
+          "name": "Disaster Management & Mitigation Measures",
+          "heads": [
+            "TH_OR",
+            "IA_TW",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        },
+        {
+          "code": "AIDSCSDOL7011",
+          "name": "Natural Language Processing Lab",
+          "heads": [
+            "TH_OR",
+            "IA_TW",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        },
+        {
+          "code": "AIDSCSDOL7022",
+          "name": "Blockchain Technologies Lab",
+          "heads": [
+            "TH_OR",
+            "IA_TW",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        },
+        {
+          "code": "42221",
+          "name": "Management Information System",
+          "heads": [
+            "TH_OR",
+            "IA_TW",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        },
+        {
+          "code": "42224",
+          "name": "Cyber Security and Laws",
+          "heads": [
+            "TH_OR",
+            "IA_TW",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        }
+      ]
+    },
+    "gazette_classic_VIII": {
+      "archetype": "gazette_classic",
+      "semester": "VIII",
+      "exam_title": "B.E.(ARTIFICIAL INTELLIGENCE & DATA SCIENCE) (SEM VIII) (CBCS) ('C'SCHEME) EXAMINATION HELD IN MAY 2025",
+      "college_name": "237:TCE",
+      "courses": [
+        {
+          "code": "CSC801",
+          "name": "Advanced Artificial Intelligence",
+          "heads": [
+            "TH",
+            "IN",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        },
+        {
+          "code": "CSDO8013",
+          "name": "Reinforcement Learning",
+          "heads": [
+            "TH",
+            "IN",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        },
+        {
+          "code": "CSDO8023",
+          "name": "Social Media Analytic",
+          "heads": [
+            "TH",
+            "IN",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        },
+        {
+          "code": "ILO8021",
+          "name": "Project Management",
+          "heads": [
+            "TH",
+            "IN",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        },
+        {
+          "code": "CSL801",
+          "name": "Advanced Artificial Intelligence Lab",
+          "heads": [
+            "TH",
+            "IN",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        },
+        {
+          "code": "AIDSCSDOL8013",
+          "name": "Reinforcement Learning Lab",
+          "heads": [
+            "TW",
+            "OR",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        },
+        {
+          "code": "AIDSCSDOL8023",
+          "name": "Social Media Analytic Lab",
+          "heads": [
+            "TW",
+            "OR",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        },
+        {
+          "code": "AIDSCSP801",
+          "name": "Major Project II",
+          "heads": [
+            "TW",
+            "OR_PR",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        },
+        {
+          "code": "CSDO8012",
+          "name": "Quantum Computing",
+          "heads": [
+            "TH",
+            "IN",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        },
+        {
+          "code": "CSDO8021",
+          "name": "Graph Data Science",
+          "heads": [
+            "TH",
+            "IN",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        },
+        {
+          "code": "ILO8029",
+          "name": "Environmental Management",
+          "heads": [
+            "TH",
+            "IN",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        },
+        {
+          "code": "AIDSCSDOL8012",
+          "name": "Quantum Computing Lab",
+          "heads": [
+            "TW",
+            "OR",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        },
+        {
+          "code": "AIDSCSDOL8021",
+          "name": "Graph Data Science Lab",
+          "heads": [
+            "TW",
+            "OR_PR",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        },
+        {
+          "code": "ILO8022",
+          "name": "Finance Management",
+          "heads": [
+            "TH",
+            "IN",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        },
+        {
+          "code": "AIDSCSDOL8011",
+          "name": "AI for financial & Banking application Lab",
+          "heads": [
+            "TW",
+            "OR",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        },
+        {
+          "code": "CSDO8022",
+          "name": "Recommendation Systems",
+          "heads": [
+            "TH",
+            "IN",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        },
+        {
+          "code": "AIDSCSDOL8022",
+          "name": "Recommendation Systems Lab",
+          "heads": [
+            "TW",
+            "OR",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        },
+        {
+          "code": "ILO8028",
+          "name": "Digital Business Management",
+          "heads": [
+            "TH",
+            "IN",
+            "Total"
+          ],
+          "max_marks": {},
+          "min_marks": {},
+          "credits": 0.0
+        }
+      ]
+    },
+    "tabulation_III": {
+      "archetype": "tabulation",
+      "semester": "III",
+      "exam_title": "SECOND YEAR ARTIFICAL INTELLIGENCE & DATA SCIENCE SEMESTER - I I I (CBCGS) Examination held in DECEMBER 2023",
+      "college_name": "TERNA ENGINEERING COLLEGE",
+      "courses": [
+        {
+          "code": "CSC301",
+          "name": "Engineering Mathematics - I I I",
+          "heads": [
+            "SE",
+            "IA",
+            "TOT",
+            "TW"
+          ],
+          "max_marks": {
+            "SE": 80,
+            "IA": 20,
+            "TOT": 100,
+            "TW": 25
+          },
+          "min_marks": {
+            "SE": 32,
+            "IA": 8,
+            "TOT": 40,
+            "TW": 10
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSC302",
+          "name": "Discrete Structures And Graph Theory",
+          "heads": [
+            "SE",
+            "IA",
+            "TOT"
+          ],
+          "max_marks": {
+            "SE": 80,
+            "IA": 20,
+            "TOT": 100
+          },
+          "min_marks": {
+            "SE": 32,
+            "IA": 8,
+            "TOT": 40
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSC303",
+          "name": "Data Structure",
+          "heads": [
+            "SE",
+            "IA",
+            "TOT"
+          ],
+          "max_marks": {
+            "SE": 80,
+            "IA": 20,
+            "TOT": 100
+          },
+          "min_marks": {
+            "SE": 32,
+            "IA": 8,
+            "TOT": 40
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSC304",
+          "name": "Digital Logic & Computer Architecture",
+          "heads": [
+            "SE",
+            "IA",
+            "TOT"
+          ],
+          "max_marks": {
+            "SE": 80,
+            "IA": 20,
+            "TOT": 100
+          },
+          "min_marks": {
+            "SE": 32,
+            "IA": 8,
+            "TOT": 40
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSC305",
+          "name": "Computer Graphics",
+          "heads": [
+            "SE",
+            "IA",
+            "TOT"
+          ],
+          "max_marks": {
+            "SE": 80,
+            "IA": 20,
+            "TOT": 100
+          },
+          "min_marks": {
+            "SE": 32,
+            "IA": 8,
+            "TOT": 40
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSL301",
+          "name": "Data Structure Lab",
+          "heads": [
+            "TW",
+            "PO",
+            "TOT"
+          ],
+          "max_marks": {
+            "TW": 25,
+            "PO": 25,
+            "TOT": 50
+          },
+          "min_marks": {
+            "TW": 10,
+            "PO": 10,
+            "TOT": 20
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSL302",
+          "name": "Digital Logic & Computer Architecture Lab",
+          "heads": [
+            "TW"
+          ],
+          "max_marks": {
+            "TW": 25
+          },
+          "min_marks": {
+            "TW": 10
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSL303",
+          "name": "Computer Graphics Lab",
+          "heads": [
+            "TW",
+            "PO",
+            "TOT"
+          ],
+          "max_marks": {
+            "TW": 25,
+            "PO": 25,
+            "TOT": 50
+          },
+          "min_marks": {
+            "TW": 10,
+            "PO": 10,
+            "TOT": 20
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSL304",
+          "name": "Skill Base Lab Course:object Oriented Programming With Java",
+          "heads": [
+            "TW",
+            "PO",
+            "TOT"
+          ],
+          "max_marks": {
+            "TW": 50,
+            "PO": 25,
+            "TOT": 75
+          },
+          "min_marks": {
+            "TW": 20,
+            "PO": 10,
+            "TOT": 30
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSM301",
+          "name": "Mini Project - 1 A",
+          "heads": [
+            "TW",
+            "PO",
+            "TOT"
+          ],
+          "max_marks": {
+            "TW": 25,
+            "PO": 25,
+            "TOT": 50
+          },
+          "min_marks": {
+            "TW": 10,
+            "PO": 10,
+            "TOT": 20
+          },
+          "credits": 0.0
+        }
+      ]
+    },
+    "tabulation_IV": {
+      "archetype": "tabulation",
+      "semester": "IV",
+      "exam_title": "SECOND YEAR ARTIFICAL INTELLIGENCE & DATA SCIENCE SEMESTER - I V (CBCGS) Examination held in MAY 2024",
+      "college_name": "TERNA ENGINEERING COLLEGE",
+      "courses": [
+        {
+          "code": "CSC401",
+          "name": "Engineering Mathematics - I V",
+          "heads": [
+            "SE",
+            "IA",
+            "TOT",
+            "TW"
+          ],
+          "max_marks": {
+            "SE": 80,
+            "IA": 20,
+            "TOT": 100,
+            "TW": 25
+          },
+          "min_marks": {
+            "SE": 32,
+            "IA": 8,
+            "TOT": 40,
+            "TW": 10
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSC402",
+          "name": "Analysis Of Algorithm",
+          "heads": [
+            "SE",
+            "IA",
+            "TOT"
+          ],
+          "max_marks": {
+            "SE": 80,
+            "IA": 20,
+            "TOT": 100
+          },
+          "min_marks": {
+            "SE": 32,
+            "IA": 8,
+            "TOT": 40
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSC403",
+          "name": "Database Management System",
+          "heads": [
+            "SE",
+            "IA",
+            "TOT"
+          ],
+          "max_marks": {
+            "SE": 80,
+            "IA": 20,
+            "TOT": 100
+          },
+          "min_marks": {
+            "SE": 32,
+            "IA": 8,
+            "TOT": 40
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSC404",
+          "name": "Operating System",
+          "heads": [
+            "SE",
+            "IA",
+            "TOT"
+          ],
+          "max_marks": {
+            "SE": 80,
+            "IA": 20,
+            "TOT": 100
+          },
+          "min_marks": {
+            "SE": 32,
+            "IA": 8,
+            "TOT": 40
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSC405",
+          "name": "Microprocesso r",
+          "heads": [
+            "SE",
+            "IA",
+            "TOT"
+          ],
+          "max_marks": {
+            "SE": 80,
+            "IA": 20,
+            "TOT": 100
+          },
+          "min_marks": {
+            "SE": 32,
+            "IA": 8,
+            "TOT": 40
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSL401",
+          "name": "Analysis Of Algorithm Lab",
+          "heads": [
+            "TW",
+            "PO",
+            "TOT"
+          ],
+          "max_marks": {
+            "TW": 25,
+            "PO": 25,
+            "TOT": 50
+          },
+          "min_marks": {
+            "TW": 10,
+            "PO": 10,
+            "TOT": 20
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSL402",
+          "name": "Database Management System Lab",
+          "heads": [
+            "TW",
+            "PO",
+            "TOT"
+          ],
+          "max_marks": {
+            "TW": 25,
+            "PO": 25,
+            "TOT": 50
+          },
+          "min_marks": {
+            "TW": 10,
+            "PO": 10,
+            "TOT": 20
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSL403",
+          "name": "Operating System Lab",
+          "heads": [
+            "TW",
+            "PO",
+            "TOT"
+          ],
+          "max_marks": {
+            "TW": 25,
+            "PO": 25,
+            "TOT": 50
+          },
+          "min_marks": {
+            "TW": 10,
+            "PO": 10,
+            "TOT": 20
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSL404",
+          "name": "Microprocesso r Lab",
+          "heads": [
+            "TW"
+          ],
+          "max_marks": {
+            "TW": 25
+          },
+          "min_marks": {
+            "TW": 10
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSL405",
+          "name": "Skill Base Lab Course: Python Programming",
+          "heads": [
+            "TW"
+          ],
+          "max_marks": {
+            "TW": 25
+          },
+          "min_marks": {
+            "TW": 10
+          },
+          "credits": 0.0
+        },
+        {
+          "code": "CSM401",
+          "name": "Mini Project 1 - B",
+          "heads": [
+            "TW",
+            "PO",
+            "TOT"
+          ],
+          "max_marks": {
+            "TW": 25,
+            "PO": 25,
+            "TOT": 50
+          },
+          "min_marks": {
+            "TW": 10,
+            "PO": 10,
+            "TOT": 20
+          },
+          "credits": 0.0
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+*$py.class
+output/
+input/
+!output/.gitkeep
+!input/.gitkeep

@@ -1,0 +1,24 @@
+{
+  "archetype": "gazette_nep",
+  "description": "Exemplars for Mumbai University NEP 2020 Scheme (Sem III/IV)",
+  "exemplars": [
+    {
+      "description": "NEP 2020 student record with prefixed components (E1/I1/T1/O1/TOT)",
+      "seat_no": "202401640001",
+      "student_name": "DESHMUKH ARYAN VIKAS",
+      "input_snippet": "202401640001 DESHMUKH ARYAN VIKAS Regular MALE ERN:2024016402391001 237:TCE\n1221311 Introduction to Management (2) External: 22 Internal: 14 TOT: 36 GP: 8 G: B C: 2.00 CG: 16.00\n2113111 Mathematics for Computer Engineering External: 42 Internal: 28 Term Work: 18 TOT: 88 GP: 9 G: A C: 3.00 CG: 27.00\nTOTAL: 532 RESULT: PASS REMARK: None ΣC: 22.00 ΣCG: 185.00 SGPI: 8.41",
+      "expected_record": {
+        "Seat_No": "202401640001",
+        "Student_Name": "DESHMUKH ARYAN VIKAS",
+        "Gender": "M",
+        "Candidate_Type": "Regular",
+        "ERN": "2024016402391001",
+        "Result_Status": "PASS",
+        "Total_Marks": "532",
+        "Credits_Earned": "22.00",
+        "Total_CG": "185.00",
+        "SGPI": "8.41"
+      }
+    }
+  ]
+}

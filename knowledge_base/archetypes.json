@@ -1,0 +1,176 @@
+{
+  "tabulation": {
+    "name": "tabulation",
+    "description": "College Tabulation Ledger (Terna Engineering College, CBCGS Scheme, Semesters III-VI)",
+    "keywords_primary": [
+      "TERNA ENGINEERING COLLEGE",
+      "TERNA ENGINEERINGCOLLEGE",
+      "Tabulation Register",
+      "Name of the Student"
+    ],
+    "keywords_secondary": [
+      "Marks Obtained",
+      "Grade Pt.",
+      "Credit Pt.",
+      "CP*GP",
+      "EC ECG GPA",
+      "Outof",
+      "Sr. No.",
+      "Seat No."
+    ],
+    "keywords_negative": [
+      "OFFICE REGISTER",
+      "NEP 2020",
+      "PAPER 1"
+    ],
+    "seat_number_pattern": "\\b(38\\d{6}|48\\d{6}|58\\d{6}|\\d{8})\\b",
+    "student_block_structure": {
+      "lines_per_student": 8,
+      "anchor_token": "Marks",
+      "row_type_tokens": [
+        "Marks Obtained",
+        "Grade",
+        "Grade Pt.",
+        "Credit Pt.",
+        "CP*GP"
+      ],
+      "gender_marker": "Leading slash '/' on student name"
+    },
+    "semesters": [
+      "III",
+      "IV",
+      "V",
+      "VI"
+    ],
+    "max_marks_typical": [
+      700,
+      725,
+      750,
+      775
+    ],
+    "confidence_threshold": 0.75
+  },
+  "gazette_classic": {
+    "name": "gazette_classic",
+    "description": "University Gazette C-Scheme Ledger (Mumbai University, Semester VIII)",
+    "keywords_primary": [
+      "OFFICE REGISTER",
+      "COLLEGE/CENTRE NAME",
+      "äC:",
+      "ΣC"
+    ],
+    "keywords_secondary": [
+      "SEAT_NO",
+      "PRN_NO",
+      "ABCID",
+      "Th(80/32)",
+      "In(20/08)",
+      "C G GP C*G",
+      "SGPI:",
+      "CREDITS:",
+      "MARKS:",
+      "CGPI:"
+    ],
+    "keywords_negative": [
+      "NEP 2020",
+      "PAPER 1",
+      "Tabulation Register"
+    ],
+    "seat_number_pattern": "\\b(4\\d{6}|\\d{7})\\b",
+    "student_block_structure": {
+      "lines_per_student": 8,
+      "anchor_token": "\\b\\d{7}\\b\\s+[/A-Za-z\\s]+?\\s+\\(\\d{16}\\)",
+      "fields": [
+        "seat_no",
+        "name",
+        "prn",
+        "abc_id",
+        "sem_history",
+        "cgpi"
+      ]
+    },
+    "semesters": [
+      "VIII"
+    ],
+    "max_marks_typical": [
+      700
+    ],
+    "confidence_threshold": 0.75
+  },
+  "gazette_spool": {
+    "name": "gazette_spool",
+    "description": "University Gazette Multi-Row Continuous Spool (Mumbai University, Semester VII)",
+    "keywords_primary": [
+      "PAPER 1",
+      "PAPER 7",
+      "PAPER 12"
+    ],
+    "keywords_secondary": [
+      "ThUA",
+      "ORCA",
+      "TwCA",
+      "Mother Name",
+      "CENTRE-COLLEGE",
+      "CR GR GP C*G"
+    ],
+    "keywords_negative": [
+      "NEP 2020",
+      "Tabulation Register"
+    ],
+    "seat_number_pattern": "\\b(1\\d{6}|\\d{7})\\b",
+    "student_block_structure": {
+      "lines_per_student": 8,
+      "layout": "Two-tier block: Papers 1-6 on top, Papers 7-12 below",
+      "anchor_token": "\\b\\d{7}\\b\\s+[/A-Za-z\\s]+?\\|"
+    },
+    "semesters": [
+      "VII"
+    ],
+    "max_marks_typical": [
+      725,
+      750
+    ],
+    "confidence_threshold": 0.75
+  },
+  "gazette_nep": {
+    "name": "gazette_nep",
+    "description": "University Gazette NEP 2020 Scheme (Mumbai University, Semester III/IV)",
+    "keywords_primary": [
+      "NEP 2020",
+      "(NEP 2020)",
+      "( NEP 2020 )"
+    ],
+    "keywords_secondary": [
+      "TOTALF (TOTAL MARKS)",
+      "I1 (INTERNAL EXAMINATION)",
+      "E1 (EXTERNAL EXAMINATION)",
+      "T1 (TERM WORK)",
+      "O1 (ORAL)",
+      "Bachelor of Engineering(Arti",
+      "ERN COLLEGE"
+    ],
+    "keywords_negative": [
+      "Tabulation Register",
+      "PAPER 1"
+    ],
+    "seat_number_pattern": "\\b\\d{9,10}\\b",
+    "student_block_structure": {
+      "anchor_token": "\\b\\d{9,10}\\b\\s+[A-Za-z\\s/\\.]+?\\s+(Regular|Diploma)",
+      "component_prefixes": [
+        "E1",
+        "I1",
+        "T1",
+        "O1",
+        "TOT"
+      ]
+    },
+    "semesters": [
+      "III",
+      "IV"
+    ],
+    "max_marks_typical": [
+      750
+    ],
+    "confidence_threshold": 0.7
+  }
+}

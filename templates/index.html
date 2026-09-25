@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Data Extractor AI — Autonomous Document Intelligence</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body class="dark-theme">
+  <header class="app-header">
+    <div class="header-left">
+      <div class="logo-mark">
+        <span class="logo-sparkle">✦</span>
+      </div>
+      <div>
+        <h1 class="logo-title">Data Extractor <span class="badge-ai">AI v1.0</span></h1>
+        <p class="logo-subtitle">Self-Learning Local Academic Gazette & Tabulation Extractor</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <div id="aiStatusBadge" class="status-pill status-loading">
+        <span class="status-dot"></span>
+        <span id="aiStatusText">Connecting to Local AI...</span>
+      </div>
+      <div class="status-pill status-trained">
+        <span class="status-dot green"></span>
+        <span>Pre-Trained (4 Archetypes)</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="app-main">
+    <!-- Top Action Grid -->
+    <div class="action-grid">
+      <!-- Upload Card -->
+      <section class="card upload-card">
+        <div class="card-header">
+          <h2>1. Select or Upload Academic PDF</h2>
+          <span class="tag">Local Inference</span>
+        </div>
+        <div class="upload-area" id="dropArea">
+          <input type="file" id="fileInput" accept=".pdf" class="hidden-input">
+          <div class="upload-icon">📄</div>
+          <p class="upload-prompt"><strong>Drag & Drop result PDF here</strong> or <button type="button" class="btn-link" id="browseBtn">browse local files</button></p>
+          <span class="upload-hint">Supports all semesters (CBCGS, C-Scheme, NEP 2020, native & scanned)</span>
+        </div>
+
+        <div class="or-divider"><span>OR SELECT FROM BATCH DATA</span></div>
+
+        <div class="batch-select-row">
+          <select id="batchSelect" class="form-select">
+            <option value="">-- Choose Historical Batch PDF --</option>
+          </select>
+          <button id="extractBtn" class="btn btn-primary" disabled>
+            <span>⚡ Extract with AI</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- System Status / Knowledge Base Card -->
+      <section class="card kb-card">
+        <div class="card-header">
+          <h2>Self-Learning Engine Status</h2>
+          <span class="tag tag-accent" id="activeModelTag">qwen2.5:7b</span>
+        </div>
+        <div class="kb-metrics">
+          <div class="metric-box">
+            <span class="metric-val">4</span>
+            <span class="metric-label">Learned Possibilities</span>
+          </div>
+          <div class="metric-box">
+            <span class="metric-val">100%</span>
+            <span class="metric-label">Offline & Private</span>
+          </div>
+          <div class="metric-box">
+            <span class="metric-val" id="exemplarMetric">Ready</span>
+            <span class="metric-label">Few-Shot Exemplars</span>
+          </div>
+        </div>
+        <div class="archetype-chips">
+          <span class="chip chip-active">✓ Tabulation (Sem III-VI)</span>
+          <span class="chip chip-active">✓ Gazette Classic (Sem VIII)</span>
+          <span class="chip chip-active">✓ Gazette Spool (Sem VII)</span>
+          <span class="chip chip-active">✓ NEP 2020 Scheme</span>
+        </div>
+        <div class="auto-learn-notice">
+          <span>🧠 <strong>Incremental Learning Active:</strong> New verified student patterns are automatically incorporated into the knowledge base upon extraction.</span>
+        </div>
+      </section>
+    </div>
+
+    <!-- Live Progress Section -->
+    <div id="progressSection" class="progress-section hidden">
+      <div class="card">
+        <div class="progress-header">
+          <div class="progress-info">
+            <span class="spinner"></span>
+            <strong id="progressMessage">Extracting records...</strong>
+          </div>
+          <span id="progressPercentage" class="progress-num">0%</span>
+        </div>
+        <div class="progress-bar-track">
+          <div id="progressBar" class="progress-bar-fill" style="width: 0%;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live AI & GPU Inference Audit Console Window -->
+    <section class="card audit-card" id="aiAuditSection">
+      <div class="card-header audit-header">
+        <div class="audit-header-left">
+          <h2>🧠 Live AI & GPU Inference Audit Console</h2>
+          <span class="audit-status-badge" id="auditGpuBadge">
+            <span class="status-dot green"></span>
+            <span id="auditGpuText">Ollama Ready</span>
+          </span>
+        </div>
+        <div class="audit-header-actions">
+          <button type="button" id="auditAutoScrollBtn" class="btn-sm btn-outline active" title="Toggle Auto-Scroll">Scroll: ON</button>
+          <button type="button" id="auditCopyBtn" class="btn-sm btn-outline" title="Copy Raw Audit Log">📋 Copy Log</button>
+          <button type="button" id="auditClearBtn" class="btn-sm btn-outline" title="Clear Console">✕ Clear</button>
+        </div>
+      </div>
+      
+      <!-- Mini Telemetry Strip -->
+      <div class="audit-telemetry-strip">
+        <div class="telemetry-item">
+          <span class="telemetry-label">INFERENCE ENGINE:</span>
+          <strong id="telemEngine" class="telemetry-val">Qwen 2.5 (7B) on RTX 4060 GPU</strong>
+        </div>
+        <div class="telemetry-item">
+          <span class="telemetry-label">PIPELINE STATUS:</span>
+          <strong id="telemStatus" class="telemetry-val text-success">STANDBY</strong>
+        </div>
+        <div class="telemetry-item">
+          <span class="telemetry-label">AI AUDIT EVENTS:</span>
+          <strong id="telemEventCount" class="telemetry-val">0</strong>
+        </div>
+      </div>
+
+      <!-- Scrollable Terminal Window -->
+      <div class="audit-terminal" id="auditTerminal">
+        <div class="audit-empty" id="auditEmptyMsg">
+          <span class="terminal-prompt">$</span> Waiting for extraction job. Real-time Ollama GPU prompts, response JSON, token metrics, and checksum equations will stream here live.
+        </div>
+        <div id="auditLogStream" class="audit-stream"></div>
+      </div>
+    </section>
+
+    <!-- Interactive Chatbox for Ollama -->
+    <section class="card chat-card hidden" id="chatSection">
+      <div class="card-header chat-header">
+        <div class="chat-header-left">
+          <h2>💬 Chat with Ollama (Live Data Assistant)</h2>
+          <span class="tag tag-accent" id="chatModelTag">qwen2.5:7b</span>
+        </div>
+        <div class="chat-header-actions">
+          <button type="button" id="btnUndoChat" class="btn-sm btn-outline" disabled title="Revert last modification">↩ Undo</button>
+          <button type="button" id="btnResetData" class="btn-sm btn-outline" title="Reset dataset to original extracted state">↺ Reset Original</button>
+        </div>
+      </div>
+
+      <!-- Quick Action Chips -->
+      <div class="chat-suggestion-chips">
+        <button type="button" class="chip-btn" data-prompt="remove the first 2 records">✂️ Remove first 2 records</button>
+        <button type="button" class="chip-btn" data-prompt="update candidate type to Diploma for students with PRN starting with 2022">🎓 Mark 2022 PRN as Diploma</button>
+        <button type="button" class="chip-btn" data-prompt="remove failed students">✓ Remove Failed Students</button>
+        <button type="button" class="chip-btn" data-prompt="sort by SGPI descending">📊 Sort by SGPI (Highest First)</button>
+        <button type="button" class="chip-btn" data-prompt="how many students passed and failed?">❓ Passed vs Failed Count</button>
+      </div>
+
+      <!-- Chat History Stream -->
+      <div class="chat-history-container" id="chatHistory">
+        <div class="chat-message msg-assistant">
+          <div class="msg-avatar">🤖</div>
+          <div class="msg-body">
+            <p><strong>Ollama Ready:</strong> Ask me anything about the extracted records, or request modifications like <em>"remove the first 2 records"</em>, <em>"sort by SGPI"</em>, or <em>"set candidate type to Diploma for PRN 2022*"</em>.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chat Input Row -->
+      <form id="chatForm" class="chat-input-row">
+        <input type="text" id="chatInput" class="chat-input" placeholder="Ask Ollama to modify or analyze this dataset (e.g. 'remove first 2 records')..." autocomplete="off">
+        <button type="submit" id="chatSendBtn" class="btn btn-primary btn-chat-send">
+          <span>Send</span>
+        </button>
+      </form>
+    </section>
+
+    <!-- Results Section -->
+    <div id="resultsSection" class="results-section hidden">
+      <section class="card">
+        <div class="results-header">
+          <div>
+            <h2 id="resultTitle">Extracted Results</h2>
+            <p id="resultMeta" class="results-meta-text">Analyzing dataset...</p>
+          </div>
+          <div class="export-actions">
+            <a id="btnDownloadCsv" class="btn btn-outline" download>📥 CSV</a>
+            <a id="btnDownloadExcel" class="btn btn-outline" download>📊 Excel (.xlsx)</a>
+            <a id="btnDownloadJson" class="btn btn-outline" download>📑 Catalog JSON</a>
+          </div>
+        </div>
+
+        <div class="results-toolbar">
+          <input type="text" id="searchInput" class="search-input" placeholder="Search by seat number, student name, or grade...">
+          <div class="audit-summary-pill" id="auditPill">
+            <span id="auditPassedCount">0</span> Verified Records
+          </div>
+        </div>
+
+        <div class="table-container">
+          <table class="data-table" id="dataTable">
+            <thead>
+              <tr id="tableHeadRow"></tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+        </div>
+        <div class="pagination-footer">
+          <span id="paginationInfo">Showing records 1 - 25</span>
+          <div class="pagination-btns">
+            <button id="prevPageBtn" class="btn btn-sm">Previous</button>
+            <button id="nextPageBtn" class="btn btn-sm">Next</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Historical Extractions Drawer -->
+    <section class="card history-card">
+      <div class="card-header">
+        <h2>Previous Extractions Archive</h2>
+        <button id="refreshHistoryBtn" class="btn-sm btn-outline">↻ Refresh</button>
+      </div>
+      <div id="historyList" class="history-list">
+        <p class="empty-text">No extractions recorded yet.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <p>Data Extractor AI • Local GPU Acceleration • Independent Standalone Architecture</p>
+  </footer>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
