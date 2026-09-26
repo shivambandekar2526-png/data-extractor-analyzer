@@ -196,14 +196,15 @@ def extract_pdf(
         }
     )
 
-    # 4. Live Local Ollama AI Inference Across All Document Pages
+    # 4. Live Local Ollama AI Inference Across Document Pages
     if ollama_online:
-        report_progress(progress_callback, 30.0, f"Running Ollama AI ({client.model}) on all {total_pages} pages...")
+        pages_to_infer = total_pages if not base_students else min(2, total_pages)
+        report_progress(progress_callback, 30.0, f"Running Ollama AI ({client.model}) on pages...")
 
-        for p_idx in range(total_pages):
+        for p_idx in range(pages_to_infer):
             p_text = pages[p_idx].text or ""
             if p_text.strip():
-                pct = 30.0 + ((p_idx + 1) / total_pages * 50.0)
+                pct = 30.0 + ((p_idx + 1) / pages_to_infer * 50.0)
                 report_progress(
                     progress_callback,
                     pct,

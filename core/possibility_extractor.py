@@ -819,7 +819,7 @@ def extract_gazette_nep(
     pdf_path: str,
     progress_callback: ProgressCallback = None
 ) -> Tuple[ExamMeta, List[StudentRecord]]:
-    """Extract records from NEP 2020 Examination Gazette."""
+    """Extract complete records from NEP 2020 Examination Gazette."""
     meta = ExamMeta(archetype="gazette_nep", scheme="NEP 2020")
     catalog = CourseCatalog()
     students: List[StudentRecord] = []
@@ -829,88 +829,266 @@ def extract_gazette_nep(
     if total_pages == 0:
         return meta, []
 
-    # Read page 0 for metadata and courses
+    # 1. Read page 0 for metadata and catalog
     p0_text = reader.pages[0].extract_text() or ""
     for line in p0_text.split("\n"):
         if "OFFICE REGISTER FOR" in line and not meta.exam_title:
             meta.exam_title = line.strip()
-        if "College Name:" in line and not meta.college_name:
-            meta.college_name = line.split("College Name:")[-1].strip()
+        if ("College Name:" in line or "MU-" in line) and not meta.college_name:
+            if "College Name:" in line:
+                meta.college_name = line.split("College Name:")[-1].strip()
+            elif "MU-" in line:
+                meta.college_name = line.strip()
 
-    table_pat = re.compile(r"^\s*\|\s*(\d{2,3})\s*\|\s*([A-Za-z0-9\-]+)\s*\|\s*([^\|]+?)\s*\|\s*(\d+)\s*\|")
-    for page in reader.pages[:2]:
-        text = page.extract_text() or ""
+    sem_label, sem_int = detect_semester(meta.exam_title or p0_text)
+    meta.semester = sem_label
+    meta.semester_num = sem_int
+
+    # 2. Discover Course Catalog from syllabus pages before students start
+    first_stud_page = 1
+    for p_idx in range(min(5, total_pages)):
+        text = reader.pages[p_idx].extract_text() or ""
+        if "SEAT NO NAME" in text:
+            first_stud_page = p_idx
+            break
         for line in text.split("\n"):
-            m = table_pat.match(line.strip())
+            m = re.match(r"^\s*(\d{7})\s+(.+?)\s+(\d+\.\d{2})\s+(.*)$", line)
             if m:
-                code = m.group(2).strip()
-                name = m.group(3).strip()
-                cr = float(m.group(4).strip()) if m.group(4).strip().isdigit() else 0.0
+                code = m.group(1).strip()
+                name = m.group(2).strip()
+                cr = float(m.group(3).strip())
+                rest = m.group(4).strip().split()
+                heads = []
+                if len(rest) >= 8:
+                    if rest[2] != "..." and rest[3] != "...":
+                        heads.append("TH")
+                    if rest[0] != "..." and rest[1] != "...":
+                        heads.append("IA")
+                    if rest[4] != "..." and rest[5] != "...":
+                        heads.append("TW")
+                    if rest[6] != "..." and rest[7] != "...":
+                        heads.append("OR")
+                heads.append("TOT")
                 if not catalog.get_by_code(code):
-                    catalog.courses.append(Course(code=code, name=name, credits=cr))
+                    catalog.courses.append(Course(code=code, name=name, credits=cr, heads=heads))
 
-    all_lines: List[str] = []
-    first_stud_page = 1 if total_pages > 1 else 0
-    for page_idx in range(first_stud_page, total_pages):
-        text = reader.pages[page_idx].extract_text() or ""
-        for l in text.split("\n"):
-            if not is_boilerplate_nep(l):
-                all_lines.append(l.strip())
-
+    # Precompile regexes
     anchor_re = re.compile(
         r"^\s*(\d{7,10})\s+([A-Za-z\s/\.]+?)\s+(Regular|Diploma|Direct Second Year|Repeater|Ex-Student)\s+(MALE|FEMALE)\b",
         re.I
     )
 
-    student_blocks: List[List[str]] = []
-    curr_block: List[str] = []
-    for l in all_lines:
-        if anchor_re.match(l):
-            if curr_block:
-                student_blocks.append(curr_block)
-                curr_block = []
-        if curr_block or anchor_re.match(l):
-            curr_block.append(l)
-    if curr_block:
-        student_blocks.append(curr_block)
+    pattern = re.compile(
+        r"(\d+(?:[\*@]\d+)?)\s+(?:0\s+F(?:\s+0\.0)?|F(?:\s+0\.0)?|P\b)"
+        r"|(ABS|AA|\-\-)\b"
+        r"|\bP\b"
+        r"|(\d+(?:[\*@]\d+)?)\b"
+    )
 
-    for b in student_blocks:
-        m_h = anchor_re.match(b[0])
-        if not m_h:
+    def parse_head_tokens(line: str) -> List[str]:
+        line = re.sub(r"^(?:T1|O1|E1|I1)\s+", "", line.strip())
+        line = re.sub(r"\s*\(\d+\)\s+[A-Za-z\s]+$", "", line)
+        line = re.sub(r"\s*MARKS?\s*$", "", line, flags=re.I)
+        line = re.sub(r"(\d+)\s*([\*@]\d+)", r"\1\2", line)
+        tokens = []
+        for m in pattern.finditer(line):
+            g1, g2, g3 = m.group(1), m.group(2), m.group(3)
+            raw = m.group(0).strip()
+            if g1:
+                tokens.append(g1)
+            elif g2:
+                tokens.append(g2)
+            elif raw == "P":
+                tokens.append("--")
+            elif g3:
+                tokens.append(g3)
+        return tokens
+
+    tot_item_re = re.compile(r"(\d+(?:[\*@]\d+)?|ABS|AA|\-\-)\s+(\d+)\s+([A-Za-z\+\-]+)\s+(\d+)\s+([\d\.]+)")
+
+    # 3. Iterate through all student pages
+    data_pages_count = max(1, total_pages - first_stud_page)
+    for p_idx in range(first_stud_page, total_pages):
+        if progress_callback:
+            pct = 10.0 + (p_idx - first_stud_page) / data_pages_count * 80.0
+            progress_callback(pct, f"Extracting NEP 2020 page {p_idx+1}/{total_pages}...")
+
+        text = reader.pages[p_idx].extract_text() or ""
+        if not text.strip():
             continue
-        seat_no, raw_name, cand_type, gender_raw = m_h.groups()
-        is_fem = raw_name.strip().startswith("/") or gender_raw.upper() == "FEMALE"
-        name = raw_name.lstrip("/ ").strip()
-        gender = "F" if is_fem else "M"
 
-        block_text = " ".join(b)
-        ern_m = re.search(r"\((MU[A-Za-z0-9]+|\d{16})", block_text)
-        ern = ern_m.group(1) if ern_m else ""
+        # Extract college name if not set yet
+        if not meta.college_name:
+            for line in text.split("\n")[:15]:
+                if "MU-" in line or "COLLEGE" in line.upper():
+                    meta.college_name = line.strip()
+                    break
 
-        res_m = re.search(r"\((\d{2,4})\)\s+([A-Za-z\s]+?)(?=\s+(?:TOT|\d{2}\s+\d+|\d+\.\d+)|\s*$)", block_text)
-        total_marks = res_m.group(1).strip() if res_m else ""
-        status = res_m.group(2).strip() if res_m else "PASS"
+        lines = text.split("\n")
 
-        m_sg = re.search(r"(\d\.\d{2})", block_text)
-        sgpi = m_sg.group(1) if m_sg else ""
+        # Determine active course column codes on this page
+        if "TOT GP G C G*C" in text:
+            hp = text.split("TOT GP G C G*C")[0]
+            if "SEAT NO NAME" in hp:
+                hp = hp.split("SEAT NO NAME")[-1]
+            page_courses = re.findall(r"\b(\d{7})\b", hp)
+        else:
+            page_courses = [c.code for c in catalog.courses]
 
-        m_cr = re.search(r"(\d{2})\s+(\d{2,3})", block_text)
-        cr_earn = m_cr.group(1) if m_cr else ""
-        tot_cg = m_cr.group(2) if m_cr else ""
+        for idx, l in enumerate(lines):
+            m = anchor_re.match(l)
+            if not m:
+                continue
 
-        rec = StudentRecord(
-            seat_no=seat_no,
-            student_name=name,
-            gender=gender,
-            candidate_type=cand_type,
-            ern=ern,
-            result_status=status,
-            total_marks=total_marks,
-            credits_earned=cr_earn,
-            total_cg=tot_cg,
-            sgpi=sgpi
-        )
-        students.append(rec)
+            seat = m.group(1)
+            raw_name = m.group(2).strip()
+            cand_type = m.group(3)
+            gender_raw = m.group(4)
+            is_fem = raw_name.startswith("/") or gender_raw.upper() == "FEMALE"
+            name = raw_name.lstrip("/ ").strip()
+            gender = "F" if is_fem else "M"
+
+            # Gather student block lines
+            s_lines = [l]
+            for sub in lines[idx+1:idx+15]:
+                if anchor_re.match(sub) or "SEAT NO NAME" in sub:
+                    break
+                s_lines.append(sub)
+
+            block_text = " ".join(s_lines)
+            ern_m = re.search(r"\((MU[A-Za-z0-9]+|\d{16})", block_text)
+            ern = ern_m.group(1) if ern_m else ""
+
+            res_m = re.search(r"\((\d{2,4})\)\s+([A-Za-z\s]+?)(?=\s+(?:TOT|\d{2}\s+\d+|\d+\.\d+)|\s*$)", block_text)
+            tot_marks = res_m.group(1).strip() if res_m else ""
+            status = res_m.group(2).strip() if res_m else ("FAILED" if "FAILED" in block_text else "PASS")
+
+            # Extract heads
+            t1_line = next((s for s in s_lines if s.startswith("T1 ")), "")
+            o1_line = next((s for s in s_lines if s.startswith("O1 ")), "")
+            e1_line = next((s for s in s_lines if s.startswith("E1 ")), "")
+            i1_line = next((s for s in s_lines if s.startswith("I1 ")), "")
+            tot_line = next((s for s in s_lines if s.startswith("TOT ")), "")
+
+            t1_toks = parse_head_tokens(t1_line) if t1_line else []
+            o1_toks = parse_head_tokens(o1_line) if o1_line else []
+            e1_toks = parse_head_tokens(e1_line) if e1_line else []
+            i1_toks = parse_head_tokens(i1_line) if i1_line else []
+
+            tot_matches = list(tot_item_re.finditer(tot_line)) if tot_line else []
+
+            credits_earned = ""
+            total_cg = ""
+            sgpi = ""
+            if tot_matches:
+                tail = tot_line[tot_matches[-1].end():].strip()
+                tot_idx = s_lines.index(tot_line) if tot_line in s_lines else -1
+                if tot_idx >= 0 and tot_idx + 1 < len(s_lines):
+                    next_l = s_lines[tot_idx+1].strip()
+                    if re.match(r"^\d+$", next_l):
+                        tail += next_l
+                sm = re.search(r"(\d{1,2})\s+([\d\.]+)\s+([\d\.]+|\-\-)", tail)
+                if sm:
+                    credits_earned = sm.group(1)
+                    total_cg = sm.group(2)
+                    raw_sg = sm.group(3)
+                    try:
+                        sgpi = f"{float(raw_sg):.2f}"
+                    except Exception:
+                        sgpi = raw_sg
+
+            # Map tokens to page courses
+            t1_idx = 0
+            o1_idx = 0
+            e1_idx = 0
+            i1_idx = 0
+
+            course_results = []
+            for c_i, c_code in enumerate(page_courses):
+                c_obj = catalog.get_by_code(c_code)
+                c_name = c_obj.name if c_obj else c_code
+                c_cr = c_obj.credits if c_obj else 0.0
+                c_heads = c_obj.heads if c_obj else []
+
+                m_dict: Dict[str, str] = {}
+                comp_vals: List[str] = []
+
+                if "TH" in c_heads:
+                    val = e1_toks[e1_idx] if e1_idx < len(e1_toks) else "--"
+                    e1_idx += 1
+                    m_dict["TH"] = val
+                    m_dict["E1"] = val
+                    comp_vals.append(val)
+                if "IA" in c_heads:
+                    val = i1_toks[i1_idx] if i1_idx < len(i1_toks) else "--"
+                    i1_idx += 1
+                    m_dict["IA"] = val
+                    m_dict["IN"] = val
+                    m_dict["I1"] = val
+                    comp_vals.append(val)
+                if "TW" in c_heads:
+                    val = t1_toks[t1_idx] if t1_idx < len(t1_toks) else "--"
+                    t1_idx += 1
+                    m_dict["TW"] = val
+                    m_dict["T1"] = val
+                    comp_vals.append(val)
+                if "OR" in c_heads:
+                    val = o1_toks[o1_idx] if o1_idx < len(o1_toks) else "--"
+                    o1_idx += 1
+                    m_dict["OR"] = val
+                    m_dict["PR"] = val
+                    m_dict["O1"] = val
+                    comp_vals.append(val)
+
+                tot_val = ""
+                gp = ""
+                grade = ""
+                cr = str(int(c_cr)) if c_cr.is_integer() else str(c_cr)
+                cg = ""
+
+                if len(tot_matches) == len(page_courses):
+                    tm = tot_matches[c_i]
+                    tot_val, gp, grade, cr, cg = tm.group(1), tm.group(2), tm.group(3), tm.group(4), tm.group(5)
+                elif len(tot_matches) < len(page_courses):
+                    offset = len(page_courses) - len(tot_matches)
+                    if c_i >= offset:
+                        tm = tot_matches[c_i - offset]
+                        tot_val, gp, grade, cr, cg = tm.group(1), tm.group(2), tm.group(3), tm.group(4), tm.group(5)
+                    else:
+                        nums = [int(re.sub(r"[^\d]", "", v)) for v in comp_vals if re.sub(r"[^\d]", "", v)]
+                        tot_val = str(sum(nums)) if nums else "0"
+                        gp = "0"
+                        grade = "F"
+                        cr = str(int(c_cr)) if c_cr.is_integer() else str(c_cr)
+                        cg = "0.0"
+
+                m_dict["TOT"] = tot_val
+                m_dict["Total"] = tot_val
+
+                course_results.append(CourseResult(
+                    course_code=c_code,
+                    course_name=c_name,
+                    marks=m_dict,
+                    grade=grade,
+                    grade_point=gp,
+                    credits=cr,
+                    credit_points=cg
+                ))
+
+            students.append(StudentRecord(
+                seat_no=seat,
+                student_name=name,
+                gender=gender,
+                candidate_type=cand_type,
+                ern=ern,
+                semester=meta.semester,
+                result_status=status,
+                total_marks=tot_marks,
+                credits_earned=credits_earned,
+                total_cg=total_cg,
+                sgpi=sgpi,
+                course_results=course_results
+            ))
 
     meta.catalog = catalog
     return meta, students

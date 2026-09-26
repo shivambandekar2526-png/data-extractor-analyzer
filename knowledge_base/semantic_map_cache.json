@@ -634,5 +634,127 @@
     ],
     "tier_used": 1,
     "token_usage": 0
+  },
+  "680a9477259f1349": {
+    "mappings": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "sgpi": "SGPI",
+      "total_marks": "Total_Marks",
+      "max_marks": "Max_Marks",
+      "result": "Result_Status",
+      "gender": "Gender",
+      "candidate_type": "Candidate_Type",
+      "prn": "PRN",
+      "semester": "Semester"
+    },
+    "subjects": {
+      "CSC501": {
+        "SE": "CSC501_SE",
+        "IA": "CSC501_IA",
+        "TOT": "CSC501_TOT",
+        "GRADE": "CSC501_Grade",
+        "GP": "CSC501_GP",
+        "CREDITS": "CSC501_Credits",
+        "CG": "CSC501_CG",
+        "SUBJECT": "CSC501_Subject"
+      },
+      "CSC502": {
+        "SE": "CSC502_SE",
+        "IA": "CSC502_IA",
+        "TOT": "CSC502_TOT",
+        "GRADE": "CSC502_Grade",
+        "GP": "CSC502_GP",
+        "CREDITS": "CSC502_Credits",
+        "CG": "CSC502_CG",
+        "SUBJECT": "CSC502_Subject"
+      },
+      "CSC503": {
+        "SE": "CSC503_SE",
+        "IA": "CSC503_IA",
+        "TOT": "CSC503_TOT",
+        "GRADE": "CSC503_Grade",
+        "GP": "CSC503_GP",
+        "CREDITS": "CSC503_Credits",
+        "CG": "CSC503_CG",
+        "SUBJECT": "CSC503_Subject"
+      },
+      "CSC504": {
+        "SE": "CSC504_SE",
+        "IA": "CSC504_IA",
+        "TOT": "CSC504_TOT",
+        "GRADE": "CSC504_Grade",
+        "GP": "CSC504_GP",
+        "CREDITS": "CSC504_Credits",
+        "CG": "CSC504_CG",
+        "SUBJECT": "CSC504_Subject"
+      },
+      "CSDLO501X": {
+        "SE": "CSDLO501X_SE",
+        "IA": "CSDLO501X_IA",
+        "TOT": "CSDLO501X_TOT",
+        "GRADE": "CSDLO501X_Grade",
+        "GP": "CSDLO501X_GP",
+        "CREDITS": "CSDLO501X_Credits",
+        "CG": "CSDLO501X_CG",
+        "SUBJECT": "CSDLO501X_Subject"
+      },
+      "CSL501": {
+        "TW": "CSL501_TW",
+        "PO": "CSL501_PO",
+        "TOT": "CSL501_TOT",
+        "GRADE": "CSL501_Grade",
+        "GP": "CSL501_GP",
+        "CREDITS": "CSL501_Credits",
+        "CG": "CSL501_CG",
+        "SUBJECT": "CSL501_Subject"
+      },
+      "CSL502": {
+        "TW": "CSL502_TW",
+        "PO": "CSL502_PO",
+        "TOT": "CSL502_TOT",
+        "GRADE": "CSL502_Grade",
+        "GP": "CSL502_GP",
+        "CREDITS": "CSL502_Credits",
+        "CG": "CSL502_CG",
+        "SUBJECT": "CSL502_Subject"
+      },
+      "CSL503": {
+        "TW": "CSL503_TW",
+        "PO": "CSL503_PO",
+        "TOT": "CSL503_TOT",
+        "GRADE": "CSL503_Grade",
+        "GP": "CSL503_GP",
+        "CREDITS": "CSL503_Credits",
+        "CG": "CSL503_CG",
+        "SUBJECT": "CSL503_Subject"
+      },
+      "CSL504": {
+        "TW": "CSL504_TW",
+        "GRADE": "CSL504_Grade",
+        "GP": "CSL504_GP",
+        "CREDITS": "CSL504_Credits",
+        "CG": "CSL504_CG",
+        "SUBJECT": "CSL504_Subject"
+      },
+      "CSM501": {
+        "TW": "CSM501_TW",
+        "PO": "CSM501_PO",
+        "TOT": "CSM501_TOT",
+        "GRADE": "CSM501_Grade",
+        "GP": "CSM501_GP",
+        "CREDITS": "CSM501_Credits",
+        "CG": "CSM501_CG",
+        "SUBJECT": "CSM501_Subject"
+      }
+    },
+    "unmapped": [
+      "ABC_ID",
+      "Remark",
+      "Credits_Earned",
+      "Total_CG"
+    ],
+    "tier_used": 1,
+    "token_usage": 0
   }
 }

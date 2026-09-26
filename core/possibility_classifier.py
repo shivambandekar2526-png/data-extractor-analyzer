@@ -50,14 +50,14 @@ def classify_document(pages: List[PageContent]) -> Tuple[str, float]:
     kb = load_archetypes_kb()
     if not kb:
         # Fallback heuristic if KB is missing
+        if "NEP 2020" in sample_text:
+            return "gazette_nep", 0.9
+        if "PAPER 1" in sample_text and "PAPER 7" in sample_text:
+            return "gazette_spool", 0.9
         if "TERNA" in sample_text or "TABULATION" in sample_text:
             return "tabulation", 0.9
         if "OFFICE REGISTER" in sample_text:
             return "gazette_classic", 0.9
-        if "PAPER 1" in sample_text and "PAPER 7" in sample_text:
-            return "gazette_spool", 0.9
-        if "NEP 2020" in sample_text:
-            return "gazette_nep", 0.9
         return "tabulation", 0.5
 
     best_arch = "tabulation"

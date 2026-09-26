@@ -202,10 +202,18 @@ function initUpload() {
     pipeLocal.addEventListener("change", () => {
       if (pipeLocalLabel) pipeLocalLabel.classList.add("active");
       if (pipeCloudLabel) pipeCloudLabel.classList.remove("active");
+      const telemEngine = document.getElementById("telemEngine");
+      const auditGpuText = document.getElementById("auditGpuText");
+      if (telemEngine) telemEngine.textContent = "Qwen 2.5 (7B) on RTX 4060 GPU";
+      if (auditGpuText) auditGpuText.textContent = "Ollama Ready";
     });
     pipeCloud.addEventListener("change", () => {
       if (pipeCloudLabel) pipeCloudLabel.classList.add("active");
       if (pipeLocalLabel) pipeLocalLabel.classList.remove("active");
+      const telemEngine = document.getElementById("telemEngine");
+      const auditGpuText = document.getElementById("auditGpuText");
+      if (telemEngine) telemEngine.textContent = "Cloud AI (Multi-Provider Orchestrator: Gemini / Groq)";
+      if (auditGpuText) auditGpuText.textContent = "Cloud AI Ready";
     });
   }
 
@@ -371,15 +379,73 @@ function updateAuditLogs(logs) {
   for (let i = startIdx; i < logs.length; i++) {
     const entry = logs[i];
     const item = document.createElement("div");
-    item.className = `audit-entry type-${entry.type || 'system'}`;
+
+    const typeClass = (entry.type || 'system').toLowerCase();
+    const rawBadge = entry.badge || (entry.type || 'LOG').toUpperCase();
+    const badgeSlug = rawBadge.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+
+    item.className = `audit-entry type-${typeClass} badge-type-${badgeSlug}`;
+
+    // Dynamic Cloud AI Telemetry & Engine Bar Updates
+    const telemEngine = document.getElementById("telemEngine");
+    const telemStatus = document.getElementById("telemStatus");
+    const auditGpuText = document.getElementById("auditGpuText");
+
+    if (entry.badge === "ACTIVE CLOUD MODEL" || entry.badge === "NEW ACTIVE MODEL" || entry.type === "cloud_ai_active") {
+      const p = entry.details?.new_provider || entry.details?.provider;
+      const m = entry.details?.new_model || entry.details?.model;
+      if (p && m) {
+        if (telemEngine) telemEngine.textContent = `Cloud AI: ${p.toUpperCase()} (${m})`;
+        if (auditGpuText) auditGpuText.textContent = `Cloud AI: ${p.toUpperCase()}`;
+      }
+      if (telemStatus) {
+        telemStatus.textContent = entry.badge === "NEW ACTIVE MODEL" ? "MODEL SWITCHED" : "AI READY";
+        telemStatus.className = "telemetry-val text-success";
+      }
+    } else if (entry.badge === "MODEL FAILOVER" || entry.type === "ai_error") {
+      if (telemStatus) {
+        telemStatus.textContent = "FAILOVER / RETRY";
+        telemStatus.className = "telemetry-val text-warning";
+      }
+      if (telemEngine && entry.details?.failed_model) {
+        telemEngine.textContent = `Failover from ${entry.details.failed_model}...`;
+      }
+      if (auditGpuText) auditGpuText.textContent = "Failover Active";
+    } else if (entry.badge === "CLOUD AI CALL") {
+      if (telemStatus) {
+        telemStatus.textContent = `INFERENCE (${entry.details?.model || 'Cloud'})`;
+        telemStatus.className = "telemetry-val text-accent";
+      }
+    } else if (entry.badge === "CLOUD AI SUCCESS") {
+      if (telemStatus) {
+        const sec = entry.details?.duration_sec !== undefined ? `${entry.details.duration_sec}s` : "OK";
+        telemStatus.textContent = `RESPONSE (${sec})`;
+        telemStatus.className = "telemetry-val text-success";
+      }
+    } else if (entry.badge === "STAGE 1 SCHEMA") {
+      if (telemStatus) {
+        telemStatus.textContent = "SCHEMA AUDIT";
+        telemStatus.className = "telemetry-val text-accent";
+      }
+    } else if (entry.badge === "PROOFREADING CHUNK") {
+      if (telemStatus) {
+        telemStatus.textContent = "PROOFREADING";
+        telemStatus.className = "telemetry-val text-accent";
+      }
+    } else if (entry.badge === "CROSS-CHECK COMPLETE") {
+      if (telemStatus) {
+        telemStatus.textContent = "AUDIT COMPLETE";
+        telemStatus.className = "telemetry-val text-success";
+      }
+    }
 
     const hasDetails = entry.details !== undefined && entry.details !== null && entry.details !== "";
-    const badgeText = entry.badge || (entry.type || 'LOG').toUpperCase();
+    const badgeText = rawBadge;
 
     item.innerHTML = `
       <div class="audit-line-header">
         <span class="audit-time">${entry.timestamp || ''}</span>
-        <span class="audit-badge badge-${entry.type || 'system'}">[${badgeText}]</span>
+        <span class="audit-badge badge-${typeClass} badge-${badgeSlug}">[${badgeText}]</span>
         <span class="audit-title">${escapeHtml(entry.title || '')}</span>
         ${hasDetails ? '<span class="audit-expand-icon">▶</span>' : ''}
       </div>
@@ -1996,6 +2062,11 @@ function initAiCrosscheckModal() {
           if (progressBar) progressBar.style.width = `${data.progress}%`;
           if (progressPct) progressPct.textContent = `${data.progress}%`;
           if (progressMsg) progressMsg.textContent = data.message || "Auditing...";
+
+          // Stream live audit logs to terminal console
+          if (data.audit_logs && data.audit_logs.length > 0) {
+            updateAuditLogs(data.audit_logs);
+          }
 
           // Stream discrepancy cards live
           if (data.discrepancies && data.discrepancies.length > 0) {

@@ -18,7 +18,7 @@ import os
 import time
 import urllib.error
 import urllib.request
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -835,12 +835,12 @@ class CloudClient:
         system_instruction: str = "",
         format_json: bool = True,
         timeout: int = 40,
-        temperature: float = 0.1
+        temperature: float = 0.1,
+        audit_cb: Optional[Callable[[Dict[str, Any]], None]] = None
     ) -> str:
         """
         Execute a stateless prompt completion with automatic multi-provider failover.
-        No conversational session or dataset context injection is performed.
-        Ideal for document chunk proofreading, schema alignment, and zero-context tasks.
+        Emits live telemetry events to audit_cb for UI console display.
         """
         if not self.is_configured():
             raise RuntimeError("Cloud AI is not configured or disabled.")
@@ -868,6 +868,26 @@ class CloudClient:
             api_key = self.get_api_key(provider)
             if not api_key and provider != "custom":
                 continue
+
+            t_start = time.time()
+            if audit_cb:
+                try:
+                    audit_cb({
+                        "timestamp": time.strftime("%H:%M:%S"),
+                        "type": "cloud_ai_call",
+                        "badge": "CLOUD AI CALL",
+                        "title": f"Dispatching prompt to {provider.upper()} ({model}) [Attempt {attempts}/{max_attempts}]",
+                        "details": {
+                            "provider": provider,
+                            "model": model,
+                            "attempt": attempts,
+                            "timeout_seconds": timeout,
+                            "prompt_chars": len(user_prompt),
+                            "prompt_preview": user_prompt[:260] + "..."
+                        }
+                    })
+                except Exception:
+                    pass
 
             try:
                 # 1. Google Gemini
@@ -935,9 +955,28 @@ class CloudClient:
                         raise RuntimeError(f"Empty choices returned from {provider} API.")
                     reply_text = choices[0].get("message", {}).get("content", "")
 
+                dur = time.time() - t_start
                 # Successful execution: update primary config and return
                 self.config["provider"] = provider
                 self.config["model"] = model
+
+                if audit_cb:
+                    try:
+                        audit_cb({
+                            "timestamp": time.strftime("%H:%M:%S"),
+                            "type": "cloud_ai_success",
+                            "badge": "CLOUD AI SUCCESS",
+                            "title": f"{provider.upper()} ({model}) responded in {dur:.2f}s",
+                            "details": {
+                                "provider": provider,
+                                "model": model,
+                                "duration_sec": round(dur, 2),
+                                "response_preview": reply_text[:280] + "..."
+                            }
+                        })
+                    except Exception:
+                        pass
+
                 return reply_text
 
             except Exception as e:
@@ -949,6 +988,46 @@ class CloudClient:
                     provider, model, e, is_rate_limit
                 )
                 self.mark_model_failed(provider, model, cooldown_seconds=180, is_rate_limit=is_rate_limit)
+
+                if audit_cb:
+                    try:
+                        err_label = "HTTP 429 Quota Exceeded / Rate Limit" if is_rate_limit else f"Error: {e}"
+                        audit_cb({
+                            "timestamp": time.strftime("%H:%M:%S"),
+                            "type": "ai_error",
+                            "badge": "MODEL FAILOVER",
+                            "title": f"⚠️ {err_label} on {provider.upper()} ({model}). Auto-switching models...",
+                            "details": {
+                                "failed_provider": provider,
+                                "failed_model": model,
+                                "error": str(e),
+                                "is_rate_limit": is_rate_limit,
+                                "cooldown_seconds": 180,
+                                "attempt": attempts
+                            }
+                        })
+                    except Exception:
+                        pass
+
+                if auto_orchestrate:
+                    next_cand = self.get_best_working_model(force_refresh=True)
+                    if audit_cb and next_cand and (next_cand["model"] != model or next_cand["provider"] != provider):
+                        try:
+                            audit_cb({
+                                "timestamp": time.strftime("%H:%M:%S"),
+                                "type": "cloud_ai_active",
+                                "badge": "NEW ACTIVE MODEL",
+                                "title": f"🔄 Switched active model: Now using {next_cand['provider'].upper()} ({next_cand['model']})",
+                                "details": {
+                                    "new_provider": next_cand["provider"],
+                                    "new_model": next_cand["model"],
+                                    "previous_provider": provider,
+                                    "previous_model": model
+                                }
+                            })
+                        except Exception:
+                            pass
+
                 if is_rate_limit:
                     time.sleep(min(1.5 * attempts, 3.5))
                 if not auto_orchestrate:

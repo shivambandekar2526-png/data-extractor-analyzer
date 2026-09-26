@@ -27,6 +27,23 @@ def safe_float(val: Any, default: float = 0.0) -> float:
     s = str(val).strip()
     if not s or s in ("--", "AA", "AB", "ABS", "N/A", "null", "None"):
         return default
+    # Handle grace mark annotations: "20*4" -> 20 + 4 = 24, "18@2" -> 18 + 2 = 20
+    if "*" in s:
+        parts = s.split("*")
+        try:
+            p0 = re.sub(r"[^\d\.]", "", parts[0])
+            p1 = re.sub(r"[^\d\.]", "", parts[1])
+            return float(p0) + float(p1)
+        except Exception:
+            pass
+    if "@" in s:
+        parts = s.split("@")
+        try:
+            p0 = re.sub(r"[^\d\.]", "", parts[0])
+            p1 = re.sub(r"[^\d\.]", "", parts[1])
+            return float(p0) + float(p1)
+        except Exception:
+            pass
     cleaned = re.sub(r"[^\d\.]", "", s)
     try:
         return float(cleaned) if cleaned else default

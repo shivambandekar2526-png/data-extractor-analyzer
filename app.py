@@ -86,13 +86,23 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosschec
         t0 = time.time()
         if cloud_crosscheck:
             # 100% Pure Cloud AI Pipeline: bypass local Ollama neural inference passes entirely
+            from core.cloud_client import CloudClient, ORCHESTRATION_CANDIDATES
+            cc_probe = CloudClient()
+            active_cand = cc_probe.get_best_working_model()
+
             log_audit({
                 "timestamp": time.strftime("%H:%M:%S"),
-                "type": "system",
-                "badge": "CLOUD AI ONLY",
-                "title": "Pure Cloud AI Pipeline Active: Bypassing local Ollama model completely. Fast possibility ingestion + multi-provider Cloud LLMs (Groq / Gemini / OpenAI).",
-                "details": {"mode": "pure_cloud_ai"}
+                "type": "cloud_ai_active",
+                "badge": "ACTIVE CLOUD MODEL",
+                "title": f"Initial Active Cloud LLM: {active_cand['provider'].upper()} ({active_cand['model']})",
+                "details": {
+                    "provider": active_cand["provider"],
+                    "model": active_cand["model"],
+                    "auto_orchestrate": True,
+                    "failover_candidates": [c["label"] for c in ORCHESTRATION_CANDIDATES[:5]]
+                }
             })
+
             from core.page_ingester import ingest_pdf
             from core.possibility_classifier import classify_document
             from core.possibility_extractor import extract_with_possibility_engine
@@ -100,8 +110,26 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosschec
             update_job_progress(job_id, 5.0, "Ingesting PDF document streams (Pure Cloud AI mode)...")
             pages = ingest_pdf(target_pdf_path)
             archetype, confidence = classify_document(pages)
+            log_audit({
+                "timestamp": time.strftime("%H:%M:%S"),
+                "type": "archetype",
+                "badge": "ARCHETYPE",
+                "title": f"Classified Archetype: {archetype.upper()} ({confidence:.0%} confidence)",
+                "details": {"archetype": archetype, "confidence": confidence, "pages": len(pages)}
+            })
+
             update_job_progress(job_id, 20.0, f"Matched Archetype: {archetype} ({confidence:.0%}). Extracting ledger...")
             meta, students = extract_with_possibility_engine(target_pdf_path, archetype, on_progress)
+            log_audit({
+                "timestamp": time.strftime("%H:%M:%S"),
+                "type": "structure",
+                "badge": "CATALOG BUILT",
+                "title": f"Extracted {len(students)} student records with {len(meta.catalog.courses)} courses and complete marks",
+                "details": {
+                    "students_count": len(students),
+                    "courses": [f"{c.code}: {c.name}" for c in meta.catalog.courses[:15]]
+                }
+            })
         else:
             client = OllamaClient()
             meta, students, archetype = extract_pdf(
@@ -132,9 +160,17 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosschec
                     students=flat_records,
                     pdf_path=target_pdf_path,
                     progress_cb=cc_progress,
-                    auto_apply=True
+                    auto_apply=True,
+                    audit_cb=log_audit
                 )
             except Exception as e:
+                log_audit({
+                    "timestamp": time.strftime("%H:%M:%S"),
+                    "type": "ai_error",
+                    "badge": "CROSS-CHECK ERROR",
+                    "title": f"In-flight Cloud AI cross-check encountered error: {e}",
+                    "details": {"error": str(e)}
+                })
                 print(f"[!] Warning: In-flight Cloud AI cross-check failed: {e}")
 
         update_job_progress(job_id, 92.0, "Writing CSV, Excel, and JSON metadata...")
@@ -801,6 +837,29 @@ def _run_post_crosscheck_worker(job_id: str, folder_name: str, csv_path: str, pd
             except Exception:
                 pass
 
+        def log_audit(entry: Dict[str, Any]):
+            with ai_cc_jobs_lock:
+                if job_id in ai_cc_jobs:
+                    if "audit_logs" not in ai_cc_jobs[job_id]:
+                        ai_cc_jobs[job_id]["audit_logs"] = []
+                    ai_cc_jobs[job_id]["audit_logs"].append(entry)
+
+        from core.cloud_client import CloudClient, ORCHESTRATION_CANDIDATES
+        cc_probe = CloudClient()
+        active_cand = cc_probe.get_best_working_model()
+        log_audit({
+            "timestamp": time.strftime("%H:%M:%S"),
+            "type": "cloud_ai_active",
+            "badge": "ACTIVE CLOUD MODEL",
+            "title": f"Initial Active Cloud LLM: {active_cand['provider'].upper()} ({active_cand['model']})",
+            "details": {
+                "provider": active_cand["provider"],
+                "model": active_cand["model"],
+                "auto_orchestrate": True,
+                "failover_candidates": [c["label"] for c in ORCHESTRATION_CANDIDATES[:5]]
+            }
+        })
+
         def cb(pct: float, msg: str, card: Optional[Dict[str, Any]] = None):
             update_ai_cc_progress(job_id, pct, msg, card)
 
@@ -810,7 +869,8 @@ def _run_post_crosscheck_worker(job_id: str, folder_name: str, csv_path: str, pd
             students=students,
             pdf_path=pdf_path,
             progress_cb=cb,
-            auto_apply=False
+            auto_apply=False,
+            audit_cb=log_audit
         )
 
         with ai_cc_jobs_lock:
@@ -902,6 +962,7 @@ def get_ai_crosscheck_job_status(job_id):
         "progress": job["progress"],
         "message": job["message"],
         "discrepancies": job.get("discrepancies", []),
+        "audit_logs": job.get("audit_logs", []),
         "result": job.get("result"),
         "error": job.get("error")
     })

@@ -292,7 +292,8 @@ def align_schema_with_ai(
     envelope: ContextEnvelope,
     sample_students: List[Dict[str, Any]],
     first_page_text: str,
-    client: Any
+    client: Any,
+    audit_cb: Optional[Callable[[Dict[str, Any]], None]] = None
 ) -> Dict[str, Any]:
     """
     Stage 1 Macro Audit: Compares extracted column headers against raw page 1 text.
@@ -343,7 +344,8 @@ def align_schema_with_ai(
             user_prompt=prompt,
             system_instruction=system_instruction,
             format_json=True,
-            timeout=30
+            timeout=30,
+            audit_cb=audit_cb
         )
         return json.loads(resp_text)
     except Exception as e:
@@ -359,7 +361,8 @@ def verify_student_chunk(
     chunk_students: List[Dict[str, Any]],
     chunk_page_text: str,
     envelope: ContextEnvelope,
-    client: Any
+    client: Any,
+    audit_cb: Optional[Callable[[Dict[str, Any]], None]] = None
 ) -> List[Dict[str, Any]]:
     """
     Stage 2 Micro Audit: Proofreads a student chunk against source page text.
@@ -418,7 +421,8 @@ def verify_student_chunk(
                 user_prompt=prompt,
                 system_instruction=system_instruction,
                 format_json=True,
-                timeout=45
+                timeout=45,
+                audit_cb=audit_cb
             )
             data = json.loads(resp_text)
             if isinstance(data, dict):
@@ -447,7 +451,8 @@ def run_ai_cross_check(
     client: Optional[Any] = None,
     progress_cb: Optional[Callable[[float, str, Optional[Dict[str, Any]]], None]] = None,
     auto_apply: bool = False,
-    chunk_size: int = 6
+    chunk_size: int = 6,
+    audit_cb: Optional[Callable[[Dict[str, Any]], None]] = None
 ) -> Dict[str, Any]:
     """
     Executes complete end-to-end AI Cross-Checking & Self-Healing Pipeline.
@@ -460,6 +465,7 @@ def run_ai_cross_check(
         progress_cb: Callback function(percentage, status_message, optional_card_data).
         auto_apply: If True, sandbox-verified patches are applied directly to students.
         chunk_size: Number of students per proofreading chunk (default 6).
+        audit_cb: Real-time telemetry callback for UI console events.
         
     Returns:
         Comprehensive audit dictionary including discrepancies, verification metrics, and updated records.
@@ -474,6 +480,19 @@ def run_ai_cross_check(
             "success": False,
             "error": "Cloud AI is not configured. Please add an API key (Groq or Gemini) in Cloud AI settings."
         }
+
+    def _emit(event_type: str, badge: str, title: str, details: Any = None):
+        if audit_cb:
+            try:
+                audit_cb({
+                    "timestamp": time.strftime("%H:%M:%S"),
+                    "type": event_type,
+                    "badge": badge,
+                    "title": title,
+                    "details": details
+                })
+            except Exception:
+                pass
 
     def _notify(pct: float, msg: str, card: Optional[Dict[str, Any]] = None):
         if progress_cb:
@@ -492,8 +511,18 @@ def run_ai_cross_check(
 
     # Stage 1: Macro Column Alignment
     _notify(15.0, "Stage 1: Auditing schema & course column alignment...")
+    _emit(
+        "structure",
+        "STAGE 1 SCHEMA",
+        f"Auditing declared syllabus courses vs extracted columns ({len(envelope.valid_columns)} total columns)...",
+        {"courses": [c.get("code") for c in envelope.courses], "total_columns": len(envelope.valid_columns)}
+    )
     p1_text = page_texts[0] if page_texts else ""
-    schema_audit = align_schema_with_ai(envelope, students[:3], p1_text, client)
+    schema_audit = align_schema_with_ai(envelope, students[:3], p1_text, client, audit_cb=audit_cb)
+    if schema_audit.get("status") == "ALIGNED":
+        _emit("checksum_proof", "SCHEMA ALIGNED", "Stage 1 Verified: All extracted course columns match PDF syllabus headers.", schema_audit)
+    else:
+        _emit("checksum_alert", "SCHEMA DISCREPANCY", f"Stage 1 Finding: {schema_audit.get('summary', 'Header mismatch detected')}", schema_audit)
 
     # Stage 2: Micro Record Proofreading (Chunk-by-Chunk)
     total_students = len(students)
@@ -605,6 +634,13 @@ def run_ai_cross_check(
             time.sleep(1.0)
 
         pct = 20.0 + ((idx / max(total_chunks, 1)) * 75.0)
+        chunk_seats = [str(s.get("Seat_No", s.get("seat_no", ""))) for s in chunk]
+        _emit(
+            "ai_prompt",
+            "PROOFREADING CHUNK",
+            f"Stage 2: Proofreading Chunk {idx + 1}/{total_chunks} ({len(chunk)} candidates: {chunk_seats[0]} to {chunk_seats[-1]})...",
+            {"chunk": idx + 1, "total_chunks": total_chunks, "student_seats": chunk_seats}
+        )
         _notify(pct, f"Stage 2: Proofreading chunk {idx + 1}/{total_chunks} ({len(chunk)} students)...")
 
         # Gather relevant page texts for this chunk
@@ -620,7 +656,7 @@ def run_ai_cross_check(
             page_texts[p] for p in sorted(chunk_page_indices) if p < len(page_texts)
         )
 
-        raw_discrepancies = verify_student_chunk(chunk, combined_text, envelope, client)
+        raw_discrepancies = verify_student_chunk(chunk, combined_text, envelope, client, audit_cb=audit_cb)
 
         for raw_d in raw_discrepancies:
             ok, reason = validate_patch_sandbox(raw_d, page_texts, envelope, students_by_seat)
@@ -642,6 +678,12 @@ def run_ai_cross_check(
 
             if ok:
                 verified_patches += 1
+                _emit(
+                    "checksum_alert",
+                    "PATCH VERIFIED",
+                    f"Verified correction on Seat {card.seat_no}: {card.field_name} '{card.extracted_val}' -> '{card.suggested_val}'",
+                    card.to_dict()
+                )
                 if auto_apply:
                     # Apply patch directly
                     st_record = students_by_seat.get(card.seat_no)
@@ -651,11 +693,29 @@ def run_ai_cross_check(
                         applied_patches += 1
             else:
                 rejected_patches += 1
+                _emit(
+                    "ai_error",
+                    "PATCH REJECTED",
+                    f"Rejected AI hallucination on Seat {card.seat_no}: {card.field_name}. Reason: {reason}",
+                    card.to_dict()
+                )
 
             card_dict = card.to_dict()
             all_discrepancies.append(card_dict)
             _notify(pct, f"Found discrepancy on seat {card.seat_no} ({card.sandbox_status})", card_dict)
 
+    _emit(
+        "checksum_proof",
+        "CROSS-CHECK COMPLETE",
+        f"AI Cross-Check complete! Verified: {verified_patches}, Rejected: {rejected_patches}, Applied: {applied_patches} across {total_students} candidates.",
+        {
+            "total_students": total_students,
+            "total_chunks": total_chunks,
+            "verified_patches": verified_patches,
+            "rejected_patches": rejected_patches,
+            "applied_patches": applied_patches
+        }
+    )
     _notify(100.0, f"AI Cross-Check complete! Verified: {verified_patches}, Rejected: {rejected_patches}, Applied: {applied_patches}")
 
     return {
