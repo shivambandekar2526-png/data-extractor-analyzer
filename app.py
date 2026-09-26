@@ -422,30 +422,45 @@ def get_cloud_config():
 
 @app.route("/api/cloud/config", methods=["POST"])
 def save_cloud_config():
-    """Save Cloud AI API key and settings."""
+    """Save Cloud AI API keys and settings."""
     data = request.get_json(silent=True) or {}
     client = CloudClient()
     ok, msg = client.save_config(data)
     if not ok:
         return jsonify({"success": False, "error": msg}), 400
+
+    # If auto-orchestration is on, pick and lock the best working model immediately
+    if client.config.get("auto_orchestrate", True):
+        best = client.get_best_working_model(force_refresh=True)
+        msg += f" (Locked onto {best['provider'].upper()} - {best['model']})"
+
     return jsonify({"success": True, "message": msg, "config": client.get_safe_config()})
+
+
+@app.route("/api/cloud/probe-all", methods=["POST"])
+def probe_all_cloud_providers():
+    """Probe all configured API keys across providers and return health report."""
+    data = request.get_json(silent=True) or {}
+    client = CloudClient()
+    keys_dict = data.get("api_keys")
+    report = client.probe_all_providers(keys_dict=keys_dict)
+    return jsonify({
+        "success": True,
+        "report": report,
+        "config": client.get_safe_config()
+    })
 
 
 @app.route("/api/cloud/test", methods=["POST"])
 def test_cloud_connection():
-    """Test remote connection to the configured Cloud AI."""
+    """Test remote connection to the specified or configured Cloud AI."""
     data = request.get_json(silent=True) or {}
     client = CloudClient()
-    if data.get("api_key"):
-        client.config["api_key"] = data["api_key"].strip()
-    if data.get("provider"):
-        client.config["provider"] = data["provider"]
-    if data.get("model"):
-        client.config["model"] = data["model"]
-    if data.get("custom_base_url"):
-        client.config["custom_base_url"] = data["custom_base_url"]
+    provider = data.get("provider")
+    api_key = data.get("api_key")
+    model = data.get("model")
 
-    ok, msg = client.test_connection()
+    ok, msg = client.test_connection(provider=provider, api_key=api_key, model=model)
     return jsonify({"success": ok, "message": msg})
 
 

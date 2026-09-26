@@ -757,30 +757,39 @@ async function initCloudModal() {
   const closeBtn = document.getElementById("btnCloseCloudModal");
   const cancelBtn = document.getElementById("btnCancelCloudModal");
   const form = document.getElementById("cloudConfigForm");
+  const autoOrchestrateCheck = document.getElementById("cloudAutoOrchestrate");
+  const manualOverrideGroup = document.getElementById("manualOverrideGroup");
   const providerSelect = document.getElementById("cloudProviderSelect");
   const customUrlGroup = document.getElementById("customUrlGroup");
   const customUrlInput = document.getElementById("cloudCustomUrl");
-  const apiKeyInput = document.getElementById("cloudApiKey");
-  const maskedKeyPreview = document.getElementById("maskedKeyPreview");
-  const toggleEyeBtn = document.getElementById("btnToggleKeyVisibility");
   const modelSelect = document.getElementById("cloudModelSelect");
   const modelInput = document.getElementById("cloudModelInput");
   const customModelWrapper = document.getElementById("customModelWrapper");
   const toggleCustomModelBtn = document.getElementById("btnToggleCustomModel");
-  const refreshModelsBtn = document.getElementById("btnRefreshCloudModels");
-  const modelChipsContainer = document.getElementById("modelQuickChips");
   const routingSelect = document.getElementById("cloudRoutingMode");
   const testBtn = document.getElementById("btnTestCloudConn");
+  const probeAllBtn = document.getElementById("btnProbeAllKeys");
   const testAlert = document.getElementById("cloudTestAlert");
+
+  // Multi-Provider Key Inputs and Badges
+  const groqKeyInput = document.getElementById("cloudApiKeyGroq");
+  const geminiKeyInput = document.getElementById("cloudApiKeyGemini");
+  const openaiKeyInput = document.getElementById("cloudApiKeyOpenAI");
+  const groqKeyBadge = document.getElementById("groqKeyBadge");
+  const geminiKeyBadge = document.getElementById("geminiKeyBadge");
+  const openaiKeyBadge = document.getElementById("openaiKeyBadge");
+
+  // Active Locked Banner Elements
+  const lockedModelTitle = document.getElementById("lockedModelTitle");
+  const lockedModelSubtitle = document.getElementById("lockedModelSubtitle");
+  const lockedModelBadge = document.getElementById("lockedModelBadge");
 
   const providerModels = {
     groq: [
       { id: "openai/gpt-oss-120b", label: "openai/gpt-oss-120b (Recommended - 120B Flagship)" },
       { id: "qwen/qwen3.8-27b", label: "qwen/qwen3.8-27b (Fast 27B Reasoning)" },
       { id: "openai/gpt-oss-20b", label: "openai/gpt-oss-20b (Lightweight 20B)" },
-      { id: "allam-2-7b", label: "allam-2-7b (7B Multilingual)" },
-      { id: "llama-3.3-70b-versatile", label: "llama-3.3-70b-versatile (Preview)" },
-      { id: "llama-3.1-8b-instant", label: "llama-3.1-8b-instant (Fast 8B)" }
+      { id: "allam-2-7b", label: "allam-2-7b (7B Multilingual)" }
     ],
     gemini: [
       { id: "gemini-flash-latest", label: "gemini-flash-latest (Recommended - Fast & High Quota)" },
@@ -796,40 +805,85 @@ async function initCloudModal() {
     custom: []
   };
 
-  async function updateProviderUI(provider, targetModel = null, fetchLive = false) {
+  // Eye toggle buttons for showing / hiding passwords
+  document.querySelectorAll(".btn-toggle-eye").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const targetId = btn.getAttribute("data-target");
+      if (!targetId) return;
+      const input = document.getElementById(targetId);
+      if (!input) return;
+      input.type = input.type === "password" ? "text" : "password";
+      btn.textContent = input.type === "password" ? "👁️" : "🔒";
+    });
+  });
+
+  // Auto-orchestrate toggle: hide / show manual overrides
+  if (autoOrchestrateCheck) {
+    autoOrchestrateCheck.addEventListener("change", (e) => {
+      if (manualOverrideGroup) {
+        manualOverrideGroup.style.display = e.target.checked ? "none" : "block";
+      }
+    });
+  }
+
+  function updateLockedBanner(config) {
+    if (!lockedModelTitle || !lockedModelBadge) return;
+    if (config && config.locked_model && config.is_configured) {
+      const prov = (config.locked_model.provider || "").toUpperCase();
+      const mod = config.locked_model.model || "";
+      lockedModelTitle.textContent = `Locked Engine: ${prov} (${mod})`;
+      if (lockedModelSubtitle) {
+        lockedModelSubtitle.textContent = "Stickiness Active • Fast & Verified • Switches on error";
+      }
+      lockedModelBadge.className = "orchestrator-badge active";
+      lockedModelBadge.textContent = "LOCKED";
+    } else if (config && config.is_configured) {
+      lockedModelTitle.textContent = "Multi-Engine Ready (Auto-Lock on query)";
+      if (lockedModelSubtitle) {
+        lockedModelSubtitle.textContent = "Keys saved • Standby for fastest model lock";
+      }
+      lockedModelBadge.className = "orchestrator-badge";
+      lockedModelBadge.textContent = "READY";
+    } else {
+      lockedModelTitle.textContent = "No Cloud Engines Configured";
+      if (lockedModelSubtitle) {
+        lockedModelSubtitle.textContent = "Add at least one API key below to enable Cloud AI";
+      }
+      lockedModelBadge.className = "orchestrator-badge offline";
+      lockedModelBadge.textContent = "OFFLINE";
+    }
+  }
+
+  function updateKeyBadges(maskedKeys = {}) {
+    const list = [
+      { id: "groq", badge: groqKeyBadge },
+      { id: "gemini", badge: geminiKeyBadge },
+      { id: "openai", badge: openaiKeyBadge }
+    ];
+
+    list.forEach(item => {
+      if (!item.badge) return;
+      const mask = maskedKeys[item.id];
+      if (mask && mask.trim()) {
+        item.badge.className = "key-status-badge configured";
+        item.badge.textContent = `🟢 Saved (${mask})`;
+      } else {
+        item.badge.className = "key-status-badge missing";
+        item.badge.textContent = "⚪ Not set";
+      }
+    });
+  }
+
+  async function updateProviderUI(provider, targetModel = null) {
     if (provider === "custom") {
-      customUrlGroup.style.display = "flex";
+      if (customUrlGroup) customUrlGroup.style.display = "block";
       if (customModelWrapper) customModelWrapper.style.display = "block";
     } else {
-      customUrlGroup.style.display = "none";
+      if (customUrlGroup) customUrlGroup.style.display = "none";
     }
 
-    let models = [];
-    if (fetchLive) {
-      try {
-        const payload = {
-          provider: provider,
-          api_key: apiKeyInput.value.trim()
-        };
-        const res = await fetch("/api/cloud/models", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-        if (data.success && data.models && data.models.length > 0) {
-          models = data.models;
-        }
-      } catch (err) {
-        console.warn("Live models fetch failed, using curated models:", err);
-      }
-    }
+    const models = providerModels[provider] || [];
 
-    if (models.length === 0) {
-      models = providerModels[provider] || [];
-    }
-
-    // Populate dropdown
     if (modelSelect) {
       modelSelect.innerHTML = "";
       if (models.length === 0) {
@@ -846,7 +900,6 @@ async function initCloudModal() {
         });
       }
 
-      // Select target model or first model
       const modelIds = models.map(m => typeof m === "string" ? m : m.id);
       if (targetModel && modelIds.includes(targetModel)) {
         modelSelect.value = targetModel;
@@ -854,24 +907,6 @@ async function initCloudModal() {
         modelSelect.value = modelIds[0];
       }
       if (modelInput) modelInput.value = modelSelect.value;
-    }
-
-    // Populate quick chips
-    if (modelChipsContainer) {
-      modelChipsContainer.innerHTML = "";
-      models.slice(0, 4).forEach(m => {
-        const mid = typeof m === "string" ? m : m.id;
-        const chip = document.createElement("button");
-        chip.type = "button";
-        chip.className = "chip-mini";
-        chip.textContent = mid.split("/").pop();
-        chip.title = mid;
-        chip.addEventListener("click", () => {
-          if (modelSelect) modelSelect.value = mid;
-          if (modelInput) modelInput.value = mid;
-        });
-        modelChipsContainer.appendChild(chip);
-      });
     }
   }
 
@@ -890,13 +925,9 @@ async function initCloudModal() {
     });
   }
 
-  if (refreshModelsBtn) {
-    refreshModelsBtn.addEventListener("click", async () => {
-      refreshModelsBtn.disabled = true;
-      refreshModelsBtn.textContent = "⏳ Detecting...";
-      await updateProviderUI(providerSelect.value, modelSelect ? modelSelect.value : null, true);
-      refreshModelsBtn.disabled = false;
-      refreshModelsBtn.textContent = "🔄 Detect Live Models";
+  if (providerSelect) {
+    providerSelect.addEventListener("change", (e) => {
+      updateProviderUI(e.target.value);
     });
   }
 
@@ -905,17 +936,28 @@ async function initCloudModal() {
     try {
       const res = await fetch("/api/cloud/config");
       const data = await res.json();
-      if (data) {
-        providerSelect.value = data.provider || "groq";
-        routingSelect.value = data.routing_mode || "auto_hybrid";
-        customUrlInput.value = data.custom_base_url || "";
-        if (data.masked_key) {
-          maskedKeyPreview.textContent = `Current saved key: ${data.masked_key}`;
-        } else {
-          maskedKeyPreview.textContent = "No API key configured yet.";
+      if (!data) return;
+
+      if (autoOrchestrateCheck) {
+        autoOrchestrateCheck.checked = data.auto_orchestrate !== false;
+        if (manualOverrideGroup) {
+          manualOverrideGroup.style.display = autoOrchestrateCheck.checked ? "none" : "block";
         }
-        await updateProviderUI(providerSelect.value, data.model);
       }
+
+      if (routingSelect && data.routing_mode) {
+        routingSelect.value = data.routing_mode;
+      }
+      if (providerSelect && data.provider) {
+        providerSelect.value = data.provider;
+      }
+      if (customUrlInput && data.custom_base_url) {
+        customUrlInput.value = data.custom_base_url;
+      }
+
+      updateLockedBanner(data);
+      updateKeyBadges(data.masked_keys || {});
+      await updateProviderUI(providerSelect ? providerSelect.value : "groq", data.model);
     } catch (e) {
       console.error("Failed to fetch cloud config:", e);
     }
@@ -923,8 +965,10 @@ async function initCloudModal() {
 
   if (openBtn) {
     openBtn.addEventListener("click", () => {
-      testAlert.classList.add("hidden");
-      testAlert.textContent = "";
+      if (testAlert) {
+        testAlert.classList.add("hidden");
+        testAlert.textContent = "";
+      }
       loadCloudConfig();
       modalOverlay.classList.remove("hidden");
     });
@@ -932,24 +976,13 @@ async function initCloudModal() {
 
   function closeModal() {
     modalOverlay.classList.add("hidden");
-    testAlert.classList.add("hidden");
+    if (testAlert) testAlert.classList.add("hidden");
   }
 
   if (closeBtn) closeBtn.addEventListener("click", closeModal);
   if (cancelBtn) cancelBtn.addEventListener("click", closeModal);
   modalOverlay.addEventListener("click", (e) => {
     if (e.target === modalOverlay) closeModal();
-  });
-
-  if (toggleEyeBtn) {
-    toggleEyeBtn.addEventListener("click", () => {
-      apiKeyInput.type = apiKeyInput.type === "password" ? "text" : "password";
-      toggleEyeBtn.textContent = apiKeyInput.type === "password" ? "👁️" : "🔒";
-    });
-  }
-
-  providerSelect.addEventListener("change", (e) => {
-    updateProviderUI(e.target.value);
   });
 
   function getEffectiveModel() {
@@ -965,20 +998,128 @@ async function initCloudModal() {
     return "default";
   }
 
-  // Test connection button
+  // Probe All Keys Button
+  if (probeAllBtn) {
+    probeAllBtn.addEventListener("click", async () => {
+      probeAllBtn.disabled = true;
+      const origText = probeAllBtn.textContent;
+      probeAllBtn.textContent = "⏳ Probing Keys...";
+
+      if (testAlert) {
+        testAlert.className = "alert-box info";
+        testAlert.textContent = "Testing each configured API key with live pings across providers...";
+        testAlert.classList.remove("hidden");
+      }
+
+      try {
+        const payload = { api_keys: {} };
+        if (groqKeyInput && groqKeyInput.value.trim()) payload.api_keys.groq = groqKeyInput.value.trim();
+        if (geminiKeyInput && geminiKeyInput.value.trim()) payload.api_keys.gemini = geminiKeyInput.value.trim();
+        if (openaiKeyInput && openaiKeyInput.value.trim()) payload.api_keys.openai = openaiKeyInput.value.trim();
+
+        const res = await fetch("/api/cloud/probe-all", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (data.success && data.report) {
+          const rep = data.report;
+          // Update Groq badge
+          if (groqKeyBadge && rep.groq) {
+            if (rep.groq.success) {
+              groqKeyBadge.className = "key-status-badge success";
+              groqKeyBadge.textContent = `✓ Active (${rep.groq.latency_ms}ms)`;
+            } else if (rep.groq.configured) {
+              groqKeyBadge.className = "key-status-badge error";
+              groqKeyBadge.textContent = `✗ ${rep.groq.message.slice(0, 24)}`;
+            } else {
+              groqKeyBadge.className = "key-status-badge missing";
+              groqKeyBadge.textContent = "⚪ No key";
+            }
+          }
+          // Update Gemini badge
+          if (geminiKeyBadge && rep.gemini) {
+            if (rep.gemini.success) {
+              geminiKeyBadge.className = "key-status-badge success";
+              geminiKeyBadge.textContent = `✓ Active (${rep.gemini.latency_ms}ms)`;
+            } else if (rep.gemini.configured) {
+              geminiKeyBadge.className = "key-status-badge error";
+              geminiKeyBadge.textContent = `✗ ${rep.gemini.message.slice(0, 24)}`;
+            } else {
+              geminiKeyBadge.className = "key-status-badge missing";
+              geminiKeyBadge.textContent = "⚪ No key";
+            }
+          }
+          // Update OpenAI badge
+          if (openaiKeyBadge && rep.openai) {
+            if (rep.openai.success) {
+              openaiKeyBadge.className = "key-status-badge success";
+              openaiKeyBadge.textContent = `✓ Active (${rep.openai.latency_ms}ms)`;
+            } else if (rep.openai.configured) {
+              openaiKeyBadge.className = "key-status-badge error";
+              openaiKeyBadge.textContent = `✗ ${rep.openai.message.slice(0, 24)}`;
+            } else {
+              openaiKeyBadge.className = "key-status-badge missing";
+              openaiKeyBadge.textContent = "⚪ No key";
+            }
+          }
+
+          if (data.config) {
+            updateLockedBanner(data.config);
+          }
+
+          if (testAlert) {
+            if (rep.best_locked_model) {
+              testAlert.className = "alert-box success";
+              testAlert.textContent = `✓ Multi-Provider Probe Complete! Locked onto fastest working model: ${rep.best_locked_model.provider.toUpperCase()} (${rep.best_locked_model.model})`;
+            } else {
+              testAlert.className = "alert-box warning";
+              testAlert.textContent = "Probe finished, but no candidate models passed validation. Please verify your keys.";
+            }
+          }
+        } else {
+          if (testAlert) {
+            testAlert.className = "alert-box error";
+            testAlert.textContent = `Probe failed: ${data.error || "Unknown server response"}`;
+          }
+        }
+      } catch (err) {
+        if (testAlert) {
+          testAlert.className = "alert-box error";
+          testAlert.textContent = `Network error during probe: ${err.message}`;
+        }
+      } finally {
+        probeAllBtn.disabled = false;
+        probeAllBtn.textContent = origText;
+      }
+    });
+  }
+
+  // Test Active AI Button
   if (testBtn) {
     testBtn.addEventListener("click", async () => {
-      testAlert.className = "alert-box hidden";
+      if (testAlert) {
+        testAlert.className = "alert-box hidden";
+        testAlert.textContent = "";
+      }
       testBtn.disabled = true;
       testBtn.textContent = "⚡ Testing...";
 
       try {
         const effectiveModel = getEffectiveModel();
+        const curProv = providerSelect ? providerSelect.value : "groq";
+        let testKey = "";
+        if (curProv === "groq" && groqKeyInput) testKey = groqKeyInput.value.trim();
+        else if (curProv === "gemini" && geminiKeyInput) testKey = geminiKeyInput.value.trim();
+        else if (curProv === "openai" && openaiKeyInput) testKey = openaiKeyInput.value.trim();
+
         const payload = {
-          provider: providerSelect.value,
-          api_key: apiKeyInput.value.trim(),
+          provider: curProv,
+          api_key: testKey,
           model: effectiveModel,
-          custom_base_url: customUrlInput.value.trim()
+          custom_base_url: customUrlInput ? customUrlInput.value.trim() : ""
         };
         const res = await fetch("/api/cloud/test", {
           method: "POST",
@@ -987,26 +1128,30 @@ async function initCloudModal() {
         });
         const result = await res.json();
 
-        testAlert.classList.remove("hidden");
-        if (result.success) {
-          testAlert.className = "alert-box success";
-          testAlert.textContent = `✓ ${result.message}`;
-        } else {
-          testAlert.className = "alert-box error";
-          testAlert.textContent = `✗ ${result.message}`;
+        if (testAlert) {
+          testAlert.classList.remove("hidden");
+          if (result.success) {
+            testAlert.className = "alert-box success";
+            testAlert.textContent = `✓ ${result.message}`;
+          } else {
+            testAlert.className = "alert-box error";
+            testAlert.textContent = `✗ ${result.message}`;
+          }
         }
       } catch (err) {
-        testAlert.className = "alert-box error";
-        testAlert.classList.remove("hidden");
-        testAlert.textContent = `✗ Network error during test: ${err.message}`;
+        if (testAlert) {
+          testAlert.className = "alert-box error";
+          testAlert.classList.remove("hidden");
+          testAlert.textContent = `✗ Network error during test: ${err.message}`;
+        }
       } finally {
         testBtn.disabled = false;
-        testBtn.textContent = "⚡ Test Connection";
+        testBtn.textContent = "⚡ Test Active AI";
       }
     });
   }
 
-  // Save config form submit
+  // Save Config Form Submit
   if (form) {
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -1016,13 +1161,22 @@ async function initCloudModal() {
       try {
         const effectiveModel = getEffectiveModel();
         const payload = {
-          provider: providerSelect.value,
+          auto_orchestrate: autoOrchestrateCheck ? autoOrchestrateCheck.checked : true,
+          provider: providerSelect ? providerSelect.value : "groq",
           model: effectiveModel,
-          routing_mode: routingSelect.value,
-          custom_base_url: customUrlInput.value.trim()
+          routing_mode: routingSelect ? routingSelect.value : "auto_hybrid",
+          custom_base_url: customUrlInput ? customUrlInput.value.trim() : "",
+          api_keys: {}
         };
-        if (apiKeyInput.value.trim()) {
-          payload.api_key = apiKeyInput.value.trim();
+
+        if (groqKeyInput && groqKeyInput.value.trim()) {
+          payload.api_keys.groq = groqKeyInput.value.trim();
+        }
+        if (geminiKeyInput && geminiKeyInput.value.trim()) {
+          payload.api_keys.gemini = geminiKeyInput.value.trim();
+        }
+        if (openaiKeyInput && openaiKeyInput.value.trim()) {
+          payload.api_keys.openai = openaiKeyInput.value.trim();
         }
 
         const res = await fetch("/api/cloud/config", {
@@ -1033,10 +1187,18 @@ async function initCloudModal() {
         const data = await res.json();
 
         if (data.success) {
-          apiKeyInput.value = "";
+          if (groqKeyInput) groqKeyInput.value = "";
+          if (geminiKeyInput) geminiKeyInput.value = "";
+          if (openaiKeyInput) openaiKeyInput.value = "";
+
           closeModal();
           initStatus(); // refresh header status badge
-          appendChatMessage("assistant", `🌐 **Cloud AI Configured**: Connected to <strong>${escapeHtml(data.config.provider.toUpperCase())} (${escapeHtml(data.config.model)})</strong> with <em>${escapeHtml(data.config.routing_mode)}</em>.`);
+
+          const activeInfo = data.config && data.config.locked_model
+            ? `${data.config.locked_model.provider.toUpperCase()} (${data.config.locked_model.model})`
+            : `${data.config.provider.toUpperCase()} (${data.config.model})`;
+
+          appendChatMessage("assistant", `🌐 **Cloud AI Orchestrator Updated**: Connected to <strong>${escapeHtml(activeInfo)}</strong> with routing strategy <em>${escapeHtml(data.config.routing_mode)}</em>.`);
         } else {
           alert(`Error saving config: ${data.error || "Unknown error"}`);
         }

@@ -495,62 +495,109 @@
       <div class="modal-card">
         <div class="modal-header">
           <div class="modal-title-group">
-            <h3>⚙️ Cloud AI & Hybrid Routing Setup</h3>
-            <p class="modal-subtitle">Connect Google Gemini, OpenAI, or Groq for complex reasoning and deep synthesis.</p>
+            <h3>⚡ Cloud AI & Multi-Provider Orchestrator</h3>
+            <p class="modal-subtitle">Save your API keys. The system auto-detects and locks onto the best available AI, with instant self-healing failover.</p>
           </div>
           <button type="button" id="btnCloseCloudModal" class="modal-close-btn">&times;</button>
         </div>
 
         <form id="cloudConfigForm" class="modal-body">
-          <div class="form-group">
-            <label for="cloudProviderSelect">AI Provider</label>
-            <select id="cloudProviderSelect" class="form-select">
-              <option value="groq">Groq (Ultra-Fast LPUs: openai/gpt-oss-120b, qwen3.8)</option>
-              <option value="gemini">Google Gemini (gemini-flash-latest, 2.5-flash)</option>
-              <option value="openai">OpenAI (GPT-4o-mini / GPT-4o)</option>
-              <option value="custom">Custom (OpenAI-Compatible / Local Server)</option>
-            </select>
+          <!-- Active Locked Engine Banner -->
+          <div id="orchestratorActiveBanner" class="orchestrator-active-banner">
+            <div class="orchestrator-banner-left">
+              <span class="orchestrator-icon">🔒</span>
+              <div>
+                <div class="orchestrator-title" id="lockedModelTitle">Locked Engine: Detecting...</div>
+                <div class="orchestrator-subtitle" id="lockedModelSubtitle">Auto-Failover Active • Sticks to best model</div>
+              </div>
+            </div>
+            <span class="orchestrator-badge" id="lockedModelBadge">READY</span>
           </div>
 
-          <div class="form-group" id="customUrlGroup" style="display: none;">
-            <label for="cloudCustomUrl">Custom Base URL</label>
-            <input type="text" id="cloudCustomUrl" class="form-input" placeholder="http://localhost:8000/v1">
+          <!-- Auto-Orchestrate Toggle -->
+          <label class="toggle-orchestrate-box" for="cloudAutoOrchestrate">
+            <input type="checkbox" id="cloudAutoOrchestrate" checked>
+            <div class="toggle-orchestrate-content">
+              <span class="toggle-orchestrate-title">Auto-Select & Stick to Best Model (Recommended)</span>
+              <span class="toggle-orchestrate-desc">Automatically selects the fastest working model across your keys, locks onto it, and instantly switches to the next best model on any error or rate limit.</span>
+            </div>
+          </label>
+
+          <!-- API Keys Box -->
+          <div class="api-keys-container">
+            <div class="api-keys-header">
+              <span class="api-keys-header-title">🔑 AI Provider API Keys</span>
+              <button type="button" id="btnProbeAllKeys" class="btn-link-action" title="Test all keys and find fastest working AI">⚡ Probe & Test All Keys</button>
+            </div>
+
+            <!-- Groq Key Card -->
+            <div class="provider-key-card">
+              <div class="provider-key-header">
+                <span class="provider-name-tag">⚡ Groq API Key <small style="color:var(--text-muted);">(Ultra-Fast 120B / 27B)</small></span>
+                <span id="groqKeyBadge" class="key-status-badge missing">⚪ Not set</span>
+              </div>
+              <div class="password-input-wrapper">
+                <input type="password" id="cloudApiKeyGroq" class="form-input" placeholder="gsk_...">
+                <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyGroq" title="Show / Hide">👁️</button>
+              </div>
+            </div>
+
+            <!-- Google Gemini Key Card -->
+            <div class="provider-key-card">
+              <div class="provider-key-header">
+                <span class="provider-name-tag">🌐 Google Gemini API Key <small style="color:var(--text-muted);">(Flash Latest)</small></span>
+                <span id="geminiKeyBadge" class="key-status-badge missing">⚪ Not set</span>
+              </div>
+              <div class="password-input-wrapper">
+                <input type="password" id="cloudApiKeyGemini" class="form-input" placeholder="AIzaSy...">
+                <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyGemini" title="Show / Hide">👁️</button>
+              </div>
+            </div>
+
+            <!-- OpenAI Key Card -->
+            <div class="provider-key-card">
+              <div class="provider-key-header">
+                <span class="provider-name-tag">🤖 OpenAI API Key <small style="color:var(--text-muted);">(GPT-4o-mini / GPT-4o)</small></span>
+                <span id="openaiKeyBadge" class="key-status-badge missing">⚪ Not set</span>
+              </div>
+              <div class="password-input-wrapper">
+                <input type="password" id="cloudApiKeyOpenAI" class="form-input" placeholder="sk-...">
+                <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyOpenAI" title="Show / Hide">👁️</button>
+              </div>
+            </div>
           </div>
 
-          <div class="form-group">
+          <!-- Manual Override (Visible when Auto-Orchestrate is unchecked or toggled) -->
+          <div class="form-group" id="manualOverrideGroup" style="display: none;">
             <div class="label-with-hint">
-              <label for="cloudApiKey">API Key</label>
-              <span class="hint-text" id="keyConfigHint">Stored locally, never shared</span>
+              <label for="cloudProviderSelect">Manual Provider & Model Override</label>
+              <button type="button" id="btnToggleCustomModel" class="btn-link-text">✏️ Custom Model ID</button>
             </div>
-            <div class="password-input-wrapper">
-              <input type="password" id="cloudApiKey" class="form-input" placeholder="Enter API Key (e.g. gsk_... or AIzaSy... or sk-...)">
-              <button type="button" id="btnToggleKeyVisibility" class="btn-toggle-eye" title="Show / Hide API Key">👁️</button>
+            <div style="display: flex; gap: 0.5rem;">
+              <select id="cloudProviderSelect" class="form-select" style="flex: 1;">
+                <option value="groq">Groq</option>
+                <option value="gemini">Google Gemini</option>
+                <option value="openai">OpenAI</option>
+                <option value="custom">Custom</option>
+              </select>
+              <select id="cloudModelSelect" class="form-select" style="flex: 2;">
+                <!-- Populated dynamically -->
+              </select>
             </div>
-            <small class="field-help" id="maskedKeyPreview"></small>
-          </div>
-
-          <div class="form-group">
-            <div class="label-with-hint">
-              <label for="cloudModelSelect">Model</label>
-              <button type="button" id="btnRefreshCloudModels" class="btn-link-action" title="Fetch live models available for your API key">🔄 Detect Live Models</button>
-            </div>
-            <select id="cloudModelSelect" class="form-select">
-              <!-- Dynamically populated -->
-            </select>
             <div class="custom-model-wrapper" id="customModelWrapper" style="display: none; margin-top: 0.35rem;">
               <input type="text" id="cloudModelInput" class="form-input" placeholder="Enter custom model ID (e.g. openai/gpt-oss-120b)">
             </div>
-            <div class="custom-model-toggle-row">
-              <button type="button" id="btnToggleCustomModel" class="btn-link-text">✏️ Custom Model ID</button>
+            <div class="form-group" id="customUrlGroup" style="display: none; margin-top: 0.35rem;">
+              <label for="cloudCustomUrl">Custom Base URL</label>
+              <input type="text" id="cloudCustomUrl" class="form-input" placeholder="http://localhost:8000/v1">
             </div>
-            <div class="model-quick-chips" id="modelQuickChips"></div>
           </div>
 
           <div class="form-group">
-            <label for="cloudRoutingMode">Hybrid Routing Strategy</label>
+            <label for="cloudRoutingMode">Routing Strategy Preference</label>
             <select id="cloudRoutingMode" class="form-select">
-              <option value="auto_hybrid">⚡ Auto-Hybrid (Recommended: Basic & Fast ➔ Ollama/Rules, Complex ➔ Cloud AI)</option>
               <option value="prefer_cloud">🌐 Prefer Cloud AI (Use Cloud AI for all analytical questions when online)</option>
+              <option value="auto_hybrid">⚡ Auto-Hybrid (Deterministic ➔ Local Engine, Complex ➔ Cloud AI)</option>
               <option value="prefer_ollama">💻 Prefer Local Ollama (Always use local GPU unless offline)</option>
             </select>
           </div>
@@ -558,18 +605,18 @@
           <div class="token-saving-callout">
             <div class="callout-icon">💡</div>
             <div class="callout-text">
-              <strong>Token Usage Optimizer Active:</strong>
-              Dataset context is persisted across chat turns in memory. Queries reuse existing context without re-sending the whole student cohort, reducing token consumption by <strong>90–95%</strong>.
+              <strong>Agentic Query Planner Active:</strong>
+              Local Ollama predicts query intent and extracts minimal DataFrame slices (~150 tokens), preventing rate limits and guaranteeing sub-second response times.
             </div>
           </div>
 
           <div id="cloudTestAlert" class="alert-box hidden"></div>
 
           <div class="modal-footer">
-            <button type="button" id="btnTestCloudConn" class="btn btn-outline">⚡ Test Connection</button>
+            <button type="button" id="btnTestCloudConn" class="btn btn-outline">⚡ Test Active AI</button>
             <div class="modal-footer-right">
               <button type="button" id="btnCancelCloudModal" class="btn btn-outline">Cancel</button>
-              <button type="submit" id="btnSaveCloudConfig" class="btn btn-primary">💾 Save Settings</button>
+              <button type="submit" id="btnSaveCloudConfig" class="btn btn-primary">💾 Save Keys & Settings</button>
             </div>
           </div>
         </form>

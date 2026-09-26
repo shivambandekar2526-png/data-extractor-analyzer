@@ -1,45 +1,34 @@
 """
-Cloud AI Client & Dataset Context Manager
-=========================================
-Connects to external Cloud AI providers (Google Gemini, OpenAI, Groq, Custom)
-with zero external library dependencies (uses Python standard library urllib).
-
+Cloud AI Engine Client & Multi-Provider Auto-Orchestrator
+==========================================================
+Unified interface for Google Gemini, Groq, OpenAI, and custom OpenAI-compatible APIs.
 Features:
-- Encrypted / masked API key storage in local configuration.
-- Persistent session cache: caches dataset representation across conversation turns,
-  avoiding re-sending large student datasets and cutting token usage by 90-95%.
-- Real-time connection testing & health diagnostics.
+- Multi-provider API keys storage (Groq, Gemini, OpenAI, Custom).
+- Intelligent auto-orchestration: Probes and locks onto the best available working model.
+- Model Stickiness: Remains locked to the active working model across turns.
+- Self-Healing Real-Time Failover: Automatically switches to the next best model on any error (429, 503, 404, timeout).
+- Persistent dataset context token caching to minimize prompt payload and costs.
 """
 
 import hashlib
 import json
+import logging
 import math
 import os
-import re
 import time
 import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
 
+logger = logging.getLogger(__name__)
 
 CONFIG_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "config"))
 CONFIG_FILE = os.path.join(CONFIG_DIR, "cloud_config.json")
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
+# Curated, verified working models for each provider (no outdated/dead endpoints)
 DEFAULT_PROVIDERS = {
-    "gemini": {
-        "name": "Google Gemini",
-        "default_model": "gemini-flash-latest",
-        "available_models": ["gemini-flash-latest", "gemini-flash-lite-latest", "gemini-2.5-flash", "gemini-2.5-pro"],
-        "base_url": "https://generativelanguage.googleapis.com/v1beta"
-    },
-    "openai": {
-        "name": "OpenAI",
-        "default_model": "gpt-4o-mini",
-        "available_models": ["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"],
-        "base_url": "https://api.openai.com/v1"
-    },
     "groq": {
         "name": "Groq",
         "default_model": "openai/gpt-oss-120b",
@@ -47,11 +36,30 @@ DEFAULT_PROVIDERS = {
             "openai/gpt-oss-120b",
             "qwen/qwen3.8-27b",
             "openai/gpt-oss-20b",
-            "allam-2-7b",
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant"
+            "allam-2-7b"
         ],
         "base_url": "https://api.groq.com/openai/v1"
+    },
+    "gemini": {
+        "name": "Google Gemini",
+        "default_model": "gemini-flash-latest",
+        "available_models": [
+            "gemini-flash-latest",
+            "gemini-flash-lite-latest",
+            "gemini-2.5-flash",
+            "gemini-2.5-pro"
+        ],
+        "base_url": "https://generativelanguage.googleapis.com/v1beta"
+    },
+    "openai": {
+        "name": "OpenAI",
+        "default_model": "gpt-4o-mini",
+        "available_models": [
+            "gpt-4o-mini",
+            "gpt-4o",
+            "gpt-3.5-turbo"
+        ],
+        "base_url": "https://api.openai.com/v1"
     },
     "custom": {
         "name": "Custom OpenAI-Compatible",
@@ -61,183 +69,377 @@ DEFAULT_PROVIDERS = {
     }
 }
 
+# Hierarchy of candidates for automatic orchestration (ranked by speed, capability, & quota)
+ORCHESTRATION_CANDIDATES = [
+    {"provider": "groq", "model": "openai/gpt-oss-120b", "label": "Groq Flagship (120B)"},
+    {"provider": "groq", "model": "qwen/qwen3.8-27b", "label": "Groq Fast Reasoning (27B)"},
+    {"provider": "gemini", "model": "gemini-flash-latest", "label": "Google Gemini Flash (Latest)"},
+    {"provider": "gemini", "model": "gemini-2.5-flash", "label": "Google Gemini 2.5 Flash"},
+    {"provider": "openai", "model": "gpt-4o-mini", "label": "OpenAI GPT-4o-mini"},
+    {"provider": "groq", "model": "openai/gpt-oss-20b", "label": "Groq Lightweight (20B)"},
+    {"provider": "openai", "model": "gpt-4o", "label": "OpenAI GPT-4o Flagship"},
+    {"provider": "gemini", "model": "gemini-2.5-pro", "label": "Google Gemini 2.5 Pro"}
+]
+
 
 class CloudClient:
-    """Interface to external Cloud AI providers with persistent dataset token caching."""
+    """Interface to external Cloud AI providers with multi-key auto-orchestration and failover."""
 
     # In-memory session store to preserve dataset state across multiple chat turns
     _sessions: Dict[str, Dict[str, Any]] = {}
 
+    # Currently locked-in working model across the application lifetime
+    _locked_model: Optional[Dict[str, str]] = None
+
+    # Model cooldown tracker: maps "provider:model" to expiration timestamp
+    _model_cooldowns: Dict[str, float] = {}
+
     def __init__(self):
         self.config = self.load_config()
+        if CloudClient._locked_model is None and self.config.get("auto_orchestrate", True):
+            # Attempt to set initial locked model from config or best candidate
+            CloudClient._locked_model = {
+                "provider": self.config.get("provider", "groq"),
+                "model": self.config.get("model", "openai/gpt-oss-120b")
+            }
 
     @classmethod
     def load_config(cls) -> Dict[str, Any]:
-        """Load configuration from disk or return default."""
+        """Load multi-provider configuration from disk or return default."""
         os.makedirs(CONFIG_DIR, exist_ok=True)
         default_cfg = {
-            "provider": "gemini",
-            "api_key": "",
-            "model": "gemini-2.0-flash",
+            "api_keys": {
+                "groq": "",
+                "gemini": "",
+                "openai": "",
+                "custom": ""
+            },
+            "provider": "groq",
+            "model": "openai/gpt-oss-120b",
             "routing_mode": "auto_hybrid",  # "auto_hybrid", "prefer_cloud", "prefer_ollama"
+            "auto_orchestrate": True,       # Auto-detect best working model and stick until error
             "custom_base_url": "",
             "temperature": 0.2,
             "enabled": True
         }
+
         if os.path.isfile(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                     saved = json.load(f)
-                    default_cfg.update(saved)
+
+                # Migration: if legacy single api_key was saved, copy into api_keys dict
+                if "api_key" in saved and "api_keys" not in saved:
+                    prov = saved.get("provider", "groq").lower()
+                    default_cfg["api_keys"][prov] = saved["api_key"]
+                elif "api_keys" in saved and isinstance(saved["api_keys"], dict):
+                    default_cfg["api_keys"].update(saved["api_keys"])
+
+                for k in ["provider", "model", "routing_mode", "auto_orchestrate", "custom_base_url", "temperature", "enabled"]:
+                    if k in saved:
+                        default_cfg[k] = saved[k]
             except Exception:
                 pass
+
         return default_cfg
 
     def save_config(self, new_cfg: Dict[str, Any]) -> Tuple[bool, str]:
-        """Save updated configuration to disk."""
+        """Save updated multi-provider configuration to disk."""
         os.makedirs(CONFIG_DIR, exist_ok=True)
-        # Update config fields
-        for k in ["provider", "api_key", "model", "routing_mode", "custom_base_url", "temperature", "enabled"]:
+
+        if "api_keys" in new_cfg and isinstance(new_cfg["api_keys"], dict):
+            for p, k in new_cfg["api_keys"].items():
+                if isinstance(k, str) and k.strip():
+                    self.config["api_keys"][p.lower()] = k.strip()
+
+        # Support single api_key update
+        if "api_key" in new_cfg and isinstance(new_cfg["api_key"], str):
+            prov = new_cfg.get("provider", self.config.get("provider", "groq")).lower()
+            if new_cfg["api_key"].strip():
+                self.config["api_keys"][prov] = new_cfg["api_key"].strip()
+
+        for k in ["provider", "model", "routing_mode", "auto_orchestrate", "custom_base_url", "temperature", "enabled"]:
             if k in new_cfg:
                 self.config[k] = new_cfg[k]
 
-        # Strip whitespace from API key
-        if "api_key" in self.config and isinstance(self.config["api_key"], str):
-            self.config["api_key"] = self.config["api_key"].strip()
+        # Sync primary api_key field for backward compatibility
+        cur_prov = self.config.get("provider", "groq").lower()
+        self.config["api_key"] = self.config.get("api_keys", {}).get(cur_prov, "")
+
+        # If user explicitly changed provider/model, update the locked model
+        if "provider" in new_cfg or "model" in new_cfg:
+            CloudClient._locked_model = {
+                "provider": self.config.get("provider", "groq"),
+                "model": self.config.get("model", "openai/gpt-oss-120b")
+            }
 
         try:
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:
                 json.dump(self.config, f, indent=2)
-            return True, "Configuration saved successfully."
+            return True, "Cloud AI configuration saved successfully."
         except Exception as e:
             return False, f"Failed to write config: {e}"
 
-    def is_configured(self) -> bool:
-        """Check if an API key is provided and cloud AI is enabled."""
-        key = self.config.get("api_key", "").strip()
-        return bool(key and self.config.get("enabled", True))
+    def get_api_key(self, provider: Optional[str] = None) -> str:
+        """Retrieve the API key for the requested provider."""
+        prov = (provider or self.config.get("provider", "groq")).lower()
+        keys_dict = self.config.get("api_keys", {})
+        key = keys_dict.get(prov, "").strip()
+        if not key and prov == self.config.get("provider", "").lower():
+            key = self.config.get("api_key", "").strip()
+        return key
 
-    def get_masked_key(self) -> str:
-        """Return masked key for safe UI display (e.g. AIzaSy...8xK9)."""
-        key = self.config.get("api_key", "").strip()
-        if not key:
+    def is_configured(self) -> bool:
+        """Check if at least one AI provider has an API key configured and cloud AI is enabled."""
+        if not self.config.get("enabled", True):
+            return False
+        keys_dict = self.config.get("api_keys", {})
+        if any(bool(k.strip()) for k in keys_dict.values()):
+            return True
+        return bool(self.config.get("api_key", "").strip())
+
+    @staticmethod
+    def mask_key(key: str) -> str:
+        """Return masked key for safe UI display (e.g. gsk_7y4...ZR2V)."""
+        k = (key or "").strip()
+        if not k:
             return ""
-        if len(key) <= 8:
-            return key[:2] + "•" * (len(key) - 2)
-        return key[:6] + "•" * (len(key) - 10) + key[-4:]
+        if len(k) <= 8:
+            return k[:2] + "•" * (len(k) - 2)
+        return k[:6] + "•" * (len(k) - 10) + k[-4:]
 
     def get_safe_config(self) -> Dict[str, Any]:
-        """Return configuration safe for frontend rendering (never exposes raw API key)."""
+        """Return configuration safe for frontend rendering (never exposes raw API keys)."""
+        keys_dict = self.config.get("api_keys", {})
+        active_locked = CloudClient._locked_model or {
+            "provider": self.config.get("provider", "groq"),
+            "model": self.config.get("model", "openai/gpt-oss-120b")
+        }
+
         return {
-            "provider": self.config.get("provider", "gemini"),
-            "model": self.config.get("model", "gemini-2.0-flash"),
+            "provider": self.config.get("provider", "groq"),
+            "model": self.config.get("model", "openai/gpt-oss-120b"),
             "routing_mode": self.config.get("routing_mode", "auto_hybrid"),
+            "auto_orchestrate": self.config.get("auto_orchestrate", True),
             "custom_base_url": self.config.get("custom_base_url", ""),
             "enabled": self.config.get("enabled", True),
             "is_configured": self.is_configured(),
-            "masked_key": self.get_masked_key(),
+            "locked_model": active_locked,
+            "api_keys_status": {
+                p: bool(self.get_api_key(p)) for p in ["groq", "gemini", "openai", "custom"]
+            },
+            "masked_keys": {
+                p: self.mask_key(self.get_api_key(p)) for p in ["groq", "gemini", "openai", "custom"]
+            },
             "available_providers": DEFAULT_PROVIDERS
         }
 
-    def test_connection(self) -> Tuple[bool, str]:
-        """Test API key validity and remote service connectivity."""
-        if not self.is_configured():
-            return False, "No API key configured."
+    # =========================================================================
+    # MODEL PROBING & ORCHESTRATION ENGINE ("LOCK & STICK")
+    # =========================================================================
 
-        provider = self.config.get("provider", "gemini").lower()
-        api_key = self.config.get("api_key", "").strip()
-        model = self.config.get("model", "gemini-2.0-flash")
-
-        try:
-            if provider == "gemini":
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-                payload = {
-                    "contents": [{"parts": [{"text": "Hello, respond with 'OK'."}]}],
-                    "generationConfig": {"maxOutputTokens": 10, "temperature": 0.0}
-                }
-                data_bytes = json.dumps(payload).encode("utf-8")
-                req = urllib.request.Request(
-                    url,
-                    data=data_bytes,
-                    headers={
-                        "Content-Type": "application/json",
-                        "User-Agent": USER_AGENT
-                    }
-                )
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    if resp.status == 200:
-                        return True, f"Successfully connected to Google Gemini ({model})!"
-                    return False, f"Unexpected response status {resp.status}"
-
-            else:  # OpenAI, Groq, or Custom
-                base_url = self.config.get("custom_base_url") or DEFAULT_PROVIDERS.get(provider, {}).get("base_url", "https://api.openai.com/v1")
-                url = f"{base_url.rstrip('/')}/chat/completions"
-                payload = {
-                    "model": model,
-                    "messages": [{"role": "user", "content": "Respond with 'OK'."}],
-                    "max_tokens": 10,
-                    "temperature": 0.0
-                }
-                data_bytes = json.dumps(payload).encode("utf-8")
-                req = urllib.request.Request(
-                    url,
-                    data=data_bytes,
-                    headers={
-                        "Content-Type": "application/json",
-                        "Authorization": f"Bearer {api_key}",
-                        "User-Agent": USER_AGENT
-                    }
-                )
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    if resp.status == 200:
-                        return True, f"Successfully connected to {provider.upper()} ({model})!"
-                    return False, f"Unexpected response status {resp.status}"
-
-        except urllib.error.HTTPError as e:
-            err_body = e.read().decode("utf-8", errors="ignore")
-            try:
-                err_json = json.loads(err_body)
-                msg = err_json.get("error", {}).get("message", str(e))
-            except Exception:
-                msg = str(e)
-            return False, f"API Error ({e.code}): {msg}"
-        except Exception as e:
-            return False, f"Connection Failed: {e}"
-
-    def fetch_live_models(self, provider: Optional[str] = None, api_key: Optional[str] = None) -> List[Dict[str, Any]]:
+    def probe_candidate(
+        self,
+        provider: str,
+        model: str,
+        api_key: Optional[str] = None,
+        timeout: int = 5
+    ) -> Tuple[bool, str, int]:
         """
-        Dynamically query remote provider for available chat/completion models.
-        Returns a list of dicts: [{"id": model_id, "label": display_name, "recommended": bool}]
-        Falls back to curated list if remote query fails.
+        Sends a minimal test ping to check if a specific model endpoint is active and working.
+        Returns: (success: bool, message: str, latency_ms: int)
         """
-        if not provider:
-            provider = self.config.get("provider", "gemini").lower()
-        if not api_key:
-            api_key = self.config.get("api_key", "").strip()
-
-        provider = provider.lower()
-        live_models: List[str] = []
+        prov = provider.lower()
+        key = (api_key or self.get_api_key(prov)).strip()
+        if not key and prov != "custom":
+            return False, "No API key configured for this provider.", 0
 
         headers = {
             "User-Agent": USER_AGENT,
             "Content-Type": "application/json"
         }
 
+        t0 = time.time()
         try:
-            if provider == "groq" and api_key:
+            if prov == "gemini":
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+                payload = {
+                    "contents": [{"parts": [{"text": "Respond with OK"}]}],
+                    "generationConfig": {"maxOutputTokens": 5, "temperature": 0.0}
+                }
+                data_bytes = json.dumps(payload).encode("utf-8")
+                req = urllib.request.Request(url, data=data_bytes, headers=headers)
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    lat = round((time.time() - t0) * 1000)
+                    if resp.status == 200:
+                        return True, f"Verified ({lat}ms)", lat
+                    return False, f"Unexpected HTTP status {resp.status}", lat
+
+            else:  # Groq, OpenAI, or Custom
+                base_url = self.config.get("custom_base_url") if prov == "custom" else DEFAULT_PROVIDERS.get(prov, {}).get("base_url", "https://api.openai.com/v1")
+                url = f"{base_url.rstrip('/')}/chat/completions"
+                headers["Authorization"] = f"Bearer {key}"
+                payload = {
+                    "model": model,
+                    "messages": [{"role": "user", "content": "Respond with OK"}],
+                    "max_tokens": 5,
+                    "temperature": 0.0
+                }
+                data_bytes = json.dumps(payload).encode("utf-8")
+                req = urllib.request.Request(url, data=data_bytes, headers=headers)
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    lat = round((time.time() - t0) * 1000)
+                    if resp.status == 200:
+                        return True, f"Verified ({lat}ms)", lat
+                    return False, f"Unexpected HTTP status {resp.status}", lat
+
+        except urllib.error.HTTPError as e:
+            lat = round((time.time() - t0) * 1000)
+            err_body = e.read().decode("utf-8", errors="ignore")
+            try:
+                err_json = json.loads(err_body)
+                msg = err_json.get("error", {}).get("message", str(e))
+            except Exception:
+                msg = str(e)
+            return False, f"HTTP {e.code}: {msg}", lat
+        except Exception as e:
+            lat = round((time.time() - t0) * 1000)
+            return False, f"Connection Failed: {e}", lat
+
+    def get_best_working_model(self, force_refresh: bool = False) -> Dict[str, str]:
+        """
+        Orchestration Core: Selects the best working model across all configured providers.
+        STRICT STICKINESS: Once locked onto a working model, sticks to it until an error occurs.
+        """
+        now = time.time()
+
+        # If not forcing refresh, check if currently locked model is still valid and not in cooldown
+        if not force_refresh and CloudClient._locked_model:
+            locked_prov = CloudClient._locked_model.get("provider", "")
+            locked_mod = CloudClient._locked_model.get("model", "")
+            cooldown_key = f"{locked_prov}:{locked_mod}"
+            if now >= CloudClient._model_cooldowns.get(cooldown_key, 0):
+                # Has key and not in cooldown -> stick to it!
+                if self.get_api_key(locked_prov):
+                    return CloudClient._locked_model
+
+        # Probe candidates in order of capability / speed
+        for cand in ORCHESTRATION_CANDIDATES:
+            prov = cand["provider"]
+            mod = cand["model"]
+            key = self.get_api_key(prov)
+            if not key:
+                continue
+
+            cooldown_key = f"{prov}:{mod}"
+            if now < CloudClient._model_cooldowns.get(cooldown_key, 0):
+                continue  # In temporary cooldown due to recent error
+
+            # Probe candidate
+            ok, msg, _ = self.probe_candidate(prov, mod, key, timeout=5)
+            if ok:
+                CloudClient._locked_model = {"provider": prov, "model": mod}
+                self.config["provider"] = prov
+                self.config["model"] = mod
+                # Persist updated locked provider/model
+                try:
+                    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+                        json.dump(self.config, f, indent=2)
+                except Exception:
+                    pass
+                logger.info("Cloud Orchestrator locked onto model: %s (%s)", mod, prov)
+                return CloudClient._locked_model
+
+        # Fallback to configured model if all candidates failed or no candidates matched
+        return {
+            "provider": self.config.get("provider", "groq"),
+            "model": self.config.get("model", "openai/gpt-oss-120b")
+        }
+
+    def mark_model_failed(self, provider: str, model: str, cooldown_seconds: int = 180) -> None:
+        """Mark a model as failed and place it into temporary cooldown."""
+        cooldown_key = f"{provider.lower()}:{model}"
+        CloudClient._model_cooldowns[cooldown_key] = time.time() + cooldown_seconds
+        # Clear locked model so orchestrator picks next working model
+        if CloudClient._locked_model and CloudClient._locked_model.get("provider") == provider and CloudClient._locked_model.get("model") == model:
+            CloudClient._locked_model = None
+
+    def probe_all_providers(self, keys_dict: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+        """
+        Test all configured or supplied keys across providers and select the best working model.
+        Returns a comprehensive report for the UI.
+        """
+        keys_to_test = keys_dict if keys_dict is not None else self.config.get("api_keys", {})
+        report: Dict[str, Any] = {}
+
+        for prov, p_info in DEFAULT_PROVIDERS.items():
+            k = (keys_to_test.get(prov) or self.get_api_key(prov)).strip()
+            if not k:
+                report[prov] = {
+                    "configured": False,
+                    "success": False,
+                    "model": p_info.get("default_model", ""),
+                    "message": "No API key configured."
+                }
+                continue
+
+            # Probe default model for this provider
+            test_mod = p_info.get("default_model", "")
+            ok, msg, lat = self.probe_candidate(prov, test_mod, k, timeout=6)
+            report[prov] = {
+                "configured": True,
+                "success": ok,
+                "model": test_mod,
+                "latency_ms": lat,
+                "message": msg
+            }
+
+        # Select and lock best model
+        best = self.get_best_working_model(force_refresh=True)
+        report["best_locked_model"] = best
+        return report
+
+    def test_connection(
+        self,
+        provider: Optional[str] = None,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None
+    ) -> Tuple[bool, str]:
+        """Test API key validity and remote connectivity for a given or currently active model."""
+        prov = (provider or self.config.get("provider", "groq")).lower()
+        key = (api_key or self.get_api_key(prov)).strip()
+        mod = model or self.config.get("model", DEFAULT_PROVIDERS.get(prov, {}).get("default_model", ""))
+
+        ok, msg, lat = self.probe_candidate(prov, mod, key, timeout=10)
+        if ok:
+            return True, f"Successfully connected to {prov.upper()} ({mod}) in {lat}ms!"
+        return False, f"API Error: {msg}"
+
+    def fetch_live_models(self, provider: Optional[str] = None, api_key: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Dynamically query remote provider for available chat/completion models."""
+        prov = (provider or self.config.get("provider", "groq")).lower()
+        key = (api_key or self.get_api_key(prov)).strip()
+
+        headers = {
+            "User-Agent": USER_AGENT,
+            "Content-Type": "application/json"
+        }
+
+        live_models: List[str] = []
+        try:
+            if prov == "groq" and key:
                 url = "https://api.groq.com/openai/v1/models"
-                headers["Authorization"] = f"Bearer {api_key}"
+                headers["Authorization"] = f"Bearer {key}"
                 req = urllib.request.Request(url, headers=headers)
                 with urllib.request.urlopen(req, timeout=6) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
                     for m in data.get("data", []):
                         mid = m.get("id", "")
-                        # Filter out non-chat models (audio, whisper, guard only)
                         if not any(k in mid.lower() for k in ["whisper", "guard", "orpheus"]):
                             live_models.append(mid)
 
-            elif provider == "gemini" and api_key:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+            elif prov == "gemini" and key:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models?key={key}"
                 req = urllib.request.Request(url, headers=headers)
                 with urllib.request.urlopen(req, timeout=6) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
@@ -247,9 +449,9 @@ class CloudClient:
                         if "generateContent" in methods and not any(k in mid.lower() for k in ["tts", "image", "robotics"]):
                             live_models.append(mid)
 
-            elif provider == "openai" and api_key:
+            elif prov == "openai" and key:
                 url = "https://api.openai.com/v1/models"
-                headers["Authorization"] = f"Bearer {api_key}"
+                headers["Authorization"] = f"Bearer {key}"
                 req = urllib.request.Request(url, headers=headers)
                 with urllib.request.urlopen(req, timeout=6) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
@@ -260,12 +462,11 @@ class CloudClient:
         except Exception:
             pass
 
-        # If live models found, build curated response
         if live_models:
             priority_order = [
                 "openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b", "allam-2-7b",
                 "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-2.5-flash", "gemini-2.5-pro",
-                "gpt-4o-mini", "gpt-4o", "gpt-4-turbo"
+                "gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"
             ]
             result = []
             for p in priority_order:
@@ -276,15 +477,12 @@ class CloudClient:
                     result.append({"id": m, "label": m, "recommended": False})
             return result
 
-        # Fallback to curated models from DEFAULT_PROVIDERS
-        curated = DEFAULT_PROVIDERS.get(provider, {}).get("available_models", [])
-        default_m = DEFAULT_PROVIDERS.get(provider, {}).get("default_model", "")
+        curated = DEFAULT_PROVIDERS.get(prov, {}).get("available_models", [])
+        default_m = DEFAULT_PROVIDERS.get(prov, {}).get("default_model", "")
         return [{"id": m, "label": m, "recommended": (m == default_m)} for m in curated]
 
     # =========================================================================
     # TOKEN MINIMIZATION & DATASET PERSISTENCE
-    # =========================================================================
-    # TOKEN MINIMIZATION & FULL DATASET PERSISTENCE
     # =========================================================================
 
     @staticmethod
@@ -304,10 +502,7 @@ class CloudClient:
 
     @staticmethod
     def _build_dataset_context(students: List[Dict[str, Any]], dataset_summary: str) -> str:
-        """
-        Build complete dataset context containing 100% of all student records and all fields.
-        Every column and every row is preserved in full context so the AI can answer any question.
-        """
+        """Build dataset summary for session context."""
         total_st = len(students)
         clean_students = CloudClient._clean_for_json(students)
         students_json = json.dumps(clean_students, ensure_ascii=False)
@@ -315,19 +510,17 @@ class CloudClient:
         return (
             f"=== COHORT OVERVIEW & SUMMARY STATISTICS ===\n"
             f"{dataset_summary}\n\n"
-            f"=== COMPLETE STUDENT DATASET RECORDS ({total_st} CANDIDATES - ALL FIELDS INCLUDED) ===\n"
+            f"=== COMPLETE STUDENT DATASET RECORDS ({total_st} CANDIDATES) ===\n"
             f"{students_json}\n\n"
             f"=== INSTRUCTIONS FOR THE ASSISTANT ===\n"
-            f"1. You have the 100% FULL dataset containing all {total_st} individual student records with every single column (Seat No, Name, Gender, Candidate Type, PRN, ABC ID, Semester, Result Status, Remarks, SGPI, CGPI, and all subject theory/internal/practical marks, grades, and credits) loaded into your session memory.\n"
+            f"1. You have the examination dataset with all student records.\n"
             f"2. You can answer ANY question about: individual students (by name, seat number, PRN, or rank), subject marks, theory vs lab scores, toppers, failures/KTs, semester comparisons, or cohort statistics.\n"
-            f"3. Always reference the actual records above to provide exact, factual, detailed answers to whatever the user asks.\n"
-            f"4. If asked to modify or sort records (e.g. 'remove first 2 records', 'filter passed', 'sort by SGPI'), "
-            f"return the matching JSON action and parameters according to the schema.\n"
-            f"5. Always return valid JSON with 'action' and 'reply'."
+            f"3. Always reference the actual records above to provide exact, factual, detailed answers.\n"
+            f"4. Always return valid JSON with 'action' and 'reply'."
         )
 
     def _compute_dataset_fingerprint(self, students: List[Dict[str, Any]]) -> str:
-        """Compute deterministic hash of the loaded dataset to detect any modifications or new loads."""
+        """Compute deterministic hash of the loaded dataset to detect any modifications."""
         if not students:
             return "empty"
         total = len(students)
@@ -345,88 +538,68 @@ class CloudClient:
         students: List[Dict[str, Any]],
         system_instruction: str
     ) -> Tuple[str, bool]:
-        """
-        Maintains persistent dataset session context in memory.
-        Returns: (session_id, is_new_session)
-        If session exists and dataset hasn't changed, is_new_session is False,
-        allowing all subsequent queries to completely omit re-sending the dataset!
-        """
+        """Maintains persistent dataset session context in memory."""
         fingerprint = self._compute_dataset_fingerprint(students)
         session = self._sessions.get(session_id)
 
         if session and session.get("fingerprint") == fingerprint and (session.get("gemini_contents") or session.get("messages")):
-            # Persistent session active: dataset already resident in context!
             return session_id, False
 
-        # Initialize or re-initialize session with dataset
         self._sessions[session_id] = {
             "fingerprint": fingerprint,
             "created_at": os.times().elapsed,
-            "messages": [],  # OpenAI format
-            "gemini_contents": [],  # Gemini format
+            "messages": [],
+            "gemini_contents": [],
             "summary_injected": True
         }
         return session_id, True
 
     def notify_dataset_modified(self, session_id: str, modification_note: str) -> None:
-        """Invalidate or update session when dataset records are modified."""
+        """Invalidate session when dataset records are modified."""
         if session_id in self._sessions:
-            # Clear fingerprint to force fresh full-dataset context seed on next query
             self._sessions[session_id]["fingerprint"] = ""
             self._sessions[session_id]["gemini_contents"] = []
             self._sessions[session_id]["messages"] = []
 
-    def generate(
+    # =========================================================================
+    # SINGLE PROVIDER CALL EXECUTION
+    # =========================================================================
+
+    def _execute_provider_call(
         self,
-        user_prompt: str = "",
-        system_instruction: str = "",
-        dataset_summary: str = "",
-        students: Optional[List[Dict[str, Any]]] = None,
-        dataframe_slice: Optional[str] = None,
-        session_id: str = "default_session",
-        format_json: bool = True,
-        timeout: int = 40,
-        prompt: Optional[str] = None,
-        system: Optional[str] = None,
-        temperature: Optional[float] = None
+        provider: str,
+        model: str,
+        api_key: str,
+        user_prompt: str,
+        system_instruction: str,
+        dataset_summary: str,
+        students: List[Dict[str, Any]],
+        dataframe_slice: Optional[str],
+        session_id: str,
+        format_json: bool,
+        timeout: int,
+        temperature: float
     ) -> str:
-        """
-        Execute request with persistent dataset context and token minimization.
-        Full student records or targeted DataFrame slices are forwarded to Cloud AI
-        for maximum precision and minimal latency/token consumption.
-        """
-        if prompt is not None:
-            user_prompt = prompt
-        if system is not None:
-            system_instruction = system
-        if students is None:
-            students = []
-
-        if not self.is_configured():
-            raise RuntimeError("Cloud AI is not configured or disabled.")
-
-        provider = self.config.get("provider", "gemini").lower()
-        api_key = self.config.get("api_key", "").strip()
-        model = self.config.get("model", "gemini-3.8-flash")
-        if temperature is None:
-            temperature = float(self.config.get("temperature", 0.2))
-
+        """Low-level execution of a single request to either Google Gemini or OpenAI/Groq."""
         sess_id, is_new = self.get_or_create_session(session_id, dataset_summary, students, system_instruction)
         session = self._sessions[sess_id]
 
-        # -------------------------------------------------------------
-        # Provider: Google Gemini
-        # -------------------------------------------------------------
+        user_turn_text = f"USER QUERY: {user_prompt}"
+        if dataframe_slice:
+            user_turn_text += f"\n\n=== RELEVANT EXTRACTED DATAFRAME SLICE ===\n{dataframe_slice}"
+        user_turn_text += "\n\nRespond with valid JSON matching the schema."
+
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": USER_AGENT
+        }
+
+        # --- Google Gemini ---
         if provider == "gemini":
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-
-            user_turn_text = f"USER QUERY: {user_prompt}"
-            if dataframe_slice:
-                user_turn_text += f"\n\n=== RELEVANT EXTRACTED DATAFRAME SLICE ===\n{dataframe_slice}"
-            user_turn_text += "\n\nRespond with valid JSON matching the schema."
+            contents = list(session.get("gemini_contents", []))
 
             if is_new or len(contents) == 0:
-                # Turn 1: Seed session context with overview and dataset records
                 full_ctx = self._build_dataset_context(students, dataset_summary)
                 contents = [
                     {
@@ -453,13 +626,9 @@ class CloudClient:
                     }
                 ]
             else:
-                # Subsequent turns: Send new user query with targeted DataFrame slice
-                contents.append({
-                    "role": "user",
-                    "parts": [{"text": user_turn_text}]
-                })
+                contents.append({"role": "user", "parts": [{"text": user_turn_text}]})
 
-            payload: Dict[str, Any] = {
+            payload = {
                 "contents": contents,
                 "systemInstruction": {"parts": [{"text": system_instruction}]},
                 "generationConfig": {
@@ -467,26 +636,11 @@ class CloudClient:
                     "responseMimeType": "application/json" if format_json else "text/plain"
                 }
             }
-
             data_bytes = json.dumps(payload).encode("utf-8")
-            req = urllib.request.Request(
-                url,
-                data=data_bytes,
-                headers={
-                    "Content-Type": "application/json",
-                    "User-Agent": USER_AGENT
-                }
-            )
-            try:
-                with urllib.request.urlopen(req, timeout=timeout) as resp:
-                    resp_data = json.loads(resp.read().decode("utf-8"))
-            except urllib.error.HTTPError as e:
-                if e.code in (503, 429):
-                    time.sleep(2.0)
-                    with urllib.request.urlopen(req, timeout=timeout) as resp:
-                        resp_data = json.loads(resp.read().decode("utf-8"))
-                else:
-                    raise
+            req = urllib.request.Request(url, data=data_bytes, headers=headers)
+
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                resp_data = json.loads(resp.read().decode("utf-8"))
 
             candidates = resp_data.get("candidates", [])
             if not candidates:
@@ -494,29 +648,19 @@ class CloudClient:
             parts = candidates[0].get("content", {}).get("parts", [])
             reply_text = parts[0].get("text", "") if parts else ""
 
-            # Save response to persistent session history
             contents.append({"role": "model", "parts": [{"text": reply_text}]})
-
-            # Cap history while ALWAYS PRESERVING Turn 0 (the full dataset seed and confirmation)
             if len(contents) > 24:
                 contents = contents[:2] + contents[-16:]
             session["gemini_contents"] = contents
-
             return reply_text
 
-        # -------------------------------------------------------------
-        # Provider: OpenAI / Groq / Custom
-        # -------------------------------------------------------------
+        # --- OpenAI / Groq / Custom ---
         else:
-            base_url = self.config.get("custom_base_url") or DEFAULT_PROVIDERS.get(provider, {}).get("base_url", "https://api.openai.com/v1")
+            base_url = self.config.get("custom_base_url") if provider == "custom" else DEFAULT_PROVIDERS.get(provider, {}).get("base_url", "https://api.openai.com/v1")
             url = f"{base_url.rstrip('/')}/chat/completions"
+            headers["Authorization"] = f"Bearer {api_key}"
 
             messages = list(session.get("messages", []))
-            user_turn_text = f"USER QUERY: {user_prompt}"
-            if dataframe_slice:
-                user_turn_text += f"\n\n=== RELEVANT EXTRACTED DATAFRAME SLICE ===\n{dataframe_slice}"
-            user_turn_text += "\n\nRespond with valid JSON matching the schema."
-
             if is_new or len(messages) == 0:
                 full_ctx = self._build_dataset_context(students, dataset_summary)
                 messages = [
@@ -530,10 +674,7 @@ class CloudClient:
                     }
                 ]
             else:
-                messages.append({
-                    "role": "user",
-                    "content": user_turn_text
-                })
+                messages.append({"role": "user", "content": user_turn_text})
 
             payload = {
                 "model": model,
@@ -544,28 +685,104 @@ class CloudClient:
                 payload["response_format"] = {"type": "json_object"}
 
             data_bytes = json.dumps(payload).encode("utf-8")
-            req = urllib.request.Request(
-                url,
-                data=data_bytes,
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {api_key}",
-                    "User-Agent": USER_AGENT
-                }
-            )
+            req = urllib.request.Request(url, data=data_bytes, headers=headers)
+
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 resp_data = json.loads(resp.read().decode("utf-8"))
 
             choices = resp_data.get("choices", [])
             if not choices:
-                raise RuntimeError("Empty choices returned from API.")
+                raise RuntimeError(f"Empty choices returned from {provider} API.")
             reply_text = choices[0].get("message", {}).get("content", "")
 
-            # Save to history
             messages.append({"role": "assistant", "content": reply_text})
-            # Cap history while ALWAYS PRESERVING system message with full dataset
             if len(messages) > 24:
-                messages = [messages[0]] + messages[-16:]
+                messages = messages[:2] + messages[-16:]
             session["messages"] = messages
-
             return reply_text
+
+    # =========================================================================
+    # SELF-HEALING GENERATION WITH AUTOMATIC FAILOVER
+    # =========================================================================
+
+    def generate(
+        self,
+        user_prompt: str = "",
+        system_instruction: str = "",
+        dataset_summary: str = "",
+        students: Optional[List[Dict[str, Any]]] = None,
+        dataframe_slice: Optional[str] = None,
+        session_id: str = "default_session",
+        format_json: bool = True,
+        timeout: int = 40,
+        prompt: Optional[str] = None,
+        system: Optional[str] = None,
+        temperature: Optional[float] = None
+    ) -> str:
+        """
+        Execute request with persistent dataset context and automatic multi-model failover.
+        Sticks to the active locked model, and seamlessly switches to the next best model if an error occurs.
+        """
+        if prompt is not None:
+            user_prompt = prompt
+        if system is not None:
+            system_instruction = system
+        if students is None:
+            students = []
+
+        if not self.is_configured():
+            raise RuntimeError("Cloud AI is not configured or disabled.")
+
+        if temperature is None:
+            temperature = float(self.config.get("temperature", 0.2))
+
+        auto_orchestrate = self.config.get("auto_orchestrate", True)
+        attempts = 0
+        max_attempts = 4 if auto_orchestrate else 1
+        last_error = None
+
+        while attempts < max_attempts:
+            attempts += 1
+            if auto_orchestrate:
+                active_candidate = self.get_best_working_model(force_refresh=(attempts > 1))
+                provider = active_candidate["provider"]
+                model = active_candidate["model"]
+            else:
+                provider = self.config.get("provider", "groq").lower()
+                model = self.config.get("model", "openai/gpt-oss-120b")
+
+            api_key = self.get_api_key(provider)
+            if not api_key and provider != "custom":
+                continue
+
+            try:
+                reply = self._execute_provider_call(
+                    provider=provider,
+                    model=model,
+                    api_key=api_key,
+                    user_prompt=user_prompt,
+                    system_instruction=system_instruction,
+                    dataset_summary=dataset_summary,
+                    students=students,
+                    dataframe_slice=dataframe_slice,
+                    session_id=session_id,
+                    format_json=format_json,
+                    timeout=timeout,
+                    temperature=temperature
+                )
+                # Successful execution: update primary config so locked model is persisted
+                self.config["provider"] = provider
+                self.config["model"] = model
+                return reply
+
+            except Exception as e:
+                last_error = e
+                logger.warning(
+                    "Cloud AI request failed on %s (%s): %s. Orchestrating failover to next candidate...",
+                    provider, model, e
+                )
+                self.mark_model_failed(provider, model, cooldown_seconds=180)
+                if not auto_orchestrate:
+                    raise
+
+        raise RuntimeError(f"All configured cloud AI models encountered errors. Last error: {last_error}")
