@@ -587,7 +587,12 @@ class CloudClient:
         user_turn_text = f"USER QUERY: {user_prompt}"
         if dataframe_slice:
             user_turn_text += f"\n\n=== RELEVANT EXTRACTED DATAFRAME SLICE ===\n{dataframe_slice}"
-        user_turn_text += "\n\nRespond with valid JSON matching the schema."
+        user_turn_text += (
+            "\n\nInstructions:\n"
+            "- For questions about cohort averages, totals, counts, pass rates, or distributions, always use the complete cohort data and DATASET FACTS above.\n"
+            "- If a targeted slice is shown above (e.g. specific course or top N), answer based on the query context.\n"
+            "- Respond with valid JSON matching the schema."
+        )
 
         headers = {
             "Content-Type": "application/json",

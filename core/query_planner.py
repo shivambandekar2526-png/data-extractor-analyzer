@@ -55,6 +55,56 @@ class LocalQueryPlanner:
     def __init__(self, ollama_client: Optional[OllamaClient] = None):
         self.ollama_client = ollama_client
 
+    @staticmethod
+    def _clean_plan_fields(plan: Dict[str, Any], query: str) -> Dict[str, Any]:
+        p = query.strip().lower()
+        null_strings = {
+            "null", "none", "nil", "n/a", "undefined", "all", "",
+            "student name or seat or null", "column_name or null"
+        }
+
+        # 1. Clean student_filter
+        sf = plan.get("student_filter")
+        if sf is not None:
+            sf_str = str(sf).strip().lower()
+            if sf_str in null_strings:
+                plan["student_filter"] = None
+            else:
+                plan["student_filter"] = str(sf).strip()
+
+        # 2. Clean sort_by
+        sb = plan.get("sort_by")
+        if sb is not None:
+            sb_str = str(sb).strip().lower()
+            if sb_str in null_strings:
+                plan["sort_by"] = None
+            else:
+                plan["sort_by"] = str(sb).strip()
+
+        # 3. Aggregate / cohort query detection: NEVER truncate rows!
+        is_aggregate_or_all = any(w in p for w in [
+            "average", "mean", "median", "sum", "total", "count", "how many",
+            "percentage", "overall", "all", "every", "entire", "cohort", "distribution",
+            "missing", "pass rate", "fail rate", "summary", "stats", "statistics",
+            "names of all", "list of all", "all students", "each student"
+        ])
+
+        explicit_n_match = re.search(r"\b(top|first|last|bottom|highest|lowest)\s+(\d+)\b", p) or re.search(r"\b(\d+)\s+(toppers|students|performers|ranks)\b", p)
+        if explicit_n_match:
+            val = explicit_n_match.group(2) if explicit_n_match.lastindex >= 2 else explicit_n_match.group(1)
+            try:
+                plan["limit"] = int(val)
+            except (ValueError, TypeError):
+                pass
+        elif is_aggregate_or_all:
+            plan["limit"] = None
+            plan["student_filter"] = None
+        elif plan.get("limit") is not None:
+            if not any(w in p for w in ["top", "bottom", "highest", "lowest", "first", "last"]):
+                plan["limit"] = None
+
+        return plan
+
     def plan_query(
         self,
         query: str,
@@ -78,6 +128,7 @@ class LocalQueryPlanner:
         """
         # Step 1: Fast deterministic heuristic analysis (<1ms)
         heuristic_plan = self._heuristic_plan(query, columns, catalog_courses, students)
+        heuristic_plan = self._clean_plan_fields(heuristic_plan, query)
 
         # Dataset modification commands (delete, filter, sort) are high confidence deterministic actions
         if heuristic_plan.get("action") != "answer" or heuristic_plan.get("confidence", 0.0) >= 0.85:
@@ -89,6 +140,7 @@ class LocalQueryPlanner:
             try:
                 neural_plan = self._neural_plan(query, columns, catalog_courses)
                 if neural_plan and isinstance(neural_plan, dict):
+                    neural_plan = self._clean_plan_fields(neural_plan, query)
                     # Combine neural predictions with any detected student name / courses
                     if not neural_plan.get("student_filter") and heuristic_plan.get("student_filter"):
                         neural_plan["student_filter"] = heuristic_plan["student_filter"]
@@ -188,6 +240,14 @@ class LocalQueryPlanner:
                             relevant_cols.add(col)
 
         # Check for student name or seat number filter
+        STOP_WORDS = {
+            "student", "students", "name", "names", "seat", "marks", "mark",
+            "sgpi", "total", "pass", "fail", "failed", "passed", "pointer",
+            "grade", "average", "topper", "toppers", "highest", "lowest",
+            "first", "last", "more", "less", "list", "show", "tell", "give",
+            "each", "every", "with", "from", "into", "that", "this", "what",
+            "which", "when", "where", "how", "all", "none", "null", "missing"
+        }
         student_filter = None
         seat_match = re.search(r"\b(\d{7,10})\b", p)
         if seat_match:
@@ -195,9 +255,10 @@ class LocalQueryPlanner:
         elif students:
             for s in students:
                 name = str(s.get("Student_Name", s.get("student_name", ""))).upper()
-                name_parts = [part for part in name.split() if len(part) >= 4]
+                name_parts = [part for part in name.split() if len(part) >= 4 and part.lower() not in STOP_WORDS]
                 for part in name_parts:
-                    if part.lower() in p:
+                    pattern = r"\b" + re.escape(part.lower()) + r"\b"
+                    if re.search(pattern, p):
                         student_filter = part
                         break
                 if student_filter:
@@ -208,20 +269,39 @@ class LocalQueryPlanner:
         ascending = False
         limit = None
 
+        explicit_n = None
+        n_match = re.search(r"\b(top|first|last|bottom|highest|lowest)\s+(\d+)\b", p) or re.search(r"\b(\d+)\s+(toppers|students|performers|ranks)\b", p)
+        if n_match:
+            val = n_match.group(2) if n_match.lastindex >= 2 else n_match.group(1)
+            try:
+                explicit_n = int(val)
+            except (ValueError, TypeError):
+                explicit_n = None
+
         if any(w in p for w in ["highest", "top", "topper", "best", "max", "rank"]):
             sort_by = "SGPI" if any("sgpi" in c.lower() for c in columns) else "Total_Marks"
             ascending = False
-            limit = 10
+            limit = explicit_n if explicit_n is not None else 10
             for c in columns:
                 if "sgpi" in c.lower() and (wants_historical or "sem" not in c.lower()):
                     relevant_cols.add(c)
         elif any(w in p for w in ["lowest", "bottom", "least", "worst", "min"]):
             sort_by = "SGPI" if any("sgpi" in c.lower() for c in columns) else "Total_Marks"
             ascending = True
-            limit = 10
+            limit = explicit_n if explicit_n is not None else 10
             for c in columns:
                 if "sgpi" in c.lower() and (wants_historical or "sem" not in c.lower()):
                     relevant_cols.add(c)
+
+        is_aggregate_or_all = any(w in p for w in [
+            "average", "mean", "median", "sum", "total", "count", "how many",
+            "percentage", "overall", "all", "every", "entire", "cohort", "distribution",
+            "missing", "pass rate", "fail rate", "summary", "stats", "statistics",
+            "names of all", "list of all", "all students", "each student"
+        ])
+        if is_aggregate_or_all:
+            limit = None
+            student_filter = None
 
         # Comparison inquiries (e.g. Regular vs Diploma, Male vs Female)
         if any(w in p for w in ["compare", "comparison", "difference", "versus", " vs "]):
@@ -270,11 +350,14 @@ class LocalQueryPlanner:
             "{\n"
             "  \"action\": \"answer\",\n"
             "  \"relevant_columns\": [\"column1\", \"column2\"],\n"
-            "  \"student_filter\": \"student name or seat or null\",\n"
-            "  \"sort_by\": \"column_name or null\",\n"
+            "  \"student_filter\": null,\n"
+            "  \"sort_by\": null,\n"
             "  \"ascending\": false,\n"
-            "  \"limit\": 10\n"
-            "}"
+            "  \"limit\": null\n"
+            "}\n"
+            "CRITICAL RULES:\n"
+            "- 'student_filter': student name or seat if explicitly asked for an individual, otherwise null.\n"
+            "- 'limit': ONLY set a number if user explicitly asks for top/bottom N (e.g. 'top 5' -> 5). For all other queries (averages, list of all, cohort stats, counts, missing data), limit MUST be null."
         )
         resp = self.ollama_client.generate(
             prompt=prompt,
@@ -308,12 +391,16 @@ class LocalQueryPlanner:
         student_filter = plan.get("student_filter")
         if student_filter:
             sf_str = str(student_filter).strip().lower()
-            mask = pd.Series([False] * len(df))
-            for col in ["Student_Name", "Seat_No", "PRN", "student_name", "seat_no", "prn"]:
-                if col in df.columns:
-                    mask = mask | df[col].astype(str).str.lower().str.contains(sf_str, regex=False, na=False)
-            if mask.any():
-                df = df[mask]
+            if sf_str in {"null", "none", "nil", "n/a", "undefined", "all", ""}:
+                student_filter = None
+            else:
+                mask = pd.Series([False] * len(df))
+                for col in ["Student_Name", "Seat_No", "PRN", "student_name", "seat_no", "prn"]:
+                    if col in df.columns:
+                        clean_col = df[col].fillna("").astype(str).str.lower()
+                        mask = mask | clean_col.str.contains(sf_str, regex=False, na=False)
+                if mask.any():
+                    df = df[mask]
 
         # 2. Sort if requested
         sort_by = plan.get("sort_by")

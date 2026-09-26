@@ -316,16 +316,25 @@ def format_dataset_summary_for_prompt(
                 )
                 break
 
+    # Compute explicit missing SGPI count
+    missing_sgpi_count = 0
+    if all_students:
+        missing_sgpi_count = sum(1 for s in all_students if s.get("SGPI") is None or str(s.get("SGPI")).strip().lower() in ["nan", "null", "none", "", "--"])
+    else:
+        missing_sgpi_count = analytics.get("failed_count", 0)
+
     return (
         f"DATASET FACTS (Calculated across all {total} students in this cohort):\n"
         f"- Total Enrolled Students: {total}\n"
         f"- Clearance: {analytics.get('passed_count', 0)} Passed ({analytics.get('pass_percentage', 0.0)}%), "
         f"{analytics.get('failed_count', 0)} Failed / KT ({analytics.get('fail_percentage', 0.0)}%)\n"
+        f"- SGPI Missing / Unannounced / KT: {missing_sgpi_count} student(s)\n"
+        f"- SGPI Range (Cleared Students): Min={analytics.get('min_sgpi', 0.0):.2f}, Max={analytics.get('max_sgpi', 0.0):.2f}, Avg={analytics.get('avg_sgpi', 0.0):.2f}\n"
+        f"- Overall Cleared Cohort SGPI Average: {analytics.get('avg_sgpi', 0.0):.2f}\n"
         f"- Note on KT: In university grading, students with null or unannounced GPA have KT (pending backlogs).\n"
         f"- Distinction (SGPI >= 7.5): {analytics.get('distinction_count', 0)} students\n"
         f"- Candidate Types: {analytics.get('regular_count', 0)} Regular, {analytics.get('diploma_count', 0)} Diploma\n"
         f"- Gender: {analytics.get('male_count', 0)} Male, {analytics.get('female_count', 0)} Female\n"
-        f"- SGPI Range (Cleared Students): Min={analytics.get('min_sgpi', 0.0):.2f}, Max={analytics.get('max_sgpi', 0.0):.2f}, Avg={analytics.get('avg_sgpi', 0.0):.2f}\n"
         f"- Lowest Cleared SGPI Student: {low_sgpi_str}\n"
         f"- Cohort Topper (Highest SGPI): {top_sgpi_str}\n"
         f"- Toughest Course: {tough_str}\n"
@@ -908,6 +917,21 @@ def process_chat_command(
         analytics, students[:5], user_prompt=user_prompt, all_students=students
     )
 
+    # Build compact full cohort representation for Cloud AI
+    # Keeps token footprint minimal (~1,500 tokens for 70 students) while providing 100% of student records
+    core_cols = ["Seat_No", "Student_Name", "Result_Status", "SGPI", "Total_Marks"]
+    plan_cols = plan.get("relevant_columns", [])
+    needed_cols = list(dict.fromkeys(core_cols + [c for c in plan_cols if c not in core_cols]))
+
+    full_cohort_compact = []
+    for s in students:
+        row_dict = {}
+        for col in needed_cols:
+            val = s.get(col)
+            if val is not None and str(val).lower() != "nan":
+                row_dict[col] = val
+        full_cohort_compact.append(row_dict)
+
     planner_tag = "Ollama Planner" if plan.get("planner_type") == "ollama_neural" else "Local Query Planner"
 
     # Determine if Cloud AI should handle this request
@@ -922,7 +946,7 @@ def process_chat_command(
                 user_prompt=user_prompt,
                 system_instruction=SYSTEM_PROMPT,
                 dataset_summary=context_summary,
-                students=slice_records,
+                students=full_cohort_compact,
                 dataframe_slice=md_table,
                 session_id=session_id,
                 format_json=True,
