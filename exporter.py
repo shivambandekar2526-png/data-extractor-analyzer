@@ -206,7 +206,8 @@ def export_ai_extracted_data(
             students=flat_rows,
             catalog={"courses": cat_dict},
             meta=meta_dict,
-            folder_name=folder_name
+            folder_name=folder_name,
+            fieldnames=fieldnames
         )
         generator.generate_workbook(academic_path)
     except Exception as e:

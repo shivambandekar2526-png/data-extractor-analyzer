@@ -139,12 +139,24 @@ class AcademicExcelReportGenerator:
         students: List[Dict[str, Any]],
         catalog: Optional[Dict[str, Any]] = None,
         meta: Optional[Dict[str, Any]] = None,
-        folder_name: str = ""
+        folder_name: str = "",
+        fieldnames: Optional[List[str]] = None
     ):
-        self.students = students or []
         self.catalog = catalog or {}
         self.meta = meta or {}
         self.folder_name = folder_name or "report"
+        self.fieldnames = list(fieldnames) if fieldnames else None
+
+        # Normalize students to list of flat dictionaries
+        self.students = []
+        for s in (students or []):
+            if hasattr(s, "to_flat_dict"):
+                self.students.append(s.to_flat_dict(self.catalog))
+            elif isinstance(s, dict):
+                self.students.append(s)
+            else:
+                self.students.append(dict(s))
+
         self.courses = self._resolve_courses()
 
     def _resolve_courses(self) -> List[Dict[str, Any]]:
@@ -228,40 +240,22 @@ class AcademicExcelReportGenerator:
         ws = wb.create_sheet(title="Data")
         ws.views.sheetView[0].showGridLines = True
 
-        # Build columns dynamically based on courses
-        headers = ["SR.NO", "SEAT NO", "NAME OF STUDENT"]
-        col_mappings: List[Tuple[str, str]] = []  # (header_name, student_key)
+        # Resolve raw fieldnames directly from extracted data
+        columns = list(self.fieldnames) if self.fieldnames else []
+        if not columns and self.students:
+            seen = set()
+            for s in self.students:
+                for k in s.keys():
+                    if k not in seen:
+                        seen.add(k)
+                        columns.append(k)
 
-        for course in self.courses:
-            c_code = course["code"]
-            c_name = course.get("name", c_code)
-            heads = [h.upper() for h in course.get("heads", [])]
-
-            if "TH" in heads:
-                h_name = f"{c_name} Theory"
-                headers.append(h_name)
-                col_mappings.append((h_name, f"{c_code}_TH"))
-            if "IN" in heads or "IAT" in heads:
-                h_name = f"{c_name} IAT"
-                headers.append(h_name)
-                col_mappings.append((h_name, f"{c_code}_IN"))
-            if "TW" in heads:
-                h_name = f"{c_name} TW"
-                headers.append(h_name)
-                col_mappings.append((h_name, f"{c_code}_TW"))
-            if any(h in heads for h in ["PR", "OR", "OR_PR"]):
-                h_name = f"{c_name} Practical"
-                headers.append(h_name)
-                # match PR or OR or OR_PR
-                key = f"{c_code}_PR" if self._key_exists(f"{c_code}_PR") else (f"{c_code}_OR_PR" if self._key_exists(f"{c_code}_OR_PR") else f"{c_code}_OR")
-                col_mappings.append((h_name, key))
-
-        # Standard final columns
-        headers.extend(["EC", "ECG", "SGPI"])
+        if not columns:
+            return
 
         # Write Header Row
-        for col_idx, h in enumerate(headers, 1):
-            cell = ws.cell(row=1, column=col_idx, value=h)
+        for col_idx, col_name in enumerate(columns, 1):
+            cell = ws.cell(row=1, column=col_idx, value=col_name)
             cell.fill = HEADER_FILL
             cell.font = HEADER_FONT
             cell.alignment = ALIGN_CENTER
@@ -269,42 +263,50 @@ class AcademicExcelReportGenerator:
 
         ws.row_dimensions[1].height = 28
 
-        # Write Student Data Rows
+        # Identifier/text attributes preserved strictly as strings to prevent truncation
+        string_cols = {
+            "seat_no", "seat no", "seat", "prn", "abc_id", "ern", "student_name",
+            "name", "gender", "candidate_type", "result_status", "remark", "semester"
+        }
+
+        # Write Raw Data Rows directly from extracted dataset
         for r_idx, s in enumerate(self.students, 2):
-            seat = s.get("Seat_No") or s.get("seat_no")
-            name = s.get("Student_Name") or s.get("student_name") or ""
-            row_vals = [r_idx - 1, seat, str(name).strip()]
+            for c_idx, col_name in enumerate(columns, 1):
+                raw_val = s.get(col_name)
+                col_lower = str(col_name).lower()
 
-            for _, key in col_mappings:
-                val = s.get(key)
-                f_val = _safe_float(val)
-                if f_val is not None:
-                    row_vals.append(f_val)
-                elif _is_absent(val):
-                    row_vals.append("AA")
+                cell_val = raw_val
+                if raw_val is None or str(raw_val).strip() in ["", "nan", "NaN", "None"]:
+                    cell_val = None
+                elif col_lower in string_cols or col_lower.endswith(("_subject", "_name", "_grade", "_status")):
+                    cell_val = str(raw_val).strip()
                 else:
-                    row_vals.append(val if val not in [None, "nan", "NaN"] else None)
+                    f_val = _safe_float(raw_val)
+                    if f_val is not None:
+                        if f_val.is_integer() and "." not in str(raw_val):
+                            cell_val = int(f_val)
+                        else:
+                            cell_val = f_val
+                    elif _is_absent(raw_val):
+                        cell_val = "AA"
+                    else:
+                        cell_val = str(raw_val).strip()
 
-            # EC, ECG, SGPI
-            ec = _safe_float(s.get("Credits_Earned", s.get("EC")))
-            ecg = _safe_float(s.get("Total_CG", s.get("ECG")))
-            sgpi = _safe_float(s.get("SGPI"))
-
-            row_vals.extend([ec, ecg, sgpi if sgpi is not None else 0.0])
-
-            for c_idx, val in enumerate(row_vals, 1):
-                cell = ws.cell(row=r_idx, column=c_idx, value=val)
+                cell = ws.cell(row=r_idx, column=c_idx, value=cell_val)
                 cell.font = DATA_FONT
                 cell.border = THIN_BORDER
-                if c_idx == 3:
-                    cell.alignment = ALIGN_LEFT
-                elif c_idx in [1, 2]:
-                    cell.alignment = ALIGN_CENTER
-                else:
+
+                # Alignment
+                if isinstance(cell_val, (int, float)):
                     cell.alignment = ALIGN_RIGHT
+                elif col_lower in ["student_name", "name"] or col_lower.endswith("_subject"):
+                    cell.alignment = ALIGN_LEFT
+                else:
+                    cell.alignment = ALIGN_CENTER
 
             ws.row_dimensions[r_idx].height = 20
 
+        ws.freeze_panes = "A2"
         self._auto_fit_columns(ws)
 
     # =========================================================================

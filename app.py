@@ -497,9 +497,11 @@ def export_academic_analysis(folder):
             pass
 
     records = []
+    fieldnames = []
     if os.path.isfile(csv_path):
         with open(csv_path, "r", encoding="utf-8") as f:
             reader = csv.DictReader(f)
+            fieldnames = list(reader.fieldnames or [])
             records = list(reader)
 
     if not records:
@@ -514,7 +516,8 @@ def export_academic_analysis(folder):
             students=records,
             catalog=cat_meta,
             meta=cat_meta,
-            folder_name=clean_folder
+            folder_name=clean_folder,
+            fieldnames=fieldnames
         )
         generator.generate_workbook(academic_path)
     except Exception as e:
