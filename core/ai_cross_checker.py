@@ -19,6 +19,7 @@ Key Architecture Components:
 
 import json
 import logging
+import math
 import os
 import re
 import sys
@@ -371,13 +372,22 @@ def verify_student_chunk(
     if not client or not client.is_configured():
         return []
 
-    # Compact student representation (exclude derivative fields to conserve tokens and prevent 413 payload limits)
+    # Compact student representation (exclude derivative, null, nan, and internal fields to conserve tokens and prevent 429 TPM limits)
     clean_chunk = []
     for s in chunk_students:
-        clean_s = {
-            k: v for k, v in s.items()
-            if v not in (None, "", "--") and not any(k.endswith(x) for x in ["_Grade", "_GP", "_Credits", "_CG", "_Subject"])
-        }
+        clean_s = {}
+        for k, v in s.items():
+            if v in (None, "", "--", "-", "nan", "NaN"):
+                continue
+            if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+                continue
+            # Exclude derivative and redundant grading columns
+            if any(k.endswith(x) for x in ["_Grade", "_GP", "_Credits", "_CG", "_Subject", "_Grade_Point"]):
+                continue
+            # Exclude internal or metadata keys
+            if k.startswith("_") or k.startswith("Unnamed"):
+                continue
+            clean_s[k] = v
         clean_chunk.append(clean_s)
 
     prompt = (
@@ -421,7 +431,7 @@ def verify_student_chunk(
                 user_prompt=prompt,
                 system_instruction=system_instruction,
                 format_json=True,
-                timeout=45,
+                timeout=35,
                 audit_cb=audit_cb
             )
             data = json.loads(resp_text)
@@ -451,7 +461,7 @@ def run_ai_cross_check(
     client: Optional[Any] = None,
     progress_cb: Optional[Callable[[float, str, Optional[Dict[str, Any]]], None]] = None,
     auto_apply: bool = False,
-    chunk_size: int = 6,
+    chunk_size: int = 4,
     audit_cb: Optional[Callable[[Dict[str, Any]], None]] = None
 ) -> Dict[str, Any]:
     """
@@ -631,7 +641,7 @@ def run_ai_cross_check(
     for idx, chunk in enumerate(chunks):
         if idx > 0:
             # Polite inter-chunk pacing to stay comfortably within free-tier TPM/RPM limits
-            time.sleep(1.0)
+            time.sleep(1.5)
 
         pct = 20.0 + ((idx / max(total_chunks, 1)) * 75.0)
         chunk_seats = [str(s.get("Seat_No", s.get("seat_no", ""))) for s in chunk]

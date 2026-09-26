@@ -15,6 +15,7 @@ import json
 import logging
 import math
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -311,10 +312,11 @@ class CloudClient:
             lat = round((time.time() - t0) * 1000)
             return False, f"Connection Failed: {e}", lat
 
-    def get_best_working_model(self, force_refresh: bool = False) -> Dict[str, str]:
+    def get_best_working_model(self, force_refresh: bool = False, probe: bool = False) -> Dict[str, str]:
         """
         Orchestration Core: Selects the best working model across all configured providers.
         STRICT STICKINESS: Once locked onto a working model, sticks to it until an error occurs.
+        If probe=False (default during execution failover), selects candidate without burning HTTP calls.
         """
         now = time.time()
 
@@ -328,12 +330,12 @@ class CloudClient:
                 if self.get_api_key(locked_prov):
                     return CloudClient._locked_model
 
-        # Probe candidates in order of capability / speed
+        # Probe or select candidates in order of capability / speed
         for cand in ORCHESTRATION_CANDIDATES:
             prov = cand["provider"].lower()
             mod = cand["model"]
             key = self.get_api_key(prov)
-            if not key:
+            if not key and prov != "custom":
                 continue
 
             # Check if entire provider is in rate-limit cooldown
@@ -344,20 +346,22 @@ class CloudClient:
             if now < CloudClient._model_cooldowns.get(cooldown_key, 0):
                 continue  # In temporary cooldown due to recent error
 
-            # Probe candidate
-            ok, msg, _ = self.probe_candidate(prov, mod, key, timeout=5)
-            if ok:
-                CloudClient._locked_model = {"provider": prov, "model": mod}
-                self.config["provider"] = prov
-                self.config["model"] = mod
-                # Persist updated locked provider/model
-                try:
-                    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-                        json.dump(self.config, f, indent=2)
-                except Exception:
-                    pass
-                logger.info("Cloud Orchestrator locked onto model: %s (%s)", mod, prov)
-                return CloudClient._locked_model
+            if probe:
+                ok, msg, _ = self.probe_candidate(prov, mod, key, timeout=5)
+                if not ok:
+                    continue
+
+            CloudClient._locked_model = {"provider": prov, "model": mod}
+            self.config["provider"] = prov
+            self.config["model"] = mod
+            # Persist updated locked provider/model
+            try:
+                with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+                    json.dump(self.config, f, indent=2)
+            except Exception:
+                pass
+            logger.info("Cloud Orchestrator locked onto model: %s (%s)", mod, prov)
+            return CloudClient._locked_model
 
         # Fallback to configured model if all candidates failed or no candidates matched
         return {
@@ -366,7 +370,7 @@ class CloudClient:
         }
 
     @classmethod
-    def mark_provider_failed(cls, provider: str, cooldown_seconds: int = 45) -> None:
+    def mark_provider_failed(cls, provider: str, cooldown_seconds: int = 30) -> None:
         """Mark an entire provider as temporarily unavailable (e.g. 429 rate limit or quota exceeded)."""
         prov = provider.lower()
         cls._provider_cooldowns[prov] = time.time() + cooldown_seconds
@@ -375,7 +379,7 @@ class CloudClient:
             cls._locked_model = None
 
     @classmethod
-    def mark_model_failed(cls, provider: str, model: str, cooldown_seconds: int = 180, is_rate_limit: bool = False) -> None:
+    def mark_model_failed(cls, provider: str, model: str, cooldown_seconds: int = 60, is_rate_limit: bool = False) -> None:
         """Mark a model as failed and place it into temporary cooldown."""
         prov = provider.lower()
         cooldown_key = f"{prov}:{model}"
@@ -384,7 +388,7 @@ class CloudClient:
         if cls._locked_model and cls._locked_model.get("provider", "").lower() == prov and cls._locked_model.get("model") == model:
             cls._locked_model = None
         if is_rate_limit:
-            cls.mark_provider_failed(prov, cooldown_seconds=min(cooldown_seconds, 60))
+            cls.mark_provider_failed(prov, cooldown_seconds=min(cooldown_seconds, 30))
 
     def probe_all_providers(self, keys_dict: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         """
@@ -417,7 +421,7 @@ class CloudClient:
             }
 
         # Select and lock best model
-        best = self.get_best_working_model(force_refresh=True)
+        best = self.get_best_working_model(force_refresh=True, probe=True)
         report["best_locked_model"] = best
         return report
 
@@ -782,7 +786,7 @@ class CloudClient:
         while attempts < max_attempts:
             attempts += 1
             if auto_orchestrate:
-                active_candidate = self.get_best_working_model(force_refresh=(attempts > 1))
+                active_candidate = self.get_best_working_model(force_refresh=(attempts > 1), probe=False)
                 provider = active_candidate["provider"]
                 model = active_candidate["model"]
             else:
@@ -821,9 +825,9 @@ class CloudClient:
                     "Cloud AI request failed on %s (%s): %s (rate_limit=%s). Orchestrating failover...",
                     provider, model, e, is_rate_limit
                 )
-                self.mark_model_failed(provider, model, cooldown_seconds=180, is_rate_limit=is_rate_limit)
+                self.mark_model_failed(provider, model, cooldown_seconds=60, is_rate_limit=is_rate_limit)
                 if is_rate_limit:
-                    time.sleep(min(1.5 * attempts, 3.5))
+                    time.sleep(min(2.0 * attempts, 4.0))
                 if not auto_orchestrate:
                     raise
 
@@ -840,6 +844,7 @@ class CloudClient:
     ) -> str:
         """
         Execute a stateless prompt completion with automatic multi-provider failover.
+        Features in-place exponential backoff pacing on rate limits (HTTP 429) to avoid rapid model thrashing.
         Emits live telemetry events to audit_cb for UI console display.
         """
         if not self.is_configured():
@@ -858,7 +863,7 @@ class CloudClient:
         while attempts < max_attempts:
             attempts += 1
             if auto_orchestrate:
-                active_candidate = self.get_best_working_model(force_refresh=(attempts > 1))
+                active_candidate = self.get_best_working_model(force_refresh=(attempts > 1), probe=False)
                 provider = active_candidate["provider"]
                 model = active_candidate["model"]
             else:
@@ -869,168 +874,245 @@ class CloudClient:
             if not api_key and provider != "custom":
                 continue
 
-            t_start = time.time()
-            if audit_cb:
-                try:
-                    audit_cb({
-                        "timestamp": time.strftime("%H:%M:%S"),
-                        "type": "cloud_ai_call",
-                        "badge": "CLOUD AI CALL",
-                        "title": f"Dispatching prompt to {provider.upper()} ({model}) [Attempt {attempts}/{max_attempts}]",
-                        "details": {
-                            "provider": provider,
-                            "model": model,
-                            "attempt": attempts,
-                            "timeout_seconds": timeout,
-                            "prompt_chars": len(user_prompt),
-                            "prompt_preview": user_prompt[:260] + "..."
-                        }
-                    })
-                except Exception:
-                    pass
+            # Per-candidate in-place rate limit pacing retry (up to 2 retries on HTTP 429 before switching models)
+            max_rate_retries = 2
+            rate_attempt = 0
+            candidate_success = False
 
-            try:
-                # 1. Google Gemini
-                if provider == "gemini":
-                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-                    payload = {
-                        "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
-                        "generationConfig": {
-                            "temperature": temperature,
-                            "responseMimeType": "application/json" if format_json else "text/plain"
-                        }
-                    }
-                    if system_instruction:
-                        payload["systemInstruction"] = {"parts": [{"text": system_instruction}]}
-
-                    data_bytes = json.dumps(payload).encode("utf-8")
-                    req = urllib.request.Request(url, data=data_bytes, headers=headers)
-                    with urllib.request.urlopen(req, timeout=timeout) as resp:
-                        resp_data = json.loads(resp.read().decode("utf-8"))
-
-                    candidates = resp_data.get("candidates", [])
-                    if not candidates:
-                        raise RuntimeError("Empty response from Gemini API.")
-                    parts = candidates[0].get("content", {}).get("parts", [])
-                    reply_text = parts[0].get("text", "") if parts else ""
-
-                # 2. OpenAI / Groq / Custom
-                else:
-                    base_url = self.config.get("custom_base_url") if provider == "custom" else DEFAULT_PROVIDERS.get(provider, {}).get("base_url", "https://api.openai.com/v1")
-                    url = f"{base_url.rstrip('/')}/chat/completions"
-                    req_headers = dict(headers)
-                    req_headers["Authorization"] = f"Bearer {api_key}"
-
-                    messages = []
-                    if system_instruction:
-                        messages.append({"role": "system", "content": system_instruction})
-                    messages.append({"role": "user", "content": user_prompt})
-
-                    payload = {
-                        "model": model,
-                        "messages": messages,
-                        "temperature": temperature
-                    }
-                    if format_json:
-                        payload["response_format"] = {"type": "json_object"}
-
-                    data_bytes = json.dumps(payload).encode("utf-8")
-                    req = urllib.request.Request(url, data=data_bytes, headers=req_headers)
-                    try:
-                        with urllib.request.urlopen(req, timeout=timeout) as resp:
-                            resp_data = json.loads(resp.read().decode("utf-8"))
-                    except urllib.error.HTTPError as he:
-                        if he.code == 400 and format_json and "response_format" in payload:
-                            logger.info("Direct call on %s returned 400 with response_format, retrying without it...", provider)
-                            del payload["response_format"]
-                            data_bytes = json.dumps(payload).encode("utf-8")
-                            req_retry = urllib.request.Request(url, data=data_bytes, headers=req_headers)
-                            with urllib.request.urlopen(req_retry, timeout=timeout) as resp:
-                                resp_data = json.loads(resp.read().decode("utf-8"))
-                        else:
-                            raise
-
-                    choices = resp_data.get("choices", [])
-                    if not choices:
-                        raise RuntimeError(f"Empty choices returned from {provider} API.")
-                    reply_text = choices[0].get("message", {}).get("content", "")
-
-                dur = time.time() - t_start
-                # Successful execution: update primary config and return
-                self.config["provider"] = provider
-                self.config["model"] = model
-
+            while rate_attempt <= max_rate_retries:
+                rate_attempt += 1
+                t_start = time.time()
                 if audit_cb:
                     try:
                         audit_cb({
                             "timestamp": time.strftime("%H:%M:%S"),
-                            "type": "cloud_ai_success",
-                            "badge": "CLOUD AI SUCCESS",
-                            "title": f"{provider.upper()} ({model}) responded in {dur:.2f}s",
+                            "type": "cloud_ai_call",
+                            "badge": "CLOUD AI CALL",
+                            "title": f"Dispatching prompt to {provider.upper()} ({model}) [Candidate {attempts}/{max_attempts}, Run {rate_attempt}]",
                             "details": {
                                 "provider": provider,
                                 "model": model,
-                                "duration_sec": round(dur, 2),
-                                "response_preview": reply_text[:280] + "..."
+                                "candidate_attempt": attempts,
+                                "rate_retry": rate_attempt,
+                                "timeout_seconds": timeout,
+                                "prompt_chars": len(user_prompt),
+                                "prompt_preview": user_prompt[:260] + "..."
                             }
                         })
                     except Exception:
                         pass
 
-                return reply_text
-
-            except Exception as e:
-                last_error = e
-                err_str = str(e).lower()
-                is_rate_limit = any(k in err_str for k in ["429", "quota", "too many requests", "rate limit", "resource exhausted"])
-                logger.warning(
-                    "Direct Cloud AI request failed on %s (%s): %s (rate_limit=%s). Orchestrating failover...",
-                    provider, model, e, is_rate_limit
-                )
-                self.mark_model_failed(provider, model, cooldown_seconds=180, is_rate_limit=is_rate_limit)
-
-                if audit_cb:
-                    try:
-                        err_label = "HTTP 429 Quota Exceeded / Rate Limit" if is_rate_limit else f"Error: {e}"
-                        audit_cb({
-                            "timestamp": time.strftime("%H:%M:%S"),
-                            "type": "ai_error",
-                            "badge": "MODEL FAILOVER",
-                            "title": f"⚠️ {err_label} on {provider.upper()} ({model}). Auto-switching models...",
-                            "details": {
-                                "failed_provider": provider,
-                                "failed_model": model,
-                                "error": str(e),
-                                "is_rate_limit": is_rate_limit,
-                                "cooldown_seconds": 180,
-                                "attempt": attempts
+                try:
+                    # 1. Google Gemini
+                    if provider == "gemini":
+                        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+                        payload = {
+                            "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
+                            "generationConfig": {
+                                "temperature": temperature,
+                                "responseMimeType": "application/json" if format_json else "text/plain"
                             }
-                        })
-                    except Exception:
-                        pass
+                        }
+                        if system_instruction:
+                            payload["systemInstruction"] = {"parts": [{"text": system_instruction}]}
 
-                if auto_orchestrate:
-                    next_cand = self.get_best_working_model(force_refresh=True)
-                    if audit_cb and next_cand and (next_cand["model"] != model or next_cand["provider"] != provider):
+                        data_bytes = json.dumps(payload).encode("utf-8")
+                        req = urllib.request.Request(url, data=data_bytes, headers=headers)
+                        with urllib.request.urlopen(req, timeout=timeout) as resp:
+                            resp_data = json.loads(resp.read().decode("utf-8"))
+
+                        candidates = resp_data.get("candidates", [])
+                        if not candidates:
+                            raise RuntimeError("Empty response from Gemini API.")
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        reply_text = parts[0].get("text", "") if parts else ""
+
+                    # 2. OpenAI / Groq / Custom
+                    else:
+                        base_url = self.config.get("custom_base_url") if provider == "custom" else DEFAULT_PROVIDERS.get(provider, {}).get("base_url", "https://api.openai.com/v1")
+                        url = f"{base_url.rstrip('/')}/chat/completions"
+                        req_headers = dict(headers)
+                        req_headers["Authorization"] = f"Bearer {api_key}"
+
+                        messages = []
+                        if system_instruction:
+                            messages.append({"role": "system", "content": system_instruction})
+                        messages.append({"role": "user", "content": user_prompt})
+
+                        payload = {
+                            "model": model,
+                            "messages": messages,
+                            "temperature": temperature
+                        }
+                        if format_json:
+                            payload["response_format"] = {"type": "json_object"}
+
+                        data_bytes = json.dumps(payload).encode("utf-8")
+                        req = urllib.request.Request(url, data=data_bytes, headers=req_headers)
+                        try:
+                            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                                resp_data = json.loads(resp.read().decode("utf-8"))
+                        except urllib.error.HTTPError as he:
+                            if he.code == 400 and format_json and "response_format" in payload:
+                                logger.info("Direct call on %s returned 400 with response_format, retrying without it...", provider)
+                                del payload["response_format"]
+                                data_bytes = json.dumps(payload).encode("utf-8")
+                                req_retry = urllib.request.Request(url, data=data_bytes, headers=req_headers)
+                                with urllib.request.urlopen(req_retry, timeout=timeout) as resp:
+                                    resp_data = json.loads(resp.read().decode("utf-8"))
+                            else:
+                                raise
+
+                        choices = resp_data.get("choices", [])
+                        if not choices:
+                            raise RuntimeError(f"Empty choices returned from {provider} API.")
+                        reply_text = choices[0].get("message", {}).get("content", "")
+
+                    dur = time.time() - t_start
+                    # Successful execution: update primary config and return
+                    self.config["provider"] = provider
+                    self.config["model"] = model
+
+                    if audit_cb:
                         try:
                             audit_cb({
                                 "timestamp": time.strftime("%H:%M:%S"),
-                                "type": "cloud_ai_active",
-                                "badge": "NEW ACTIVE MODEL",
-                                "title": f"🔄 Switched active model: Now using {next_cand['provider'].upper()} ({next_cand['model']})",
+                                "type": "cloud_ai_success",
+                                "badge": "CLOUD AI SUCCESS",
+                                "title": f"{provider.upper()} ({model}) responded in {dur:.2f}s",
                                 "details": {
-                                    "new_provider": next_cand["provider"],
-                                    "new_model": next_cand["model"],
-                                    "previous_provider": provider,
-                                    "previous_model": model
+                                    "provider": provider,
+                                    "model": model,
+                                    "duration_sec": round(dur, 2),
+                                    "response_preview": reply_text[:280] + "..."
                                 }
                             })
                         except Exception:
                             pass
 
-                if is_rate_limit:
-                    time.sleep(min(1.5 * attempts, 3.5))
-                if not auto_orchestrate:
-                    raise
+                    return reply_text
+
+                except urllib.error.HTTPError as he:
+                    last_error = he
+                    err_body = ""
+                    try:
+                        err_body = he.read().decode("utf-8", errors="ignore")
+                    except Exception:
+                        pass
+
+                    is_rate_limit = (he.code == 429) or any(k in err_body.lower() for k in ["rate limit", "quota", "resource_exhausted", "too many requests"])
+
+                    if is_rate_limit and rate_attempt <= max_rate_retries:
+                        # Extract wait time from Retry-After header or response body
+                        wait_time = 4.0
+                        retry_hdr = he.headers.get("Retry-After") if hasattr(he, "headers") else None
+                        if retry_hdr:
+                            try:
+                                wait_time = max(float(retry_hdr) + 0.5, 2.0)
+                            except Exception:
+                                pass
+                        else:
+                            m = re.search(r"try again in ([0-9]+(?:\.[0-9]+)?)s", err_body, re.IGNORECASE)
+                            if m:
+                                try:
+                                    wait_time = float(m.group(1)) + 0.5
+                                except Exception:
+                                    pass
+                            else:
+                                wait_time = min(2.5 * rate_attempt + 1.5, 6.0)
+
+                        wait_time = min(wait_time, 10.0)
+
+                        if audit_cb:
+                            try:
+                                audit_cb({
+                                    "timestamp": time.strftime("%H:%M:%S"),
+                                    "type": "cloud_ai_pacing",
+                                    "badge": "RATE LIMIT PACING",
+                                    "title": f"⏳ Rate limit on {provider.upper()} ({model}). Pacing request for {wait_time:.1f}s before retry ({rate_attempt}/{max_rate_retries})...",
+                                    "details": {
+                                        "provider": provider,
+                                        "model": model,
+                                        "wait_seconds": round(wait_time, 1),
+                                        "rate_retry": rate_attempt,
+                                        "max_retries": max_rate_retries,
+                                        "error_summary": err_body[:250] if err_body else str(he)
+                                    }
+                                })
+                            except Exception:
+                                pass
+
+                        logger.info("Rate limit on %s (%s). Pacing for %.1fs (retry %d/%d)...", provider, model, wait_time, rate_attempt, max_rate_retries)
+                        time.sleep(wait_time)
+                        continue  # Retry same candidate model
+
+                    # If not rate limit or retries exhausted, format error and break to outer failover
+                    msg = err_body[:250] if err_body else str(he)
+                    try:
+                        err_json = json.loads(err_body)
+                        msg = err_json.get("error", {}).get("message", msg)
+                    except Exception:
+                        pass
+                    last_error = RuntimeError(f"HTTP {he.code} from {provider}: {msg}")
+                    break
+
+                except Exception as e:
+                    last_error = e
+                    # Non-HTTPError (e.g. socket timeout, network disconnection) -> break to failover
+                    break
+
+            # Outer failover handling
+            err_str = str(last_error).lower()
+            is_rate_limit = any(k in err_str for k in ["429", "quota", "too many requests", "rate limit", "resource exhausted"])
+            logger.warning(
+                "Direct Cloud AI candidate failed on %s (%s): %s (rate_limit=%s). Orchestrating failover...",
+                provider, model, last_error, is_rate_limit
+            )
+            cooldown_sec = 45 if is_rate_limit else 60
+            self.mark_model_failed(provider, model, cooldown_seconds=cooldown_sec, is_rate_limit=is_rate_limit)
+
+            if audit_cb:
+                try:
+                    err_label = "HTTP 429 Quota Exceeded / Rate Limit" if is_rate_limit else f"Error: {last_error}"
+                    audit_cb({
+                        "timestamp": time.strftime("%H:%M:%S"),
+                        "type": "ai_error",
+                        "badge": "MODEL FAILOVER",
+                        "title": f"⚠️ {err_label} on {provider.upper()} ({model}). Auto-switching models...",
+                        "details": {
+                            "failed_provider": provider,
+                            "failed_model": model,
+                            "error": str(last_error),
+                            "is_rate_limit": is_rate_limit,
+                            "cooldown_seconds": cooldown_sec,
+                            "attempt": attempts
+                        }
+                    })
+                except Exception:
+                    pass
+
+            if auto_orchestrate:
+                next_cand = self.get_best_working_model(force_refresh=True, probe=False)
+                if audit_cb and next_cand and (next_cand["model"] != model or next_cand["provider"] != provider):
+                    try:
+                        audit_cb({
+                            "timestamp": time.strftime("%H:%M:%S"),
+                            "type": "cloud_ai_active",
+                            "badge": "NEW ACTIVE MODEL",
+                            "title": f"🔄 Switched active model: Now using {next_cand['provider'].upper()} ({next_cand['model']})",
+                            "details": {
+                                "new_provider": next_cand["provider"],
+                                "new_model": next_cand["model"],
+                                "previous_provider": provider,
+                                "previous_model": model
+                            }
+                        })
+                    except Exception:
+                        pass
+
+            if is_rate_limit:
+                time.sleep(1.5)
+            if not auto_orchestrate:
+                raise last_error
 
         raise RuntimeError(f"All configured cloud AI models encountered errors. Last error: {last_error}")
