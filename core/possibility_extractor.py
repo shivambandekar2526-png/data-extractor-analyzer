@@ -366,7 +366,7 @@ def extract_gazette_classic(
                         meta.result_date = m_col.group(2).strip()
 
             # Extract course definitions: '01.CSC801  Advanced Artificial Intelligence'
-            course_items = re.findall(r"(\d{2})\.([A-Z]{3,}[A-Za-z0-9\-]*)\s+([A-Za-z0-9\s\-\(\)\/\,\&]+?)(?=\s{2,}\d{2}\.|$)", line)
+            course_items = re.findall(r"(\d{2})\.([A-Z]{3,}[A-Za-z0-9\-]*)\s+([A-Za-z0-9\s\-\(\)\/\,\&]+?)(?=\s+\d{2}\.|$)", line)
             if course_items and not any(k in line for k in ["MARKS :", "GRADE :", "GRADE POINT :"]):
                 found_new = []
                 for num, code, name in course_items:

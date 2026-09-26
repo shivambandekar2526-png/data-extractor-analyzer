@@ -194,25 +194,56 @@ class AcademicExcelReportGenerator:
 
         return list(discovered.values())
 
+    def _is_lab_or_practical(self, course: Dict[str, Any]) -> bool:
+        """Determine if course is a Practical, Lab, Oral, or Project."""
+        name = course.get("name", "").lower()
+        code = course.get("code", "").upper()
+        heads = [h.upper() for h in course.get("heads", [])]
+        if "lab" in name or "laboratory" in name or "practical" in name or "lab" in code.lower() or code.endswith("L"):
+            return True
+        if any(h in heads for h in ["PR", "OR", "OR_PR"]) and "TH" not in heads and "IN" not in heads:
+            return True
+        return False
+
     def _get_theory_courses(self) -> List[Dict[str, Any]]:
-        """Return courses that have a Theory (TH) or IAT (IN) component."""
-        th_courses = []
-        for c in self.courses:
-            heads = [h.upper() for h in c.get("heads", [])]
-            name = c.get("name", "").lower()
-            if "TH" in heads or "IN" in heads or (not any(w in name for w in ["lab", "laboratory", "project", "seminar"]) and "TW" in heads):
-                th_courses.append(c)
-        return th_courses
+        """Return courses that represent Theory subjects (strictly excluding labs/practicals)."""
+        return [c for c in self.courses if not self._is_lab_or_practical(c)]
 
     def _get_lab_courses(self) -> List[Dict[str, Any]]:
         """Return courses that represent Practicals, Labs, Orals, or Projects."""
-        lab_courses = []
-        for c in self.courses:
-            heads = [h.upper() for h in c.get("heads", [])]
-            name = c.get("name", "").lower()
-            if any(h in heads for h in ["PR", "OR", "OR_PR"]) or any(w in name for w in ["lab", "laboratory", "project", "practical"]):
-                lab_courses.append(c)
-        return lab_courses
+        return [c for c in self.courses if self._is_lab_or_practical(c)]
+
+    def _get_enrolled_students(self, course_code: str) -> List[Dict[str, Any]]:
+        """Return only students enrolled in this specific course."""
+        enrolled = []
+        for s in self.students:
+            for suffix in ["_Total", "_TOT", "_TH", "_IN", "_TW", "_PR", "_OR", "_OR_PR", "_Grade"]:
+                val = s.get(f"{course_code}{suffix}")
+                if val is not None and str(val).strip() not in ["", "--", "nan", "NaN", "None"]:
+                    enrolled.append(s)
+                    break
+        return enrolled
+
+    def _is_student_absent_in_course(self, s: Dict[str, Any], course_code: str) -> bool:
+        """Check if student was absent in this course."""
+        gr = str(s.get(f"{course_code}_Grade", "")).strip().upper()
+        if gr in ["AB", "AA", "ABS", "A", "ABSENT"]:
+            return True
+        for suffix in ["_Total", "_TOT", "_TH", "_IN", "_TW", "_PR", "_OR", "_OR_PR"]:
+            val = s.get(f"{course_code}{suffix}")
+            if _is_absent(val):
+                return True
+        return False
+
+    def _is_student_failed_in_course(self, s: Dict[str, Any], course_code: str, max_marks: float = 100.0) -> bool:
+        """Check if student failed this course."""
+        gr = str(s.get(f"{course_code}_Grade", "")).strip().upper()
+        if gr in ["F", "FAIL"]:
+            return True
+        tot = _safe_float(s.get(f"{course_code}_Total") or s.get(f"{course_code}_TOT") or s.get(f"{course_code}_TH"))
+        if tot is not None and max_marks > 0 and tot < (max_marks * 0.4):
+            return True
+        return False
 
     def generate_workbook(self, output_path: Optional[str] = None) -> openpyxl.Workbook:
         """Generate all 6 sheets and optionally write to disk."""
@@ -561,7 +592,6 @@ class AcademicExcelReportGenerator:
 
         th_courses = self._get_theory_courses()
         lab_courses = self._get_lab_courses()
-        total_students = len(self.students)
 
         # 1. Section: Subject wise Result
         ws.cell(row=3, column=1, value="Subject wise Result").font = SECTION_TITLE_FONT
@@ -578,14 +608,20 @@ class AcademicExcelReportGenerator:
         for c in th_courses:
             code = c["code"]
             name = c.get("name", code)
-            tot_col = f"{code}_Total"
-            gr_col = f"{code}_Grade"
 
-            absent_cnt = sum(1 for s in self.students if _is_absent(s.get(tot_col)) or _is_absent(s.get(f"{code}_TH")) or str(s.get(gr_col, "")).upper() in ["AB", "AA"])
-            appeared_cnt = total_students - absent_cnt
-            fail_cnt = sum(1 for s in self.students if str(s.get(gr_col, "")).upper() in ["F", "FAIL"] and not _is_absent(s.get(tot_col)))
+            enrolled = self._get_enrolled_students(code)
+            if not enrolled:
+                continue
+
+            enrolled_cnt = len(enrolled)
+            absent_cnt = sum(1 for s in enrolled if self._is_student_absent_in_course(s, code))
+            appeared_cnt = max(0, enrolled_cnt - absent_cnt)
+            fail_cnt = sum(1 for s in enrolled if not self._is_student_absent_in_course(s, code) and self._is_student_failed_in_course(s, code))
             pass_cnt = max(0, appeared_cnt - fail_cnt)
-            pass_pct = round(pass_cnt / appeared_cnt, 4) if appeared_cnt > 0 else 0.0
+
+            # In the percentage, absent means that student failed so the percentage goes down:
+            # Denominator is total enrolled students (appeared + absent), NOT appeared only!
+            pass_pct = round(pass_cnt / enrolled_cnt, 4) if enrolled_cnt > 0 else 0.0
 
             vals = [name, appeared_cnt, pass_cnt, absent_cnt, fail_cnt, pass_pct]
             for col_idx, val in enumerate(vals, 1):
@@ -618,27 +654,35 @@ class AcademicExcelReportGenerator:
         for c in th_courses:
             code = c["code"]
             name = c.get("name", code)
-            tot_col = f"{code}_Total"
-            gr_col = f"{code}_Grade"
+            tot_col = f"{code}_Total" if self._key_exists(f"{code}_Total") else f"{code}_TOT"
 
-            # Estimate max marks from highest scored mark
-            max_scored = 0.0
-            for s in self.students:
-                m_val = _safe_float(s.get(tot_col))
-                if m_val and m_val > max_scored:
-                    max_scored = m_val
-            max_m = _get_est_max_marks(max_scored, default=100.0)
+            enrolled = self._get_enrolled_students(code)
+            if not enrolled:
+                continue
+
+            # Estimate max marks from highest scored mark or catalog
+            max_m = None
+            if "max_marks" in c and isinstance(c["max_marks"], dict):
+                max_m = _safe_float(c["max_marks"].get("Total") or c["max_marks"].get("TOT"))
+            if not max_m or max_m <= 0:
+                max_scored = 0.0
+                for s in enrolled:
+                    m_val = _safe_float(s.get(tot_col) or s.get(f"{code}_TH"))
+                    if m_val and m_val > max_scored:
+                        max_scored = m_val
+                max_m = _get_est_max_marks(max_scored, default=100.0)
 
             buckets = {"90": 0, "80": 0, "70": 0, "60": 0, "50": 0, "40": 0, "fail": 0, "abs": 0}
             appeared = 0
 
-            for s in self.students:
-                tot_val = _safe_float(s.get(tot_col))
-                gr = str(s.get(gr_col, "")).upper()
+            for s in enrolled:
+                tot_val = _safe_float(s.get(tot_col) or s.get(f"{code}_TOT") or s.get(f"{code}_TH"))
+                is_abs = self._is_student_absent_in_course(s, code)
+                is_fail = self._is_student_failed_in_course(s, code, max_m)
 
-                if _is_absent(s.get(tot_col)) or gr in ["AB", "AA"]:
+                if is_abs:
                     buckets["abs"] += 1
-                elif gr in ["F", "FAIL"]:
+                elif is_fail:
                     buckets["fail"] += 1
                     appeared += 1
                 elif tot_val is not None:
@@ -658,6 +702,9 @@ class AcademicExcelReportGenerator:
                         buckets["40"] += 1
                     else:
                         buckets["fail"] += 1
+                else:
+                    buckets["fail"] += 1
+                    appeared += 1
 
             vals = [
                 name, appeared, buckets["90"], buckets["80"], buckets["70"],
@@ -686,17 +733,27 @@ class AcademicExcelReportGenerator:
         row_idx += 1
         for c in lab_courses:
             code = c["code"]
-            name = f"{c.get('name', code)} Practical"
-            tot_col = f"{code}_Total" if self._key_exists(f"{code}_Total") else f"{code}_PR"
-            gr_col = f"{code}_Grade"
+            name = c.get("name", code)
+            # Avoid redundant "Lab Practical"
+            if not any(w in name.lower() for w in ["lab", "practical", "project"]):
+                display_name = f"{name} Practical"
+            else:
+                display_name = name
 
-            absent_cnt = sum(1 for s in self.students if _is_absent(s.get(tot_col)) or str(s.get(gr_col, "")).upper() in ["AB", "AA"])
-            appeared_cnt = total_students - absent_cnt
-            fail_cnt = sum(1 for s in self.students if str(s.get(gr_col, "")).upper() in ["F", "FAIL"])
+            enrolled = self._get_enrolled_students(code)
+            if not enrolled:
+                continue
+
+            enrolled_cnt = len(enrolled)
+            absent_cnt = sum(1 for s in enrolled if self._is_student_absent_in_course(s, code))
+            appeared_cnt = max(0, enrolled_cnt - absent_cnt)
+            fail_cnt = sum(1 for s in enrolled if not self._is_student_absent_in_course(s, code) and self._is_student_failed_in_course(s, code))
             pass_cnt = max(0, appeared_cnt - fail_cnt)
-            pass_pct = round(pass_cnt / appeared_cnt, 4) if appeared_cnt > 0 else 0.0
 
-            vals = [name, appeared_cnt, pass_cnt, fail_cnt, absent_cnt, pass_pct]
+            # Absent penalty on percentage
+            pass_pct = round(pass_cnt / enrolled_cnt, 4) if enrolled_cnt > 0 else 0.0
+
+            vals = [display_name, appeared_cnt, pass_cnt, fail_cnt, absent_cnt, pass_pct]
             for col_idx, val in enumerate(vals, 1):
                 cell = ws.cell(row=row_idx, column=col_idx, value=val)
                 cell.font = DATA_FONT
@@ -727,24 +784,34 @@ class AcademicExcelReportGenerator:
         for c in (th_courses + lab_courses):
             code = c["code"]
             name = c.get("name", code)
-            tot_col = f"{code}_Total" if self._key_exists(f"{code}_Total") else f"{code}_TH"
+
+            enrolled = self._get_enrolled_students(code)
+            if not enrolled:
+                continue
 
             # Find student with highest mark in this subject
             top_scorer = None
             max_m = -1.0
 
-            for s in self.students:
-                m_val = _safe_float(s.get(tot_col))
-                if m_val is not None and m_val > max_m:
-                    max_m = m_val
-                    top_scorer = s
+            for s in enrolled:
+                for suffix in ["_Total", "_TOT", "_TW", "_PR", "_TH", "_OR"]:
+                    m_val = _safe_float(s.get(f"{code}{suffix}"))
+                    if m_val is not None and m_val > max_m:
+                        max_m = m_val
+                        top_scorer = s
 
             if top_scorer and max_m > 0:
                 seat = top_scorer.get("Seat_No") or top_scorer.get("seat_no")
                 s_name = top_scorer.get("Student_Name") or top_scorer.get("student_name")
-                # Estimate total max marks
-                est_max = 100.0 if max_m <= 100.0 else (125.0 if max_m <= 125.0 else 150.0)
-                pct = round((max_m / est_max) * 100.0, 2)
+
+                # Accurately resolve max marks ceiling for this course
+                est_max = None
+                if "max_marks" in c and isinstance(c["max_marks"], dict):
+                    est_max = _safe_float(c["max_marks"].get("Total") or c["max_marks"].get("TOT") or c["max_marks"].get("TW"))
+                if not est_max or est_max <= 0:
+                    est_max = _get_est_max_marks(max_m, default=100.0)
+
+                pct = round(min((max_m / est_max) * 100.0, 100.0), 2)
 
                 vals = [name, seat, str(s_name).strip(), max_m, pct]
                 for col_idx, val in enumerate(vals, 1):
