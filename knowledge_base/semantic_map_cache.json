@@ -756,5 +756,156 @@
     ],
     "tier_used": 1,
     "token_usage": 0
+  },
+  "25b3f86ddc1ff5ba": {
+    "mappings": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "sgpi": "SGPI",
+      "total_marks": "Total_Marks",
+      "max_marks": "Max_Marks",
+      "result": "Result_Status",
+      "gender": "Gender",
+      "candidate_type": "Candidate_Type",
+      "prn": "PRN",
+      "semester": "Semester"
+    },
+    "subjects": {
+      "1221311": {
+        "IA": "1221311_IA",
+        "TOT": "1221311_Total",
+        "GRADE": "1221311_Grade",
+        "GP": "1221311_GP",
+        "CREDITS": "1221311_Credits",
+        "CG": "1221311_CG",
+        "SUBJECT": "1221311_Subject"
+      },
+      "2113111": {
+        "IA": "2113111_IA",
+        "TW": "2113111_TW",
+        "TOT": "2113111_Total",
+        "GRADE": "2113111_Grade",
+        "GP": "2113111_GP",
+        "CREDITS": "2113111_Credits",
+        "CG": "2113111_CG",
+        "SUBJECT": "2113111_Subject"
+      },
+      "2113112": {
+        "IA": "2113112_IA",
+        "TOT": "2113112_Total",
+        "GRADE": "2113112_Grade",
+        "GP": "2113112_GP",
+        "CREDITS": "2113112_Credits",
+        "CG": "2113112_CG",
+        "SUBJECT": "2113112_Subject"
+      },
+      "2113113": {
+        "IA": "2113113_IA",
+        "TOT": "2113113_Total",
+        "GRADE": "2113113_Grade",
+        "GP": "2113113_GP",
+        "CREDITS": "2113113_Credits",
+        "CG": "2113113_CG",
+        "SUBJECT": "2113113_Subject"
+      },
+      "2113114": {
+        "IA": "2113114_IA",
+        "TOT": "2113114_Total",
+        "GRADE": "2113114_Grade",
+        "GP": "2113114_GP",
+        "CREDITS": "2113114_Credits",
+        "CG": "2113114_CG",
+        "SUBJECT": "2113114_Subject"
+      },
+      "2113115": {
+        "TW": "2113115_TW",
+        "OR": "2113115_OR",
+        "TOT": "2113115_Total",
+        "GRADE": "2113115_Grade",
+        "GP": "2113115_GP",
+        "CREDITS": "2113115_Credits",
+        "CG": "2113115_CG",
+        "SUBJECT": "2113115_Subject"
+      },
+      "2113116": {
+        "TW": "2113116_TW",
+        "OR": "2113116_OR",
+        "TOT": "2113116_Total",
+        "GRADE": "2113116_Grade",
+        "GP": "2113116_GP",
+        "CREDITS": "2113116_Credits",
+        "CG": "2113116_CG",
+        "SUBJECT": "2113116_Subject"
+      },
+      "2113611": {
+        "TW": "2113611_TW",
+        "OR": "2113611_OR",
+        "TOT": "2113611_Total",
+        "GRADE": "2113611_Grade",
+        "GP": "2113611_GP",
+        "CREDITS": "2113611_Credits",
+        "CG": "2113611_CG",
+        "SUBJECT": "2113611_Subject"
+      },
+      "2993511": {
+        "TW": "2993511_TW",
+        "TOT": "2993511_Total",
+        "GRADE": "2993511_Grade",
+        "GP": "2993511_GP",
+        "CREDITS": "2993511_Credits",
+        "CG": "2993511_CG",
+        "SUBJECT": "2993511_Subject"
+      },
+      "2993512": {
+        "TW": "2993512_TW",
+        "TOT": "2993512_Total",
+        "GRADE": "2993512_Grade",
+        "GP": "2993512_GP",
+        "CREDITS": "2993512_Credits",
+        "CG": "2993512_CG",
+        "SUBJECT": "2993512_Subject"
+      }
+    },
+    "unmapped": [
+      "ABC_ID",
+      "Remark",
+      "Credits_Earned",
+      "Total_CG",
+      "ERN",
+      "1221311_TH",
+      "1221311_E1",
+      "1221311_IN",
+      "1221311_I1",
+      "2113111_TH",
+      "2113111_E1",
+      "2113111_IN",
+      "2113111_I1",
+      "2113111_T1",
+      "2113112_TH",
+      "2113112_E1",
+      "2113112_IN",
+      "2113112_I1",
+      "2113113_TH",
+      "2113113_E1",
+      "2113113_IN",
+      "2113113_I1",
+      "2113114_TH",
+      "2113114_E1",
+      "2113114_IN",
+      "2113114_I1",
+      "2113115_T1",
+      "2113115_PR",
+      "2113115_O1",
+      "2113116_T1",
+      "2113116_PR",
+      "2113116_O1",
+      "2113611_T1",
+      "2113611_PR",
+      "2113611_O1",
+      "2993511_T1",
+      "2993512_T1"
+    ],
+    "tier_used": 1,
+    "token_usage": 0
   }
 }
