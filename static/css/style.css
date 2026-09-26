@@ -1196,3 +1196,413 @@ body {
   cursor: pointer;
 }
 
+/* ==========================================================================
+   EDA Dashboard & Results Tabbed Navigation
+   ========================================================================== */
+
+.results-tabs-nav {
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--border-subtle);
+  margin-top: 1rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.25rem;
+}
+
+.results-tab-btn {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 0.6rem 1rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s ease;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+.results-tab-btn:hover {
+  color: var(--text-main);
+  background: rgba(99, 102, 241, 0.05);
+}
+
+.results-tab-btn.active {
+  color: var(--primary-light);
+  border-bottom-color: var(--primary);
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.tab-chip-highlight {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  background: linear-gradient(135deg, #6366f1, #a855f7);
+  color: #ffffff;
+  padding: 0.15rem 0.45rem;
+  border-radius: 9999px;
+  letter-spacing: 0.04em;
+}
+
+.tab-content {
+  display: block;
+}
+
+.tab-content.hidden {
+  display: none !important;
+}
+
+/* EDA Toolbar */
+.eda-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.eda-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.eda-badge {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius-sm);
+}
+
+.eda-meta-pill {
+  font-size: 0.75rem;
+  color: #34d399;
+  font-weight: 500;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  padding: 0.2rem 0.55rem;
+  border-radius: 9999px;
+}
+
+.eda-toolbar-right {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* Academic KPI Grid */
+.eda-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 1.5rem;
+}
+
+.eda-kpi-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.eda-kpi-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-focus);
+}
+
+.eda-kpi-card.kpi-success {
+  border-left: 3px solid #10b981;
+}
+
+.eda-kpi-card.kpi-accent {
+  border-left: 3px solid #6366f1;
+}
+
+.eda-kpi-card.kpi-danger {
+  border-left: 3px solid #ef4444;
+}
+
+.eda-kpi-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.eda-kpi-value {
+  font-size: 1.55rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.eda-kpi-sub {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-family: 'Fira Code', monospace;
+}
+
+.text-accent {
+  color: var(--primary-light);
+}
+
+/* AI Executive Insights Card */
+.eda-insights-card {
+  background: linear-gradient(145deg, rgba(30, 41, 59, 0.7), rgba(15, 23, 42, 0.85));
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  border-radius: var(--radius-md);
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+
+.eda-insights-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.85rem 1.25rem;
+  background: rgba(99, 102, 241, 0.08);
+  border-bottom: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+.insights-title-group {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.insights-sparkle {
+  color: #a855f7;
+  font-size: 1.1rem;
+}
+
+.insights-title-group h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #e0e7ff;
+}
+
+.insights-meta-group {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.badge-engine {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.2rem 0.5rem;
+  border-radius: 9999px;
+  background: rgba(168, 85, 247, 0.15);
+  border: 1px solid rgba(168, 85, 247, 0.35);
+  color: #c084fc;
+}
+
+.eda-insights-body {
+  padding: 1.25rem;
+  font-size: 0.88rem;
+  line-height: 1.6;
+  color: #cbd5e1;
+}
+
+.eda-insights-body h3 {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #93c5fd;
+  margin-top: 1rem;
+  margin-bottom: 0.4rem;
+  border-bottom: 1px solid rgba(147, 197, 253, 0.15);
+  padding-bottom: 0.25rem;
+}
+
+.eda-insights-body h3:first-child {
+  margin-top: 0;
+}
+
+.eda-insights-body p {
+  margin-bottom: 0.65rem;
+}
+
+.eda-insights-body ul, .eda-insights-body ol {
+  margin-left: 1.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.eda-insights-body li {
+  margin-bottom: 0.35rem;
+}
+
+.eda-insights-placeholder {
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+  padding: 1rem;
+}
+
+/* Charts Grid */
+.eda-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+@media (max-width: 992px) {
+  .eda-charts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.chart-box {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-box-wide {
+  grid-column: span 2;
+}
+
+@media (max-width: 992px) {
+  .chart-box-wide {
+    grid-column: span 1;
+  }
+}
+
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.chart-header h4 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.chart-tag {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-sm);
+}
+
+.chart-canvas-container {
+  position: relative;
+  width: 100%;
+  height: 260px;
+}
+
+.chart-box-wide .chart-canvas-container {
+  height: 300px;
+}
+
+/* Mini Tables Grid */
+.eda-tables-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 992px) {
+  .eda-tables-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.eda-subtable-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 1rem;
+}
+
+.subtable-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.subtable-header h4 {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.subtable-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.15rem 0.45rem;
+  border-radius: 9999px;
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--primary-light);
+}
+
+.subtable-badge.text-danger {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+.table-responsive-mini {
+  overflow-x: auto;
+  max-height: 250px;
+}
+
+.eda-mini-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.eda-mini-table th {
+  text-align: left;
+  padding: 0.45rem 0.65rem;
+  background: rgba(15, 23, 42, 0.6);
+  color: var(--text-muted);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border-subtle);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.eda-mini-table td {
+  padding: 0.45rem 0.65rem;
+  border-bottom: 1px solid rgba(55, 65, 81, 0.35);
+  font-family: 'Fira Code', monospace;
+}
+
+.eda-mini-table tr:hover td {
+  background: rgba(99, 102, 241, 0.04);
+}
+
+.empty-cell {
+  text-align: center;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 1rem !important;
+}
+
+

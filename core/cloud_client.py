@@ -26,8 +26,8 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, "cloud_config.json")
 DEFAULT_PROVIDERS = {
     "gemini": {
         "name": "Google Gemini",
-        "default_model": "gemini-2.0-flash",
-        "available_models": ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"],
+        "default_model": "gemini-3.8-flash",
+        "available_models": ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"],
         "base_url": "https://generativelanguage.googleapis.com/v1beta"
     },
     "openai": {
@@ -238,25 +238,36 @@ class CloudClient:
 
     def generate(
         self,
-        user_prompt: str,
-        system_instruction: str,
-        dataset_summary: str,
-        students: List[Dict[str, Any]],
+        user_prompt: str = "",
+        system_instruction: str = "",
+        dataset_summary: str = "",
+        students: Optional[List[Dict[str, Any]]] = None,
         session_id: str = "default_session",
         format_json: bool = True,
-        timeout: int = 40
+        timeout: int = 40,
+        prompt: Optional[str] = None,
+        system: Optional[str] = None,
+        temperature: Optional[float] = None
     ) -> str:
         """
         Execute request with persistent dataset context and token minimization.
-        Sends dataset summary ONLY ONCE per session.
+        Supports both conversational dataset sessions and direct prompt generation.
         """
+        if prompt is not None:
+            user_prompt = prompt
+        if system is not None:
+            system_instruction = system
+        if students is None:
+            students = []
+
         if not self.is_configured():
             raise RuntimeError("Cloud AI is not configured or disabled.")
 
         provider = self.config.get("provider", "gemini").lower()
         api_key = self.config.get("api_key", "").strip()
-        model = self.config.get("model", "gemini-2.0-flash")
-        temperature = float(self.config.get("temperature", 0.2))
+        model = self.config.get("model", "gemini-3.8-flash")
+        if temperature is None:
+            temperature = float(self.config.get("temperature", 0.2))
 
         sess_id, is_new = self.get_or_create_session(session_id, dataset_summary, students, system_instruction)
         session = self._sessions[sess_id]

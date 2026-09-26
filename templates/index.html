@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 </head>
 <body class="dark-theme">
   <header class="app-header">
@@ -212,7 +213,7 @@
       <section class="card">
         <div class="results-header">
           <div>
-            <h2 id="resultTitle">Extracted Results</h2>
+            <h2 id="resultTitle">Academic Result Intelligence</h2>
             <p id="resultMeta" class="results-meta-text">Analyzing dataset...</p>
           </div>
           <div class="export-actions">
@@ -222,26 +223,228 @@
           </div>
         </div>
 
-        <div class="results-toolbar">
-          <input type="text" id="searchInput" class="search-input" placeholder="Search by seat number, student name, or grade...">
-          <div class="audit-summary-pill" id="auditPill">
-            <span id="auditPassedCount">0</span> Verified Records
+        <!-- Navigation Tabs -->
+        <div class="results-tabs-nav">
+          <button type="button" class="results-tab-btn active" id="tabBtnTable" data-target="tabViewTable">
+            <span>📋 Data Table View</span>
+          </button>
+          <button type="button" class="results-tab-btn" id="tabBtnAnalytics" data-target="tabViewAnalytics">
+            <span>📊 AI Visual Analytics Dashboard</span>
+            <span class="tab-chip-highlight">EDA + AI</span>
+          </button>
+        </div>
+
+        <!-- TAB 1: Data Table View -->
+        <div id="tabViewTable" class="tab-content active">
+          <div class="results-toolbar">
+            <input type="text" id="searchInput" class="search-input" placeholder="Search by seat number, student name, or grade...">
+            <div class="audit-summary-pill" id="auditPill">
+              <span id="auditPassedCount">0</span> Verified Records
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table class="data-table" id="dataTable">
+              <thead>
+                <tr id="tableHeadRow"></tr>
+              </thead>
+              <tbody id="tableBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination-footer">
+            <span id="paginationInfo">Showing records 1 - 25</span>
+            <div class="pagination-btns">
+              <button id="prevPageBtn" class="btn btn-sm">Previous</button>
+              <button id="nextPageBtn" class="btn btn-sm">Next</button>
+            </div>
           </div>
         </div>
 
-        <div class="table-container">
-          <table class="data-table" id="dataTable">
-            <thead>
-              <tr id="tableHeadRow"></tr>
-            </thead>
-            <tbody id="tableBody"></tbody>
-          </table>
-        </div>
-        <div class="pagination-footer">
-          <span id="paginationInfo">Showing records 1 - 25</span>
-          <div class="pagination-btns">
-            <button id="prevPageBtn" class="btn btn-sm">Previous</button>
-            <button id="nextPageBtn" class="btn btn-sm">Next</button>
+        <!-- TAB 2: AI Visual Analytics Dashboard -->
+        <div id="tabViewAnalytics" class="tab-content hidden">
+          <!-- Analytics Toolbar -->
+          <div class="eda-toolbar">
+            <div class="eda-toolbar-left">
+              <span class="eda-badge">⚡ Deterministic EDA Engine</span>
+              <span class="eda-meta-pill" id="edaTokensSaved">✨ ~99.6% Tokens Saved (Zero Token Aggregation)</span>
+            </div>
+            <div class="eda-toolbar-right">
+              <button type="button" id="btnRefreshEda" class="btn btn-sm btn-outline">↻ Re-compute Stats</button>
+              <button type="button" id="btnGenInsights" class="btn btn-sm btn-primary">🧠 Generate AI Executive Insights</button>
+              <button type="button" id="btnExportEdaJson" class="btn btn-sm btn-outline">📥 Export Metrics JSON</button>
+            </div>
+          </div>
+
+          <!-- Top Academic KPI Strip -->
+          <div class="eda-kpi-grid">
+            <div class="eda-kpi-card">
+              <span class="eda-kpi-label">TOTAL COHORT</span>
+              <strong class="eda-kpi-value" id="kpiTotalStudents">0</strong>
+              <span class="eda-kpi-sub" id="kpiAppearSub">Enrolled Candidates</span>
+            </div>
+            <div class="eda-kpi-card kpi-success">
+              <span class="eda-kpi-label">OVERALL PASS RATE</span>
+              <strong class="eda-kpi-value text-success" id="kpiPassRate">0%</strong>
+              <span class="eda-kpi-sub" id="kpiPassedCount">0 Passed</span>
+            </div>
+            <div class="eda-kpi-card kpi-accent">
+              <span class="eda-kpi-label">AVERAGE SGPI</span>
+              <strong class="eda-kpi-value text-accent" id="kpiAvgSgpi">0.00</strong>
+              <span class="eda-kpi-sub" id="kpiMedianSgpi">Median: 0.00 | Std: 0.00</span>
+            </div>
+            <div class="eda-kpi-card">
+              <span class="eda-kpi-label">HIGHEST SGPI</span>
+              <strong class="eda-kpi-value text-warning" id="kpiMaxSgpi">0.00</strong>
+              <span class="eda-kpi-sub" id="kpiMaxMarks">Max Marks: 0</span>
+            </div>
+            <div class="eda-kpi-card">
+              <span class="eda-kpi-label">DISTINCTION (≥ 7.5)</span>
+              <strong class="eda-kpi-value" id="kpiDistinction">0</strong>
+              <span class="eda-kpi-sub" id="kpiDistinctionPct">0% of cohort</span>
+            </div>
+            <div class="eda-kpi-card kpi-danger">
+              <span class="eda-kpi-label">REMEDIAL / KT / FAIL</span>
+              <strong class="eda-kpi-value text-danger" id="kpiFailCount">0</strong>
+              <span class="eda-kpi-sub" id="kpiFailPct">0% ATKT/Failed</span>
+            </div>
+          </div>
+
+          <!-- AI Executive Insights Card -->
+          <div class="eda-insights-card" id="edaInsightsCard">
+            <div class="eda-insights-header">
+              <div class="insights-title-group">
+                <span class="insights-sparkle">✦</span>
+                <h3>AI Executive Academic Briefing & NAAC/NBA Recommendations</h3>
+              </div>
+              <div class="insights-meta-group">
+                <span class="badge-engine" id="insightsEngineBadge">Standby</span>
+                <button type="button" class="btn-sm btn-outline" id="btnToggleInsightsCollapse">Collapse</button>
+              </div>
+            </div>
+            <div class="eda-insights-body" id="edaInsightsContent">
+              <div class="eda-insights-placeholder">
+                <p>Click <strong>"Generate AI Executive Insights"</strong> to synthesize departmental observations and NAAC/NBA remedial action plans using minimal tokens (~150 tokens).</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Charts Grid -->
+          <div class="eda-charts-grid">
+            <!-- Chart 1: SGPI Distribution Bell Curve -->
+            <div class="chart-box">
+              <div class="chart-header">
+                <h4>📈 SGPI Distribution & Frequency Curve</h4>
+                <span class="chart-tag">Grade Intervals</span>
+              </div>
+              <div class="chart-canvas-container">
+                <canvas id="chartSgpiDist"></canvas>
+              </div>
+            </div>
+
+            <!-- Chart 2: Grade Classification Pie -->
+            <div class="chart-box">
+              <div class="chart-header">
+                <h4>🎓 Cohort Grade Classification</h4>
+                <span class="chart-tag">Distinction to Fail</span>
+              </div>
+              <div class="chart-canvas-container">
+                <canvas id="chartGradeClass"></canvas>
+              </div>
+            </div>
+
+            <!-- Chart 3: Subject Pass Rates (Horizontal Bars) -->
+            <div class="chart-box chart-box-wide">
+              <div class="chart-header">
+                <h4>🎯 Subject-Wise Pass Percentage (Curriculum Difficulty Profiler)</h4>
+                <span class="chart-tag">Identifies Bottlenecks</span>
+              </div>
+              <div class="chart-canvas-container">
+                <canvas id="chartSubjectPass"></canvas>
+              </div>
+            </div>
+
+            <!-- Chart 4: Subject Average Scores -->
+            <div class="chart-box chart-box-wide">
+              <div class="chart-header">
+                <h4>📊 Subject Average Scores & Theory vs. Lab Breakdown</h4>
+                <span class="chart-tag">Scoring Profile</span>
+              </div>
+              <div class="chart-canvas-container">
+                <canvas id="chartSubjectMarks"></canvas>
+              </div>
+            </div>
+
+            <!-- Chart 5: Regular vs Diploma Comparison -->
+            <div class="chart-box">
+              <div class="chart-header">
+                <h4>👥 Regular vs. Lateral Entry (Diploma) Performance</h4>
+                <span class="chart-tag">Cohort Segments</span>
+              </div>
+              <div class="chart-canvas-container">
+                <canvas id="chartCohortSegments"></canvas>
+              </div>
+            </div>
+
+            <!-- Chart 6: Gender Performance -->
+            <div class="chart-box">
+              <div class="chart-header">
+                <h4>⚖️ Gender Demographics & Pass Ratio</h4>
+                <span class="chart-tag">Male vs. Female</span>
+              </div>
+              <div class="chart-canvas-container">
+                <canvas id="chartGenderDist"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- Mini Detail Tables: Top Performers & Remedial Alerts -->
+          <div class="eda-tables-grid">
+            <!-- Top Performers -->
+            <div class="eda-subtable-card">
+              <div class="subtable-header">
+                <h4>🏆 Top 5 Academic Performers (Honor Roll)</h4>
+                <span class="subtable-badge">Merit</span>
+              </div>
+              <div class="table-responsive-mini">
+                <table class="eda-mini-table" id="topPerformersTable">
+                  <thead>
+                    <tr>
+                      <th>Rank</th>
+                      <th>Seat No</th>
+                      <th>Student Name</th>
+                      <th>SGPI</th>
+                      <th>Total Marks</th>
+                    </tr>
+                  </thead>
+                  <tbody id="topPerformersBody">
+                    <tr><td colspan="5" class="empty-cell">No records available</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Remedial Action List -->
+            <div class="eda-subtable-card">
+              <div class="subtable-header">
+                <h4>⚠️ At-Risk / Slow Learners Mentoring List (NAAC 2.2.1)</h4>
+                <span class="subtable-badge text-danger">Target Remedial</span>
+              </div>
+              <div class="table-responsive-mini">
+                <table class="eda-mini-table" id="remedialTable">
+                  <thead>
+                    <tr>
+                      <th>Seat No</th>
+                      <th>Student Name</th>
+                      <th>SGPI</th>
+                      <th>Remedial Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody id="remedialBody">
+                    <tr><td colspan="4" class="empty-cell">No students require remedial intervention.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
       </section>
