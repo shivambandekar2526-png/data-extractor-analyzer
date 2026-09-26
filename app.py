@@ -41,8 +41,10 @@ from core.cloud_client import CloudClient
 from core.eda_engine import EDAEngine
 from core.ai_insights import AIInsightsSynthesizer
 from core.semantic_mapper import SemanticMapper
-from exporter import export_ai_extracted_data
+from core.excel_report_generator import AcademicExcelReportGenerator, get_academic_filename
+from exporter import export_ai_extracted_data, write_csv_file, write_excel_file
 from models import CourseCatalog, ExamMeta, StudentRecord
+from core.ai_cross_checker import run_ai_cross_check, validate_patch_sandbox
 
 app = Flask(
     __name__,
@@ -66,12 +68,11 @@ def update_job_progress(job_id: str, progress: float, message: str) -> None:
             jobs[job_id]["message"] = message
 
 
-def _run_ai_extraction_worker(job_id: str, target_pdf_path: str) -> None:
-    """Background extraction thread executing the AI pipeline."""
+def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosscheck: bool = False) -> None:
+    """Background extraction thread executing the AI pipeline with optional Cloud AI cross-checking."""
     try:
+        client = None
         update_job_progress(job_id, 2.0, "Starting AI extraction pipeline...")
-        client = OllamaClient()
-
         def on_progress(pct: float, msg: str):
             update_job_progress(job_id, pct, msg)
 
@@ -83,12 +84,58 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str) -> None:
                     jobs[job_id]["audit_logs"].append(entry)
 
         t0 = time.time()
-        meta, students, archetype = extract_pdf(
-            pdf_path=target_pdf_path,
-            progress_callback=on_progress,
-            client=client,
-            audit_callback=log_audit
-        )
+        if cloud_crosscheck:
+            # 100% Pure Cloud AI Pipeline: bypass local Ollama neural inference passes entirely
+            log_audit({
+                "timestamp": time.strftime("%H:%M:%S"),
+                "type": "system",
+                "badge": "CLOUD AI ONLY",
+                "title": "Pure Cloud AI Pipeline Active: Bypassing local Ollama model completely. Fast possibility ingestion + multi-provider Cloud LLMs (Groq / Gemini / OpenAI).",
+                "details": {"mode": "pure_cloud_ai"}
+            })
+            from core.page_ingester import ingest_pdf
+            from core.possibility_classifier import classify_document
+            from core.possibility_extractor import extract_with_possibility_engine
+
+            update_job_progress(job_id, 5.0, "Ingesting PDF document streams (Pure Cloud AI mode)...")
+            pages = ingest_pdf(target_pdf_path)
+            archetype, confidence = classify_document(pages)
+            update_job_progress(job_id, 20.0, f"Matched Archetype: {archetype} ({confidence:.0%}). Extracting ledger...")
+            meta, students = extract_with_possibility_engine(target_pdf_path, archetype, on_progress)
+        else:
+            client = OllamaClient()
+            meta, students, archetype = extract_pdf(
+                pdf_path=target_pdf_path,
+                progress_callback=on_progress,
+                client=client,
+                audit_callback=log_audit
+            )
+
+        flat_records = [s.to_flat_dict(meta.catalog) for s in students]
+
+        ai_crosscheck_result = None
+        if cloud_crosscheck and run_ai_cross_check:
+            update_job_progress(job_id, 86.0, "Auditing & self-healing records with Cloud AI...")
+            try:
+                def cc_progress(pct: float, msg: str, card: Optional[Dict[str, Any]] = None):
+                    scaled_pct = 86.0 + (pct * 0.06)  # 86% to 92%
+                    update_job_progress(job_id, scaled_pct, f"Cloud AI: {msg}")
+                    if card:
+                        with jobs_lock:
+                            if job_id in jobs:
+                                if "discrepancies" not in jobs[job_id]:
+                                    jobs[job_id]["discrepancies"] = []
+                                jobs[job_id]["discrepancies"].append(card)
+
+                ai_crosscheck_result = run_ai_cross_check(
+                    meta=meta,
+                    students=flat_records,
+                    pdf_path=target_pdf_path,
+                    progress_cb=cc_progress,
+                    auto_apply=True
+                )
+            except Exception as e:
+                print(f"[!] Warning: In-flight Cloud AI cross-check failed: {e}")
 
         update_job_progress(job_id, 92.0, "Writing CSV, Excel, and JSON metadata...")
         checksum_summary = verify_batch(students, meta.catalog)
@@ -98,7 +145,8 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str) -> None:
             input_pdf_path=target_pdf_path,
             base_output_dir=OUTPUT_DIR,
             archetype=archetype,
-            checksum_data=checksum_summary
+            checksum_data=checksum_summary,
+            flat_rows=flat_records
         )
 
         folder_name = os.path.basename(des_dir)
@@ -106,8 +154,31 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str) -> None:
         excel_filename = csv_filename.replace("_extracted_data.csv", "_extracted_data.xlsx")
         json_filename = csv_filename.replace("_extracted_data.csv", "_catalog.json")
 
+        # Save AI cross-check audit JSON if executed
+        if ai_crosscheck_result:
+            try:
+                audit_path = os.path.join(des_dir, f"{folder_name}_crosscheck_audit.json")
+                with open(audit_path, "w", encoding="utf-8") as f:
+                    json.dump(ai_crosscheck_result, f, indent=2, ensure_ascii=False)
+            except Exception:
+                pass
+
+        meta_dict = {
+            "academic_year": getattr(meta, "academic_year", ""),
+            "semester": getattr(meta, "semester", ""),
+            "exam_title": getattr(meta, "exam_title", ""),
+            "college_name": getattr(meta, "college_name", "")
+        }
+        academic_filename = get_academic_filename(folder_name, meta_dict)
+
         duration = round(time.time() - t0, 2)
-        flat_records = [s.to_flat_dict(meta.catalog) for s in students]
+
+        if cloud_crosscheck:
+            engine_name = "Cloud AI (Multi-Provider Orchestrator)"
+        elif client is not None and client.is_available():
+            engine_name = f"Local AI ({client.model} on GPU)"
+        else:
+            engine_name = "Offline Knowledge Base"
 
         res_payload = {
             "success": True,
@@ -115,14 +186,16 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str) -> None:
             "csv_file": csv_filename,
             "excel_file": excel_filename,
             "json_file": json_filename,
+            "academic_report_file": academic_filename,
             "archetype": archetype,
-            "engine_used": f"Local AI ({client.model} on GPU)" if client.is_available() else "Offline Knowledge Base",
+            "engine_used": engine_name,
             "semester": meta.semester,
             "college_name": meta.college_name,
             "exam_title": meta.exam_title,
             "result_date": meta.result_date,
             "total_students": len(students),
             "checksum_summary": checksum_summary,
+            "ai_crosscheck_summary": ai_crosscheck_result,
             "students": flat_records,
             "duration_seconds": duration,
             "catalog": meta.catalog.to_dict() if meta.catalog else [],
@@ -261,12 +334,14 @@ def load_history_entry(folder_name):
         except Exception:
             pass
 
+    academic_filename = get_academic_filename(clean_folder, cat_meta)
     return jsonify({
         "success": True,
         "folder_name": clean_folder,
         "csv_file": f"{clean_folder}_extracted_data.csv",
         "excel_file": f"{clean_folder}_extracted_data.xlsx",
         "json_file": f"{clean_folder}_catalog.json",
+        "academic_report_file": academic_filename,
         "total_students": len(records),
         "students": records,
         "meta": cat_meta
@@ -290,17 +365,21 @@ def start_extraction():
             target_pdf_path = os.path.join(INPUT_DIR, safe_name)
             up.save(target_pdf_path)
 
+    json_data = request.get_json(silent=True) or {}
+
     if not target_pdf_path:
-        existing = request.form.get("input_file") or request.form.get("existing_input")
+        existing = request.form.get("input_file") or request.form.get("existing_input") or json_data.get("input_file")
         if existing:
             cand = os.path.join(INPUT_DIR, secure_filename(existing))
             if os.path.isfile(cand):
                 target_pdf_path = cand
 
     if not target_pdf_path:
-        batch_rel = request.form.get("batch_file")
+        batch_rel = request.form.get("batch_file") or json_data.get("batch_file") or json_data.get("pdf_path")
         if batch_rel:
             clean_rel = batch_rel.replace("\\", "/").strip().lstrip("/")
+            if clean_rel.lower().startswith("batch data/"):
+                clean_rel = clean_rel[11:].lstrip("/")
             cand = os.path.abspath(os.path.join(BATCH_DATA_DIR, clean_rel))
             if cand.startswith(BATCH_DATA_DIR) and os.path.isfile(cand):
                 target_pdf_path = cand
@@ -320,14 +399,20 @@ def start_extraction():
             "error": None
         }
 
+    cloud_crosscheck = (
+        request.form.get("cloud_crosscheck", "0") in ("1", "true", "yes")
+        or request.args.get("cloud_crosscheck", "0") in ("1", "true", "yes")
+        or bool(json_data.get("cloud_crosscheck"))
+    )
+
     if is_sync:
-        _run_ai_extraction_worker(job_id, target_pdf_path)
+        _run_ai_extraction_worker(job_id, target_pdf_path, cloud_crosscheck)
         res = jobs.get(job_id, {})
         if res.get("status") == "completed":
             return jsonify(res["result"])
         return jsonify({"success": False, "error": res.get("error", "Unknown error")}), 500
 
-    t = threading.Thread(target=_run_ai_extraction_worker, args=(job_id, target_pdf_path), daemon=True)
+    t = threading.Thread(target=_run_ai_extraction_worker, args=(job_id, target_pdf_path, cloud_crosscheck), daemon=True)
     t.start()
     return jsonify({"success": True, "job_id": job_id})
 
@@ -353,6 +438,55 @@ def download_extracted_file(folder, filename):
     return send_from_directory(folder_path, clean_filename, as_attachment=True)
 
 
+@app.route("/api/export/academic-analysis/<folder>", methods=["GET"])
+def export_academic_analysis(folder):
+    """
+    Generate and stream the publication-grade 6-sheet Academic Analysis Workbook
+    (e.g. '21-22 sem 8.xlsx') matching the exact departmental Google Sheet format.
+    """
+    clean_folder = secure_filename(folder)
+    folder_path = os.path.join(OUTPUT_DIR, clean_folder)
+    if not os.path.isdir(folder_path):
+        return jsonify({"success": False, "error": f"Folder '{clean_folder}' not found in output."}), 404
+
+    csv_path = os.path.join(folder_path, f"{clean_folder}_extracted_data.csv")
+    cat_path = os.path.join(folder_path, f"{clean_folder}_catalog.json")
+
+    cat_meta = {}
+    if os.path.isfile(cat_path):
+        try:
+            with open(cat_path, "r", encoding="utf-8") as f:
+                cat_meta = json.load(f)
+        except Exception:
+            pass
+
+    records = []
+    if os.path.isfile(csv_path):
+        with open(csv_path, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            records = list(reader)
+
+    if not records:
+        return jsonify({"success": False, "error": "No extracted student records found to generate analysis sheet."}), 400
+
+    academic_filename = get_academic_filename(clean_folder, cat_meta)
+    academic_path = os.path.join(folder_path, academic_filename)
+
+    # Always ensure workbook is fresh and generated
+    try:
+        generator = AcademicExcelReportGenerator(
+            students=records,
+            catalog=cat_meta,
+            meta=cat_meta,
+            folder_name=clean_folder
+        )
+        generator.generate_workbook(academic_path)
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Failed to generate academic analysis report: {str(e)}"}), 500
+
+    return send_from_directory(folder_path, academic_filename, as_attachment=True)
+
+
 @app.route("/api/chat", methods=["POST"])
 def chat_with_dataset():
     """Interactive Chat with Hybrid Routing (Ollama + Cloud AI + Persistent Token Cache)."""
@@ -365,14 +499,28 @@ def chat_with_dataset():
     if not user_prompt:
         return jsonify({"success": False, "error": "Prompt cannot be empty."}), 400
 
+    catalog_courses = []
+    if folder_name:
+        clean_folder = secure_filename(folder_name)
+        cat_file = os.path.join(OUTPUT_DIR, clean_folder, f"{clean_folder}_catalog.json")
+        if os.path.isfile(cat_file):
+            try:
+                with open(cat_file, "r", encoding="utf-8") as f:
+                    cdata = json.load(f)
+                    catalog_courses = cdata.get("courses", [])
+            except Exception:
+                pass
+
     client = OllamaClient()
     cloud_client = CloudClient()
     result = process_chat_command(
         user_prompt=user_prompt,
         students=students,
+        catalog=catalog_courses,
         client=client,
         cloud_client=cloud_client,
-        session_id=session_id
+        session_id=session_id,
+        folder_name=folder_name
     )
 
     # Persist dataset modification to disk if folder_name provided
@@ -566,6 +714,326 @@ def generate_eda_insights():
 
 
 
+
+
+# =================================================================
+# AI Cross-Checking & Self-Healing Routes (Dual-Mode)
+# =================================================================
+
+ai_cc_jobs: Dict[str, Dict[str, Any]] = {}
+ai_cc_jobs_lock = threading.Lock()
+
+
+def update_ai_cc_progress(job_id: str, progress: float, message: str, card: Optional[Dict[str, Any]] = None) -> None:
+    """Thread-safe update of AI cross-check job progress and real-time streaming cards."""
+    with ai_cc_jobs_lock:
+        if job_id in ai_cc_jobs:
+            ai_cc_jobs[job_id]["progress"] = round(min(max(float(progress), 0.0), 100.0), 1)
+            ai_cc_jobs[job_id]["message"] = message
+            if card:
+                ai_cc_jobs[job_id]["discrepancies"].append(card)
+
+
+def _find_pdf_for_folder(folder_name: str) -> Optional[str]:
+    """Dynamically locates matching source PDF file across input and Batch Data directories."""
+    safe_name = folder_name.lower().replace("_", "-").replace(" ", "-")
+    # 1. Search input/
+    if os.path.isdir(INPUT_DIR):
+        for fname in os.listdir(INPUT_DIR):
+            if fname.lower().endswith(".pdf"):
+                stem = os.path.splitext(fname)[0].lower().replace("_", "-").replace(" ", "-")
+                if stem == safe_name or stem in safe_name or safe_name in stem:
+                    return os.path.join(INPUT_DIR, fname)
+    # 2. Search Batch Data/ recursively
+    if os.path.isdir(BATCH_DATA_DIR):
+        for root, dirs, files in os.walk(BATCH_DATA_DIR):
+            for fname in files:
+                if fname.lower().endswith(".pdf"):
+                    stem = os.path.splitext(fname)[0].lower().replace("_", "-").replace(" ", "-")
+                    if stem == safe_name or stem in safe_name or safe_name in stem:
+                        return os.path.join(root, fname)
+    # 3. Check inside designated output dir
+    out_dir = os.path.join(OUTPUT_DIR, secure_filename(folder_name))
+    if os.path.isdir(out_dir):
+        for fname in os.listdir(out_dir):
+            if fname.lower().endswith(".pdf"):
+                return os.path.join(out_dir, fname)
+    return None
+
+
+def _run_post_crosscheck_worker(job_id: str, folder_name: str, csv_path: str, pdf_path: str) -> None:
+    """Background worker for post-extraction AI Cross-Checking & Self-Healing."""
+    try:
+        if not run_ai_cross_check:
+            raise RuntimeError("AI Cross-Checker module is not available.")
+
+        update_ai_cc_progress(job_id, 2.0, "Loading student records from extracted CSV...")
+        students = []
+        with open(csv_path, mode="r", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                students.append(dict(row))
+
+        if not students:
+            with ai_cc_jobs_lock:
+                ai_cc_jobs[job_id]["status"] = "failed"
+                ai_cc_jobs[job_id]["error"] = "CSV dataset contains no student records."
+            return
+
+        # Attempt to load catalog metadata JSON
+        folder_dir = os.path.dirname(csv_path)
+        catalog_path = os.path.join(folder_dir, f"{folder_name}_catalog.json")
+        meta = ExamMeta(exam_title=folder_name, semester="")
+        if os.path.isfile(catalog_path):
+            try:
+                with open(catalog_path, mode="r", encoding="utf-8") as f:
+                    cat_data = json.load(f)
+                meta.exam_title = cat_data.get("exam_title", folder_name)
+                meta.college_name = cat_data.get("college_name", "")
+                meta.semester = cat_data.get("semester", "")
+                meta.result_date = cat_data.get("result_date", "")
+                meta.archetype = cat_data.get("archetype", "")
+                if "courses" in cat_data and isinstance(cat_data["courses"], list):
+                    cat_obj = CourseCatalog()
+                    for c in cat_data["courses"]:
+                        cat_obj.add_course(c.get("code", ""), c.get("name", ""), c.get("heads", []))
+                    meta.catalog = cat_obj
+            except Exception:
+                pass
+
+        def cb(pct: float, msg: str, card: Optional[Dict[str, Any]] = None):
+            update_ai_cc_progress(job_id, pct, msg, card)
+
+        update_ai_cc_progress(job_id, 5.0, "Initiating Cloud AI cross-checking audit...")
+        result = run_ai_cross_check(
+            meta=meta,
+            students=students,
+            pdf_path=pdf_path,
+            progress_cb=cb,
+            auto_apply=False
+        )
+
+        with ai_cc_jobs_lock:
+            ai_cc_jobs[job_id]["status"] = "completed"
+            ai_cc_jobs[job_id]["progress"] = 100.0
+            ai_cc_jobs[job_id]["message"] = (
+                f"Cross-check complete! Verified patches: {result.get('verified_patches', 0)}, "
+                f"Rejected: {result.get('rejected_patches', 0)}"
+            )
+            ai_cc_jobs[job_id]["result"] = result
+
+    except Exception as e:
+        with ai_cc_jobs_lock:
+            ai_cc_jobs[job_id]["status"] = "failed"
+            ai_cc_jobs[job_id]["error"] = str(e)
+            ai_cc_jobs[job_id]["message"] = f"Cross-check error: {str(e)}"
+
+
+@app.route("/api/ai/cross-check/run", methods=["POST"])
+def run_ai_crosscheck_endpoint():
+    """Start asynchronous on-demand AI Cross-Check on an existing extracted dataset."""
+    data = request.get_json(silent=True) or {}
+    folder_name = data.get("folder_name", "").strip()
+    pdf_candidate = data.get("pdf_path", "").strip()
+
+    if not folder_name:
+        return jsonify({"success": False, "error": "folder_name is required."}), 400
+
+    safe_folder = secure_filename(folder_name)
+    target_dir = os.path.join(OUTPUT_DIR, safe_folder)
+    if not os.path.isdir(target_dir):
+        return jsonify({"success": False, "error": f"Extracted output folder '{safe_folder}' not found."}), 404
+
+    csv_path = os.path.join(target_dir, f"{safe_folder}_extracted_data.csv")
+    if not os.path.isfile(csv_path):
+        candidates = [os.path.join(target_dir, f) for f in os.listdir(target_dir) if f.lower().endswith(".csv")]
+        if candidates:
+            csv_path = candidates[0]
+        else:
+            return jsonify({"success": False, "error": "No CSV file found in designated folder."}), 404
+
+    # Resolve PDF path
+    pdf_path = None
+    if pdf_candidate and os.path.isfile(pdf_candidate):
+        pdf_path = pdf_candidate
+    else:
+        pdf_path = _find_pdf_for_folder(safe_folder)
+
+    if not pdf_path or not os.path.isfile(pdf_path):
+        return jsonify({
+            "success": False,
+            "error": f"Source PDF file corresponding to '{safe_folder}' could not be located in input/ or Batch Data/."
+        }), 404
+
+    job_id = f"cc_{uuid.uuid4()}"
+    with ai_cc_jobs_lock:
+        ai_cc_jobs[job_id] = {
+            "status": "processing",
+            "progress": 0.0,
+            "message": "Initializing Cloud AI cross-checker...",
+            "created_at": time.time(),
+            "discrepancies": [],
+            "result": None,
+            "error": None
+        }
+
+    th = threading.Thread(
+        target=_run_post_crosscheck_worker,
+        args=(job_id, safe_folder, csv_path, pdf_path),
+        daemon=True
+    )
+    th.start()
+
+    return jsonify({"success": True, "job_id": job_id, "pdf_path": pdf_path})
+
+
+@app.route("/api/ai/cross-check/jobs/<job_id>", methods=["GET"])
+def get_ai_crosscheck_job_status(job_id):
+    """Poll progress, status, and streaming discrepancy cards for an AI cross-check job."""
+    with ai_cc_jobs_lock:
+        job = ai_cc_jobs.get(job_id)
+
+    if not job:
+        return jsonify({"success": False, "error": "Cross-check job not found."}), 404
+
+    return jsonify({
+        "success": True,
+        "status": job["status"],
+        "progress": job["progress"],
+        "message": job["message"],
+        "discrepancies": job.get("discrepancies", []),
+        "result": job.get("result"),
+        "error": job.get("error")
+    })
+
+
+@app.route("/api/ai/cross-check/apply", methods=["POST"])
+def apply_ai_crosscheck_patches():
+    """Apply approved AI cross-check patches, update CSV, and regenerate styled Excel."""
+    data = request.get_json(silent=True) or {}
+    folder_name = data.get("folder_name", "").strip()
+    patches = data.get("patches", [])
+
+    if not folder_name:
+        return jsonify({"success": False, "error": "folder_name is required."}), 400
+
+    if not patches:
+        return jsonify({"success": False, "error": "No patches provided to apply."}), 400
+
+    safe_folder = secure_filename(folder_name)
+    target_dir = os.path.join(OUTPUT_DIR, safe_folder)
+    if not os.path.isdir(target_dir):
+        return jsonify({"success": False, "error": "Target folder not found."}), 404
+
+    csv_path = os.path.join(target_dir, f"{safe_folder}_extracted_data.csv")
+    if not os.path.isfile(csv_path):
+        candidates = [os.path.join(target_dir, f) for f in os.listdir(target_dir) if f.lower().endswith(".csv")]
+        if candidates:
+            csv_path = candidates[0]
+        else:
+            return jsonify({"success": False, "error": "Target CSV file not found."}), 404
+
+    # Load existing CSV
+    students = []
+    fieldnames = []
+    with open(csv_path, mode="r", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        fieldnames = list(reader.fieldnames or [])
+        for row in reader:
+            students.append(dict(row))
+
+    students_by_seat = {str(s.get("Seat_No", s.get("seat_no", ""))): s for s in students}
+
+    # Apply patches
+    applied_count = 0
+    applied_audit = []
+    for patch in patches:
+        seat_no = str(patch.get("seat_no", "")).strip()
+        field_name = str(patch.get("field", patch.get("field_name", ""))).strip()
+        new_val = patch.get("suggested_val")
+
+        st = students_by_seat.get(seat_no)
+        if st is not None and field_name:
+            st[field_name] = new_val
+            applied_count += 1
+            applied_audit.append(patch)
+
+    # Re-write updated CSV
+    write_csv_file(students, fieldnames, csv_path)
+
+    # Load metadata and catalog if present
+    catalog_path = os.path.join(target_dir, f"{safe_folder}_catalog.json")
+    meta = ExamMeta(exam_title=safe_folder, semester="")
+    if os.path.isfile(catalog_path):
+        try:
+            with open(catalog_path, mode="r", encoding="utf-8") as f:
+                cat_data = json.load(f)
+            meta.exam_title = cat_data.get("exam_title", safe_folder)
+            meta.college_name = cat_data.get("college_name", "")
+            meta.semester = cat_data.get("semester", "")
+            meta.result_date = cat_data.get("result_date", "")
+            meta.archetype = cat_data.get("archetype", "")
+            if "courses" in cat_data:
+                cat_obj = CourseCatalog()
+                for c in cat_data["courses"]:
+                    cat_obj.add_course(c.get("code", ""), c.get("name", ""), c.get("heads", []))
+                meta.catalog = cat_obj
+        except Exception:
+            pass
+
+    # Re-verify checksums
+    verification_summary = {}
+    try:
+        verification_summary = verify_batch(students, meta.catalog)
+    except Exception:
+        pass
+
+    # Re-generate styled Excel file
+    excel_path = os.path.join(target_dir, f"{safe_folder}_extracted_data.xlsx")
+    write_excel_file(
+        data=students,
+        fieldnames=fieldnames,
+        catalog=meta.catalog,
+        meta=meta,
+        output_path=excel_path
+    )
+
+    # Update catalog JSON with new checksum data
+    if os.path.isfile(catalog_path):
+        try:
+            with open(catalog_path, mode="r", encoding="utf-8") as f:
+                cat_data = json.load(f)
+            cat_data["checksum_verification"] = verification_summary
+            with open(catalog_path, mode="w", encoding="utf-8") as f:
+                json.dump(cat_data, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
+
+    # Save applied patches audit log
+    audit_log_path = os.path.join(target_dir, f"{safe_folder}_crosscheck_audit.json")
+    try:
+        existing_audit = {}
+        if os.path.isfile(audit_log_path):
+            with open(audit_log_path, mode="r", encoding="utf-8") as f:
+                existing_audit = json.load(f)
+        existing_audit["last_applied_patches"] = applied_audit
+        existing_audit["last_applied_timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        with open(audit_log_path, mode="w", encoding="utf-8") as f:
+            json.dump(existing_audit, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
+
+    return jsonify({
+        "success": True,
+        "applied_count": applied_count,
+        "message": f"Successfully applied {applied_count} patches and regenerated CSV & Excel files.",
+        "folder_name": safe_folder
+    })
+
+
+# =================================================================
+# End of AI Cross-Checking Routes
+# =================================================================
 
 
 if __name__ == "__main__":

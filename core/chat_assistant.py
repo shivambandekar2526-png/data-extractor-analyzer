@@ -430,7 +430,8 @@ def apply_action(
 
 def fallback_rule_engine(
     user_prompt: str,
-    students: List[Dict[str, Any]]
+    students: List[Dict[str, Any]],
+    folder_name: str = ""
 ) -> Optional[Tuple[List[Dict[str, Any]], str, str]]:
     """
     Fast deterministic regex rule engine.
@@ -440,6 +441,30 @@ def fallback_rule_engine(
     p = user_prompt.strip().lower()
     analytics = calculate_dataset_analytics(students)
     total = analytics.get("total", len(students))
+
+    # ==========================
+    # 0. EXPORT / REPORT COMMANDS
+    # ==========================
+    if any(k in p for k in [
+        "export excel", "download excel", "academic analysis", "6 sheet", "six sheet",
+        "exact format", "google sheet format", "build excel", "export sheet",
+        "download analysis", "generate excel report", "generate academic", "export academic",
+        "export in this format", "excel in this format"
+    ]):
+        folder_suffix = f"/{folder_name}" if folder_name else ""
+        link_md = f"**[📥 Download Academic Analysis Workbook (6 Sheets)](/api/export/academic-analysis{folder_suffix})**" if folder_name else "via the **🏛️ Academic Analysis (6 Sheets)** button in the export bar above"
+        reply = (
+            "🏛️ **Official Academic Analysis Workbook (6 Sheets) Ready!**\n\n"
+            f"{link_md}\n\n"
+            "This workbook is formatted to exactly match the target university departmental standard:\n"
+            "• **1. Data**: Full unpivoted raw student records (Theory, IAT, TW, Practical, EC, ECG, SGPI) for copy-pasting.\n"
+            "• **2. IAT KT analysis**: Backlog tracking for internal tests (KT Fail, KT Absent, em-dash `—` for pass).\n"
+            "• **3. PR KT analysis**: Backlog tracking for practicals, labs, and orals.\n"
+            "• **4. Summary**: Topper students table, Overall Result summary (Pass %, All Clear, KT), and Grade Point breakdown.\n"
+            "• **5. Subject Wise Result**: Subject-wise pass/fail counts, marks range analysis, practical results, and subject toppers.\n"
+            "• **6. Distributions**: Full percentage distributions across 10-point brackets (90-100 down to Fail <40) with min/max/average %."
+        )
+        return students, reply, "answer"
 
     # ==========================
     # 1. ACTION COMMANDS
@@ -833,7 +858,8 @@ def process_chat_command(
     catalog: Optional[List[Dict[str, Any]]] = None,
     client: Optional[OllamaClient] = None,
     cloud_client: Optional[CloudClient] = None,
-    session_id: str = "default_session"
+    session_id: str = "default_session",
+    folder_name: str = ""
 ) -> Dict[str, Any]:
     """
     Process natural-language dataset commands using a smart Hybrid Routing strategy:
@@ -862,9 +888,29 @@ def process_chat_command(
     is_cloud_active = cloud_client.is_configured()
     prefer_cloud_active = is_cloud_active and routing_mode == "prefer_cloud"
 
+    # Export / Report requests are always handled deterministically with direct download link
+    p_lower = user_prompt.strip().lower()
+    if any(k in p_lower for k in [
+        "export excel", "download excel", "academic analysis", "6 sheet", "six sheet",
+        "exact format", "google sheet format", "build excel", "export sheet",
+        "download analysis", "generate excel report", "generate academic", "export academic",
+        "export in this format", "excel in this format"
+    ]):
+        rule_res = fallback_rule_engine(user_prompt, students, folder_name=folder_name)
+        if rule_res is not None:
+            updated_data, desc, action_type = rule_res
+            return {
+                "success": True,
+                "reply": desc,
+                "action": action_type,
+                "total_students": len(updated_data),
+                "students": updated_data,
+                "engine_used": "Academic Export Engine"
+            }
+
     # 1. In auto_hybrid or offline mode, check deterministic rule engine first (<1ms, 0 tokens)
     if not prefer_cloud_active:
-        rule_res = fallback_rule_engine(user_prompt, students)
+        rule_res = fallback_rule_engine(user_prompt, students, folder_name=folder_name)
         if rule_res is not None:
             updated_data, desc, action_type = rule_res
             return {

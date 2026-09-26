@@ -610,5 +610,29 @@
     "unmapped": [],
     "tier_used": 1,
     "token_usage": 0
+  },
+  "c8825e6c0c7183da": {
+    "mappings": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "sgpi": "SGPI",
+      "total_marks": "Total_Marks",
+      "max_marks": "Max_Marks",
+      "result": "Result_Status",
+      "gender": "Gender",
+      "candidate_type": "Candidate_Type",
+      "prn": "PRN",
+      "semester": "Semester"
+    },
+    "subjects": {},
+    "unmapped": [
+      "ABC_ID",
+      "Remark",
+      "Credits_Earned",
+      "Total_CG",
+      "ERN"
+    ],
+    "tier_used": 1,
+    "token_usage": 0
   }
 }

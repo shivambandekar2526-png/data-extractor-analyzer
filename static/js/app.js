@@ -10,6 +10,9 @@ const pageSize = 25;
 let pollInterval = null;
 let currentAuditLogs = [];
 let autoScrollAudit = true;
+let currentResultObj = null;
+let activeAuditReport = null;
+let showOnlyVerified = false;
 
 document.addEventListener("DOMContentLoaded", () => {
   initStatus();
@@ -21,6 +24,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initChatbox();
   initCloudModal();
   initResultsTabs();
+  initAiCrosscheckModal();
 });
 
 // 1. Status Polling & Model Switcher
@@ -189,6 +193,22 @@ function initUpload() {
     }
   });
 
+  // Pipeline Radio Toggle Listeners
+  const pipeLocal = document.getElementById("pipelineLocal");
+  const pipeCloud = document.getElementById("pipelineCloud");
+  const pipeLocalLabel = document.getElementById("pipelineLocalLabel");
+  const pipeCloudLabel = document.getElementById("pipelineCloudLabel");
+  if (pipeLocal && pipeCloud) {
+    pipeLocal.addEventListener("change", () => {
+      if (pipeLocalLabel) pipeLocalLabel.classList.add("active");
+      if (pipeCloudLabel) pipeCloudLabel.classList.remove("active");
+    });
+    pipeCloud.addEventListener("change", () => {
+      if (pipeCloudLabel) pipeCloudLabel.classList.add("active");
+      if (pipeLocalLabel) pipeLocalLabel.classList.remove("active");
+    });
+  }
+
   extractBtn.addEventListener("click", startExtraction);
 }
 
@@ -218,6 +238,10 @@ async function startExtraction() {
     alert("Please choose or upload a PDF document.");
     return;
   }
+
+  // Pass Cloud Crosscheck Pipeline choice
+  const isCloudCrosscheck = document.querySelector('input[name="extractionPipeline"]:checked')?.value === 'cloud';
+  formData.append("cloud_crosscheck", isCloudCrosscheck ? "1" : "0");
 
   // Reset audit console
   currentAuditLogs = [];
@@ -411,6 +435,7 @@ function renderResults(result) {
     chatSec.classList.remove("hidden");
   }
 
+  currentResultObj = result;
   currentFolderName = result.folder_name || "";
   originalRecords = JSON.parse(JSON.stringify(result.students || []));
   undoSnapshots = [];
@@ -427,9 +452,31 @@ function renderResults(result) {
 
   // Download buttons
   const folder = result.folder_name;
+  const academicBtn = document.getElementById("btnDownloadAcademicReport");
+  if (academicBtn) {
+    academicBtn.href = `/api/export/academic-analysis/${encodeURIComponent(folder)}`;
+    if (result.academic_report_file) {
+      academicBtn.download = result.academic_report_file;
+    }
+  }
   document.getElementById("btnDownloadCsv").href = `/api/download/${folder}/${result.csv_file}`;
   document.getElementById("btnDownloadExcel").href = `/api/download/${folder}/${result.excel_file}`;
   document.getElementById("btnDownloadJson").href = `/api/download/${folder}/${result.json_file}`;
+
+  // Update Cross-Check button appearance if simultaneous AI cross-checking was completed
+  const crossBtn = document.getElementById("btnCrossCheckCloud");
+  if (crossBtn) {
+    if (result.ai_crosscheck_summary && result.ai_crosscheck_summary.success) {
+      const discCount = (result.ai_crosscheck_summary.discrepancies || []).length;
+      crossBtn.innerHTML = `📋 View Cloud AI Audit (${discCount} Discrepanc${discCount === 1 ? 'y' : 'ies'})`;
+      crossBtn.style.background = discCount > 0 ? "linear-gradient(135deg, #7c3aed, #4f46e5)" : "linear-gradient(135deg, #059669, #10b981)";
+      crossBtn.title = "View discrepancies and proofreading cards verified against source PDF";
+    } else {
+      crossBtn.innerHTML = "🔍 Cross-Check with Cloud AI";
+      crossBtn.style.background = "";
+      crossBtn.title = "Cross-Check Extracted Records with Cloud AI";
+    }
+  }
 
   // Checksum summary pill
   const sum = result.checksum_summary || {};
@@ -1825,5 +1872,368 @@ function formatMarkdown(text) {
 
   return html;
 }
+
+// 9. AI Cross-Checker & Self-Healing Modal Handling
+function initAiCrosscheckModal() {
+  const modal = document.getElementById("aiCrosscheckModal");
+  const closeBtn = document.getElementById("aiCrosscheckCloseBtn");
+  const dismissBtn = document.getElementById("aiCrosscheckDismissBtn");
+  const runBtn = document.getElementById("btnCrossCheckCloud");
+  const filterBtn = document.getElementById("filterOnlyVerifiedBtn");
+  const applyAllBtn = document.getElementById("applyAllVerifiedPatchesBtn");
+
+  const progressWrap = document.getElementById("aiAuditProgressWrap");
+  const progressBar = document.getElementById("aiAuditProgressBar");
+  const progressPct = document.getElementById("aiAuditProgressPct");
+  const progressMsg = document.getElementById("aiAuditProgressMsg");
+
+  const statAudited = document.getElementById("aiStatAudited");
+  const statVerified = document.getElementById("aiStatVerified");
+  const statRejected = document.getElementById("aiStatRejected");
+  const statApplied = document.getElementById("aiStatApplied");
+
+  const schemaStatusPill = document.getElementById("schemaStatusPill");
+  const schemaBadge = document.getElementById("schemaBadge");
+  const schemaSummaryText = document.getElementById("schemaSummaryText");
+
+  const cardsContainer = document.getElementById("aiCardsContainer");
+  const diffCardsCount = document.getElementById("diffCardsCount");
+
+  function openModal() {
+    if (modal) modal.style.display = "flex";
+  }
+
+  function closeModal() {
+    if (modal) modal.style.display = "none";
+  }
+
+  if (closeBtn) closeBtn.addEventListener("click", closeModal);
+  if (dismissBtn) dismissBtn.addEventListener("click", closeModal);
+
+  if (filterBtn) {
+    filterBtn.addEventListener("click", () => {
+      showOnlyVerified = !showOnlyVerified;
+      filterBtn.classList.toggle("active", showOnlyVerified);
+      filterBtn.textContent = showOnlyVerified ? "Show All Cards" : "Show Verified Only";
+      renderAuditCards();
+    });
+  }
+
+  if (runBtn) {
+    runBtn.addEventListener("click", async () => {
+      if (!currentFolderName) {
+        alert("Please extract or select a dataset first.");
+        return;
+      }
+
+      openModal();
+
+      // If simultaneous extraction was used and audit is already present
+      if (currentResultObj && currentResultObj.ai_crosscheck_summary && currentResultObj.ai_crosscheck_summary.success) {
+        if (progressWrap) progressWrap.style.display = "none";
+        renderAuditReport(currentResultObj.ai_crosscheck_summary);
+        return;
+      }
+
+      // Otherwise, run on-demand post-extraction cross-check
+      if (progressWrap) {
+        progressWrap.style.display = "block";
+        if (progressBar) progressBar.style.width = "5%";
+        if (progressPct) progressPct.textContent = "5%";
+        if (progressMsg) progressMsg.textContent = "Starting Cloud AI cross-checker...";
+      }
+
+      try {
+        const res = await fetch("/api/ai/cross-check/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ folder_name: currentFolderName })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || "Failed to start AI cross-check.");
+        }
+
+        // Poll job progress
+        const jobResult = await pollAiCrosscheckJob(data.job_id);
+        if (progressWrap) progressWrap.style.display = "none";
+        if (currentResultObj) currentResultObj.ai_crosscheck_summary = jobResult;
+        renderAuditReport(jobResult);
+
+      } catch (err) {
+        console.error("AI cross-check error:", err);
+        if (progressWrap) progressWrap.style.display = "none";
+        alert("AI Cross-Check failed: " + err.message);
+      }
+    });
+  }
+
+  function pollAiCrosscheckJob(jobId) {
+    return new Promise((resolve, reject) => {
+      const interval = 500;
+      const maxPolls = 600;
+      let count = 0;
+
+      const poll = async () => {
+        count++;
+        if (count > maxPolls) {
+          reject(new Error("AI cross-check timed out after 5 minutes."));
+          return;
+        }
+
+        try {
+          const res = await fetch(`/api/ai/cross-check/jobs/${encodeURIComponent(jobId)}`);
+          if (!res.ok) {
+            setTimeout(poll, interval);
+            return;
+          }
+          const data = await res.json();
+          if (!data.success) {
+            reject(new Error(data.error || "Cross-check failed"));
+            return;
+          }
+
+          if (progressBar) progressBar.style.width = `${data.progress}%`;
+          if (progressPct) progressPct.textContent = `${data.progress}%`;
+          if (progressMsg) progressMsg.textContent = data.message || "Auditing...";
+
+          // Stream discrepancy cards live
+          if (data.discrepancies && data.discrepancies.length > 0) {
+            activeAuditReport = {
+              total_students: currentRecords.length,
+              verified_patches: data.discrepancies.filter(d => d.sandbox_status === "VERIFIED").length,
+              rejected_patches: data.discrepancies.filter(d => d.sandbox_status === "REJECTED").length,
+              applied_patches: data.discrepancies.filter(d => d.applied).length,
+              discrepancies: data.discrepancies
+            };
+            renderAuditCards();
+          }
+
+          if (data.status === "completed") {
+            resolve(data.result);
+          } else if (data.status === "failed") {
+            reject(new Error(data.error || "AI cross-check worker failed."));
+          } else {
+            setTimeout(poll, interval);
+          }
+        } catch (e) {
+          setTimeout(poll, interval);
+        }
+      };
+
+      setTimeout(poll, interval);
+    });
+  }
+
+  function renderAuditReport(report) {
+    activeAuditReport = report;
+    if (!report) return;
+
+    if (statAudited) statAudited.textContent = report.total_students || currentRecords.length;
+    if (statVerified) statVerified.textContent = report.verified_patches || 0;
+    if (statRejected) statRejected.textContent = report.rejected_patches || 0;
+    if (statApplied) statApplied.textContent = report.applied_patches || 0;
+
+    // Schema pill
+    if (schemaStatusPill && report.schema_audit) {
+      schemaStatusPill.style.display = "flex";
+      const s = report.schema_audit;
+      if (s.status === "ALIGNED") {
+        schemaBadge.className = "schema-badge";
+        schemaBadge.textContent = "SCHEMA: ALIGNED";
+        schemaSummaryText.textContent = s.summary || "All extracted columns match ledger headers.";
+      } else if (s.status === "DISCREPANCY_DETECTED") {
+        schemaBadge.className = "schema-badge";
+        schemaBadge.style.background = "#eab308";
+        schemaBadge.textContent = "SCHEMA: DISCREPANCY";
+        schemaSummaryText.textContent = s.summary || "Column alignment discrepancy detected.";
+      } else {
+        schemaStatusPill.style.display = "none";
+      }
+    }
+
+    const unappliedVerified = (report.discrepancies || []).filter(d => d.sandbox_status === "VERIFIED" && !d.applied);
+    if (applyAllBtn) {
+      applyAllBtn.disabled = unappliedVerified.length === 0;
+      applyAllBtn.textContent = `✓ Accept All Verified Patches (${unappliedVerified.length})`;
+    }
+
+    renderAuditCards();
+  }
+
+  function renderAuditCards() {
+    if (!cardsContainer) return;
+    cardsContainer.innerHTML = "";
+
+    const discrepancies = (activeAuditReport && activeAuditReport.discrepancies) ? activeAuditReport.discrepancies : [];
+    const filtered = showOnlyVerified ? discrepancies.filter(d => d.sandbox_status === "VERIFIED") : discrepancies;
+
+    if (diffCardsCount) diffCardsCount.textContent = filtered.length;
+
+    if (filtered.length === 0) {
+      cardsContainer.innerHTML = `
+        <div class="ai-empty-state">
+          ${discrepancies.length === 0 
+            ? "No discrepancies detected. All student records match the source document text!" 
+            : "No cards match the active filter."}
+        </div>
+      `;
+      return;
+    }
+
+    filtered.forEach((card, idx) => {
+      const el = document.createElement("div");
+      const isVerified = card.sandbox_status === "VERIFIED";
+      const isApplied = card.applied;
+      const isSchema = card.card_type === "schema";
+      el.className = `ai-card ${isApplied ? "applied" : (isVerified ? "verified" : "rejected")}${isSchema ? " schema-card" : ""}`;
+      el.id = `ai_card_${idx}`;
+
+      const extractedText = card.extracted_val !== null && card.extracted_val !== undefined ? String(card.extracted_val) : "(empty)";
+      const suggestedText = card.suggested_val !== null && card.suggested_val !== undefined ? String(card.suggested_val) : "(empty)";
+      const locationText = isSchema 
+        ? `📍 Location: PDF Page ${card.page_number || 1} (Course Catalog Header Table)` 
+        : `📍 Location: PDF Page ${card.page_number || 1}`;
+
+      el.innerHTML = `
+        <div class="ai-card-header">
+          <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;">
+            ${isSchema 
+              ? `<span class="ai-card-seat" style="background:#8b5cf6;color:#fff;">📋 SCHEMA MISMATCH</span>` 
+              : `<span class="ai-card-seat">Seat #${escapeHtml(card.seat_no)}</span>`}
+            <span class="ai-card-field-tag">${escapeHtml(card.field_name || card.field)}</span>
+            <span class="ai-card-location" style="font-size:0.75rem;color:#38bdf8;font-weight:600;">${locationText}</span>
+          </div>
+          <span class="sandbox-pill ${isVerified ? "verified" : "rejected"}">
+            ${isVerified ? (isSchema ? "✓ Verified in PDF Header" : "✓ Ground-Truth Verified") : "✕ Sandbox Rejected"}
+          </span>
+        </div>
+        <div class="ai-card-body">
+          <div class="ai-diff-row">
+            <span class="ai-diff-val-removed">${escapeHtml(extractedText)}</span>
+            <span class="ai-diff-arrow">&rarr;</span>
+            <span class="ai-diff-val-added">${escapeHtml(suggestedText)}</span>
+          </div>
+          <div class="ai-diff-reason"><strong>Error Diagnostic:</strong> ${escapeHtml(card.reason || "Proofreading discrepancy found")}</div>
+          ${card.evidence_quote ? `<div class="ai-diff-quote" title="Verbatim quote from PDF source text"><strong>Exact Excerpt in PDF:</strong> &ldquo;${escapeHtml(card.evidence_quote)}&rdquo;</div>` : ""}
+          ${!isVerified && card.sandbox_reason ? `<div style="font-size:0.72rem; color:var(--accent-red,#ef4444);">Reason: ${escapeHtml(card.sandbox_reason)}</div>` : ""}
+        </div>
+        <div class="ai-card-footer">
+          <span style="color:var(--text-muted);">Status: ${isApplied ? "<strong style='color:var(--primary);'>Applied to Dataset</strong>" : (isVerified ? (isSchema ? "Documented in Audit" : "Ready to apply") : "Rejected (Hallucination Safe)")}</span>
+          <div class="ai-card-actions">
+            ${!isApplied && isVerified && !isSchema ? `
+              <button type="button" class="btn-card-accept" data-card-idx="${idx}">✓ Accept</button>
+            ` : ""}
+            ${!isApplied ? `
+              <button type="button" class="btn-card-reject" data-card-idx="${idx}">✕ Dismiss</button>
+            ` : ""}
+          </div>
+        </div>
+      `;
+
+      const acceptBtn = el.querySelector(".btn-card-accept");
+      if (acceptBtn) {
+        acceptBtn.addEventListener("click", () => {
+          applySinglePatch(card, idx);
+        });
+      }
+      const dismissCardBtn = el.querySelector(".btn-card-reject");
+      if (dismissCardBtn) {
+        dismissCardBtn.addEventListener("click", () => {
+          el.style.display = "none";
+        });
+      }
+
+      cardsContainer.appendChild(el);
+    });
+  }
+
+  async function applySinglePatch(card, idx) {
+    if (!currentFolderName) return;
+    const patch = {
+      seat_no: card.seat_no,
+      field: card.field_name || card.field,
+      suggested_val: card.suggested_val
+    };
+
+    try {
+      const res = await fetch("/api/ai/cross-check/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          folder_name: currentFolderName,
+          patches: [patch]
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        card.applied = true;
+        if (activeAuditReport) {
+          activeAuditReport.applied_patches = (activeAuditReport.applied_patches || 0) + 1;
+        }
+        // Update local memory record
+        const st = currentRecords.find(s => String(s.Seat_No || s.seat_no) === String(card.seat_no));
+        if (st) {
+          st[patch.field] = patch.suggested_val;
+        }
+        filteredRecords = [...currentRecords];
+        displayTablePage();
+        renderAuditReport(activeAuditReport);
+      } else {
+        alert("Failed to apply patch: " + (data.error || "Unknown error"));
+      }
+    } catch (e) {
+      alert("Error applying patch: " + e.message);
+    }
+  }
+
+  if (applyAllBtn) {
+    applyAllBtn.addEventListener("click", async () => {
+      if (!activeAuditReport || !currentFolderName) return;
+      const unapplied = (activeAuditReport.discrepancies || []).filter(d => d.sandbox_status === "VERIFIED" && !d.applied);
+      if (unapplied.length === 0) return;
+
+      const patches = unapplied.map(d => ({
+        seat_no: d.seat_no,
+        field: d.field_name || d.field,
+        suggested_val: d.suggested_val
+      }));
+
+      applyAllBtn.disabled = true;
+      applyAllBtn.textContent = "Applying patches...";
+
+      try {
+        const res = await fetch("/api/ai/cross-check/apply", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            folder_name: currentFolderName,
+            patches: patches
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          unapplied.forEach(d => { d.applied = true; });
+          activeAuditReport.applied_patches = (activeAuditReport.applied_patches || 0) + data.applied_count;
+          // Update currentRecords in memory
+          patches.forEach(p => {
+            const st = currentRecords.find(s => String(s.Seat_No || s.seat_no) === String(p.seat_no));
+            if (st) st[p.field] = p.suggested_val;
+          });
+          filteredRecords = [...currentRecords];
+          displayTablePage();
+          renderAuditReport(activeAuditReport);
+        } else {
+          alert("Failed to apply patches: " + (data.error || "Unknown error"));
+        }
+      } catch (e) {
+        alert("Error applying patches: " + e.message);
+      } finally {
+        applyAllBtn.disabled = false;
+      }
+    });
+  }
+}
+
 
 

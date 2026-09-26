@@ -70,13 +70,15 @@ DEFAULT_PROVIDERS = {
 }
 
 # Hierarchy of candidates for automatic orchestration (ranked by speed, capability, & quota)
+# Alternating providers ensures failover seamlessly switches providers if an API key is rate-limited
 ORCHESTRATION_CANDIDATES = [
     {"provider": "groq", "model": "openai/gpt-oss-120b", "label": "Groq Flagship (120B)"},
-    {"provider": "groq", "model": "qwen/qwen3.8-27b", "label": "Groq Fast Reasoning (27B)"},
     {"provider": "gemini", "model": "gemini-flash-latest", "label": "Google Gemini Flash (Latest)"},
+    {"provider": "groq", "model": "qwen/qwen3.8-27b", "label": "Groq Fast Reasoning (27B)"},
     {"provider": "gemini", "model": "gemini-2.5-flash", "label": "Google Gemini 2.5 Flash"},
     {"provider": "openai", "model": "gpt-4o-mini", "label": "OpenAI GPT-4o-mini"},
     {"provider": "groq", "model": "openai/gpt-oss-20b", "label": "Groq Lightweight (20B)"},
+    {"provider": "gemini", "model": "gemini-flash-lite-latest", "label": "Google Gemini Flash Lite"},
     {"provider": "openai", "model": "gpt-4o", "label": "OpenAI GPT-4o Flagship"},
     {"provider": "gemini", "model": "gemini-2.5-pro", "label": "Google Gemini 2.5 Pro"}
 ]
@@ -93,6 +95,9 @@ class CloudClient:
 
     # Model cooldown tracker: maps "provider:model" to expiration timestamp
     _model_cooldowns: Dict[str, float] = {}
+
+    # Provider cooldown tracker: maps "provider" to expiration timestamp (for 429 rate limits)
+    _provider_cooldowns: Dict[str, float] = {}
 
     def __init__(self):
         self.config = self.load_config()
@@ -315,20 +320,24 @@ class CloudClient:
 
         # If not forcing refresh, check if currently locked model is still valid and not in cooldown
         if not force_refresh and CloudClient._locked_model:
-            locked_prov = CloudClient._locked_model.get("provider", "")
+            locked_prov = CloudClient._locked_model.get("provider", "").lower()
             locked_mod = CloudClient._locked_model.get("model", "")
             cooldown_key = f"{locked_prov}:{locked_mod}"
-            if now >= CloudClient._model_cooldowns.get(cooldown_key, 0):
+            if now >= CloudClient._provider_cooldowns.get(locked_prov, 0) and now >= CloudClient._model_cooldowns.get(cooldown_key, 0):
                 # Has key and not in cooldown -> stick to it!
                 if self.get_api_key(locked_prov):
                     return CloudClient._locked_model
 
         # Probe candidates in order of capability / speed
         for cand in ORCHESTRATION_CANDIDATES:
-            prov = cand["provider"]
+            prov = cand["provider"].lower()
             mod = cand["model"]
             key = self.get_api_key(prov)
             if not key:
+                continue
+
+            # Check if entire provider is in rate-limit cooldown
+            if now < CloudClient._provider_cooldowns.get(prov, 0):
                 continue
 
             cooldown_key = f"{prov}:{mod}"
@@ -356,13 +365,26 @@ class CloudClient:
             "model": self.config.get("model", "openai/gpt-oss-120b")
         }
 
-    def mark_model_failed(self, provider: str, model: str, cooldown_seconds: int = 180) -> None:
+    @classmethod
+    def mark_provider_failed(cls, provider: str, cooldown_seconds: int = 45) -> None:
+        """Mark an entire provider as temporarily unavailable (e.g. 429 rate limit or quota exceeded)."""
+        prov = provider.lower()
+        cls._provider_cooldowns[prov] = time.time() + cooldown_seconds
+        logger.warning("Provider '%s' entered rate-limit cooldown for %ds.", prov, cooldown_seconds)
+        if cls._locked_model and cls._locked_model.get("provider", "").lower() == prov:
+            cls._locked_model = None
+
+    @classmethod
+    def mark_model_failed(cls, provider: str, model: str, cooldown_seconds: int = 180, is_rate_limit: bool = False) -> None:
         """Mark a model as failed and place it into temporary cooldown."""
-        cooldown_key = f"{provider.lower()}:{model}"
-        CloudClient._model_cooldowns[cooldown_key] = time.time() + cooldown_seconds
+        prov = provider.lower()
+        cooldown_key = f"{prov}:{model}"
+        cls._model_cooldowns[cooldown_key] = time.time() + cooldown_seconds
         # Clear locked model so orchestrator picks next working model
-        if CloudClient._locked_model and CloudClient._locked_model.get("provider") == provider and CloudClient._locked_model.get("model") == model:
-            CloudClient._locked_model = None
+        if cls._locked_model and cls._locked_model.get("provider", "").lower() == prov and cls._locked_model.get("model") == model:
+            cls._locked_model = None
+        if is_rate_limit:
+            cls.mark_provider_failed(prov, cooldown_seconds=min(cooldown_seconds, 60))
 
     def probe_all_providers(self, keys_dict: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         """
@@ -692,8 +714,19 @@ class CloudClient:
             data_bytes = json.dumps(payload).encode("utf-8")
             req = urllib.request.Request(url, data=data_bytes, headers=headers)
 
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                resp_data = json.loads(resp.read().decode("utf-8"))
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    resp_data = json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError as he:
+                if he.code == 400 and format_json and "response_format" in payload:
+                    logger.info("Provider %s returned 400 with response_format, retrying without it...", provider)
+                    del payload["response_format"]
+                    data_bytes = json.dumps(payload).encode("utf-8")
+                    req_retry = urllib.request.Request(url, data=data_bytes, headers=headers)
+                    with urllib.request.urlopen(req_retry, timeout=timeout) as resp:
+                        resp_data = json.loads(resp.read().decode("utf-8"))
+                else:
+                    raise
 
             choices = resp_data.get("choices", [])
             if not choices:
@@ -782,11 +815,142 @@ class CloudClient:
 
             except Exception as e:
                 last_error = e
+                err_str = str(e).lower()
+                is_rate_limit = any(k in err_str for k in ["429", "quota", "too many requests", "rate limit", "resource exhausted"])
                 logger.warning(
-                    "Cloud AI request failed on %s (%s): %s. Orchestrating failover to next candidate...",
-                    provider, model, e
+                    "Cloud AI request failed on %s (%s): %s (rate_limit=%s). Orchestrating failover...",
+                    provider, model, e, is_rate_limit
                 )
-                self.mark_model_failed(provider, model, cooldown_seconds=180)
+                self.mark_model_failed(provider, model, cooldown_seconds=180, is_rate_limit=is_rate_limit)
+                if is_rate_limit:
+                    time.sleep(min(1.5 * attempts, 3.5))
+                if not auto_orchestrate:
+                    raise
+
+        raise RuntimeError(f"All configured cloud AI models encountered errors. Last error: {last_error}")
+
+    def generate_direct(
+        self,
+        user_prompt: str,
+        system_instruction: str = "",
+        format_json: bool = True,
+        timeout: int = 40,
+        temperature: float = 0.1
+    ) -> str:
+        """
+        Execute a stateless prompt completion with automatic multi-provider failover.
+        No conversational session or dataset context injection is performed.
+        Ideal for document chunk proofreading, schema alignment, and zero-context tasks.
+        """
+        if not self.is_configured():
+            raise RuntimeError("Cloud AI is not configured or disabled.")
+
+        auto_orchestrate = self.config.get("auto_orchestrate", True)
+        attempts = 0
+        max_attempts = 4 if auto_orchestrate else 1
+        last_error = None
+
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": USER_AGENT
+        }
+
+        while attempts < max_attempts:
+            attempts += 1
+            if auto_orchestrate:
+                active_candidate = self.get_best_working_model(force_refresh=(attempts > 1))
+                provider = active_candidate["provider"]
+                model = active_candidate["model"]
+            else:
+                provider = self.config.get("provider", "groq").lower()
+                model = self.config.get("model", "openai/gpt-oss-120b")
+
+            api_key = self.get_api_key(provider)
+            if not api_key and provider != "custom":
+                continue
+
+            try:
+                # 1. Google Gemini
+                if provider == "gemini":
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+                    payload = {
+                        "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
+                        "generationConfig": {
+                            "temperature": temperature,
+                            "responseMimeType": "application/json" if format_json else "text/plain"
+                        }
+                    }
+                    if system_instruction:
+                        payload["systemInstruction"] = {"parts": [{"text": system_instruction}]}
+
+                    data_bytes = json.dumps(payload).encode("utf-8")
+                    req = urllib.request.Request(url, data=data_bytes, headers=headers)
+                    with urllib.request.urlopen(req, timeout=timeout) as resp:
+                        resp_data = json.loads(resp.read().decode("utf-8"))
+
+                    candidates = resp_data.get("candidates", [])
+                    if not candidates:
+                        raise RuntimeError("Empty response from Gemini API.")
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    reply_text = parts[0].get("text", "") if parts else ""
+
+                # 2. OpenAI / Groq / Custom
+                else:
+                    base_url = self.config.get("custom_base_url") if provider == "custom" else DEFAULT_PROVIDERS.get(provider, {}).get("base_url", "https://api.openai.com/v1")
+                    url = f"{base_url.rstrip('/')}/chat/completions"
+                    req_headers = dict(headers)
+                    req_headers["Authorization"] = f"Bearer {api_key}"
+
+                    messages = []
+                    if system_instruction:
+                        messages.append({"role": "system", "content": system_instruction})
+                    messages.append({"role": "user", "content": user_prompt})
+
+                    payload = {
+                        "model": model,
+                        "messages": messages,
+                        "temperature": temperature
+                    }
+                    if format_json:
+                        payload["response_format"] = {"type": "json_object"}
+
+                    data_bytes = json.dumps(payload).encode("utf-8")
+                    req = urllib.request.Request(url, data=data_bytes, headers=req_headers)
+                    try:
+                        with urllib.request.urlopen(req, timeout=timeout) as resp:
+                            resp_data = json.loads(resp.read().decode("utf-8"))
+                    except urllib.error.HTTPError as he:
+                        if he.code == 400 and format_json and "response_format" in payload:
+                            logger.info("Direct call on %s returned 400 with response_format, retrying without it...", provider)
+                            del payload["response_format"]
+                            data_bytes = json.dumps(payload).encode("utf-8")
+                            req_retry = urllib.request.Request(url, data=data_bytes, headers=req_headers)
+                            with urllib.request.urlopen(req_retry, timeout=timeout) as resp:
+                                resp_data = json.loads(resp.read().decode("utf-8"))
+                        else:
+                            raise
+
+                    choices = resp_data.get("choices", [])
+                    if not choices:
+                        raise RuntimeError(f"Empty choices returned from {provider} API.")
+                    reply_text = choices[0].get("message", {}).get("content", "")
+
+                # Successful execution: update primary config and return
+                self.config["provider"] = provider
+                self.config["model"] = model
+                return reply_text
+
+            except Exception as e:
+                last_error = e
+                err_str = str(e).lower()
+                is_rate_limit = any(k in err_str for k in ["429", "quota", "too many requests", "rate limit", "resource exhausted"])
+                logger.warning(
+                    "Direct Cloud AI request failed on %s (%s): %s (rate_limit=%s). Orchestrating failover...",
+                    provider, model, e, is_rate_limit
+                )
+                self.mark_model_failed(provider, model, cooldown_seconds=180, is_rate_limit=is_rate_limit)
+                if is_rate_limit:
+                    time.sleep(min(1.5 * attempts, 3.5))
                 if not auto_orchestrate:
                     raise
 

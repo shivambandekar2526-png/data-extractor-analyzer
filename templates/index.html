@@ -60,6 +60,24 @@
           <span class="upload-hint">Supports all semesters (CBCGS, C-Scheme, NEP 2020, native & scanned)</span>
         </div>
 
+        <div class="or-divider"><span>EXTRACTION & VERIFICATION PIPELINE</span></div>
+        <div class="pipeline-options-row">
+          <label class="pipeline-radio-card active" id="pipelineLocalLabel">
+            <input type="radio" name="extractionPipeline" id="pipelineLocal" value="local" checked>
+            <div class="pipeline-radio-body">
+              <span class="pipeline-radio-title">⚡ Standard Local AI</span>
+              <span class="pipeline-radio-desc">Local Ollama (Qwen2.5:7b) + deterministic rules (Fast & Private)</span>
+            </div>
+          </label>
+          <label class="pipeline-radio-card" id="pipelineCloudLabel">
+            <input type="radio" name="extractionPipeline" id="pipelineCloud" value="cloud">
+            <div class="pipeline-radio-body">
+              <span class="pipeline-radio-title">☁️ Pure Cloud AI Pipeline (No Local LLM)</span>
+              <span class="pipeline-radio-desc">Fast ledger ingestion + 100% Cloud LLM cross-checking & self-healing</span>
+            </div>
+          </label>
+        </div>
+
         <div class="or-divider"><span>OR SELECT FROM BATCH DATA</span></div>
 
         <div class="batch-select-row">
@@ -187,6 +205,7 @@
         <button type="button" class="chip-btn" data-prompt="how many diploma students?">🎓 Diploma vs Regular Count</button>
         <button type="button" class="chip-btn" data-prompt="who failed?">❌ List Failed Students</button>
         <button type="button" class="chip-btn" data-prompt="give me an overview of the results">📋 Cohort Overview</button>
+        <button type="button" class="chip-btn" data-prompt="export academic analysis excel sheet">🏛️ Export Academic Analysis Excel (6 Sheets)</button>
       </div>
 
       <!-- Chat History Stream -->
@@ -217,6 +236,10 @@
             <p id="resultMeta" class="results-meta-text">Analyzing dataset...</p>
           </div>
           <div class="export-actions">
+            <button type="button" id="btnCrossCheckCloud" class="btn btn-ai-crosscheck" title="Cross-Check Extracted Records with Cloud AI">
+              🔍 Cross-Check with Cloud AI
+            </button>
+            <a id="btnDownloadAcademicReport" class="btn btn-primary" download title="Download official 6-sheet university audit report formatted like sample Google Sheet">🏛️ Academic Analysis (6 Sheets)</a>
             <a id="btnDownloadCsv" class="btn btn-outline" download>📥 CSV</a>
             <a id="btnDownloadExcel" class="btn btn-outline" download>📊 Excel (.xlsx)</a>
             <a id="btnDownloadJson" class="btn btn-outline" download>📑 Catalog JSON</a>
@@ -622,12 +645,86 @@
         </form>
       </div>
     </div>
+
+    <!-- AI Cross-Check & Self-Healing Review Modal -->
+    <div class="modal-backdrop" id="aiCrosscheckModal" style="display: none;">
+      <div class="modal-box ai-crosscheck-modal-box">
+        <div class="modal-head">
+          <div class="modal-head-title-wrap">
+            <h3 class="modal-title">Cloud AI Cross-Check & Self-Healing Audit</h3>
+            <span class="badge-ai-provider" id="aiCrosscheckProviderBadge" style="background:#2563eb;color:#fff;">☁️ 100% Pure Cloud AI (Groq / Gemini / OpenAI) • No Local LLM</span>
+          </div>
+          <button type="button" class="btn-modal-close" id="aiCrosscheckCloseBtn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <!-- Progress Bar for on-demand audit -->
+          <div class="ai-audit-progress-wrap" id="aiAuditProgressWrap" style="display: none;">
+            <div class="ai-progress-meta">
+              <span id="aiAuditProgressMsg">Starting Cloud AI audit...</span>
+              <span id="aiAuditProgressPct">0%</span>
+            </div>
+            <div class="progress-bar-bg">
+              <div class="progress-bar-fill" id="aiAuditProgressBar" style="width: 0%;"></div>
+            </div>
+          </div>
+
+          <!-- Macro Schema Alignment Status Pill -->
+          <div class="schema-status-pill" id="schemaStatusPill" style="display: none;">
+            <span class="schema-badge" id="schemaBadge">SCHEMA: ALIGNED</span>
+            <span id="schemaSummaryText">Extracted table columns match ledger headers.</span>
+          </div>
+
+          <!-- Audit Statistics Metrics Banner -->
+          <div class="ai-audit-stats-grid" id="aiAuditStatsGrid">
+            <div class="ai-stat-card">
+              <div class="ai-stat-num" id="aiStatAudited">0</div>
+              <div class="ai-stat-label">Students Audited</div>
+            </div>
+            <div class="ai-stat-card border-success">
+              <div class="ai-stat-num text-success" id="aiStatVerified">0</div>
+              <div class="ai-stat-label">Verified Discrepancies</div>
+            </div>
+            <div class="ai-stat-card border-danger">
+              <div class="ai-stat-num text-danger" id="aiStatRejected">0</div>
+              <div class="ai-stat-label">Sandbox Rejections</div>
+            </div>
+            <div class="ai-stat-card border-info">
+              <div class="ai-stat-num text-primary" id="aiStatApplied">0</div>
+              <div class="ai-stat-label">Applied Patches</div>
+            </div>
+          </div>
+
+          <!-- Discrepancy Cards List -->
+          <div class="ai-diff-cards-container">
+            <div class="ai-diff-cards-head">
+              <div class="ai-diff-head-title">Discrepancy Proofreading Cards (<span id="diffCardsCount">0</span>)</div>
+              <div class="ai-diff-head-actions">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="filterOnlyVerifiedBtn">Show Verified Only</button>
+              </div>
+            </div>
+
+            <div class="ai-cards-scroll-area" id="aiCardsContainer">
+              <div class="ai-empty-state" id="aiCardsEmptyState">
+                No discrepancies detected. All student records match the source document text!
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-foot ai-modal-foot">
+          <button type="button" class="btn btn-secondary" id="aiCrosscheckDismissBtn">Close</button>
+          <button type="button" class="btn btn-success" id="applyAllVerifiedPatchesBtn" disabled>
+            ✓ Accept All Verified Patches
+          </button>
+        </div>
+      </div>
+    </div>
   </main>
 
   <footer class="app-footer">
     <p>Data Extractor AI • Local GPU Acceleration • Independent Standalone Architecture</p>
   </footer>
 
-  <script src="/static/js/app.js?v=2.2"></script>
+  <script src="/static/js/app.js?v=2.5"></script>
 </body>
 </html>

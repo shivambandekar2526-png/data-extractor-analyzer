@@ -19,6 +19,29 @@
         "Total_CG": "185.00",
         "SGPI": "8.41"
       }
+    },
+    {
+      "description": "Auto-learned verified record (Seat 101310001, ACHARI MOHIT PRABHAKARAN)",
+      "seat_no": "101310001",
+      "student_name": "ACHARI MOHIT PRABHAKARAN",
+      "source_file": "2425-3rd.pdf",
+      "expected_record": {
+        "Seat_No": "101310001",
+        "Student_Name": "ACHARI MOHIT PRABHAKARAN",
+        "Gender": "M",
+        "Candidate_Type": "Regular",
+        "PRN": "",
+        "ABC_ID": "",
+        "Semester": "Current",
+        "Result_Status": "PASS",
+        "Remark": "None",
+        "Total_Marks": "621",
+        "Max_Marks": "",
+        "Credits_Earned": "47",
+        "Total_CG": "10",
+        "SGPI": "0.21",
+        "ERN": "MU0341120240205840"
+      }
     }
   ]
 }

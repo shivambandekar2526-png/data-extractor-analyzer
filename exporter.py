@@ -19,6 +19,14 @@ except Exception:
     except Exception:
         from models import CourseCatalog, ExamMeta, StudentRecord
 
+try:
+    from core.excel_report_generator import AcademicExcelReportGenerator, get_academic_filename
+except Exception:
+    try:
+        from .core.excel_report_generator import AcademicExcelReportGenerator, get_academic_filename
+    except Exception:
+        from data_extractor_AI.core.excel_report_generator import AcademicExcelReportGenerator, get_academic_filename
+
 
 def sanitize_folder_name(name: str, max_len: int = 50) -> str:
     """Sanitize filename/stem for directory naming."""
@@ -126,7 +134,8 @@ def export_ai_extracted_data(
     input_pdf_path: str,
     base_output_dir: str,
     archetype: str = "tabulation",
-    checksum_data: Optional[Dict[str, Any]] = None
+    checksum_data: Optional[Dict[str, Any]] = None,
+    flat_rows: Optional[List[Dict[str, Any]]] = None
 ) -> Tuple[str, str]:
     """
     Export extracted StudentRecord objects to CSV, Excel, and JSON catalog.
@@ -143,8 +152,9 @@ def export_ai_extracted_data(
     excel_path = os.path.join(designated_dir, f"{folder_name}_extracted_data.xlsx")
     json_path = os.path.join(designated_dir, f"{folder_name}_catalog.json")
 
-    # Flatten students to dicts
-    flat_rows: List[Dict[str, Any]] = [s.to_flat_dict(meta.catalog) for s in students]
+    # Flatten students to dicts if not provided
+    if flat_rows is None:
+        flat_rows = [s.to_flat_dict(meta.catalog) for s in students]
 
     # Collect union of field names
     seen_fields = set()
@@ -181,5 +191,25 @@ def export_ai_extracted_data(
     }
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, ensure_ascii=False)
+
+    # 4. Export Academic Analysis 6-Sheet Workbook (Target Google Sheet format)
+    try:
+        meta_dict = {
+            "academic_year": getattr(meta, "academic_year", ""),
+            "semester": getattr(meta, "semester", ""),
+            "exam_title": getattr(meta, "exam_title", ""),
+            "college_name": getattr(meta, "college_name", "")
+        }
+        academic_filename = get_academic_filename(folder_name, meta_dict)
+        academic_path = os.path.join(designated_dir, academic_filename)
+        generator = AcademicExcelReportGenerator(
+            students=flat_rows,
+            catalog={"courses": cat_dict},
+            meta=meta_dict,
+            folder_name=folder_name
+        )
+        generator.generate_workbook(academic_path)
+    except Exception as e:
+        print(f"Warning: Academic analysis excel generation skipped: {e}")
 
     return designated_dir, csv_path
