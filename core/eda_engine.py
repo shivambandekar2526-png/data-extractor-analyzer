@@ -37,16 +37,21 @@ def _clean_numeric(val: Any) -> Optional[float]:
 
 
 def _is_pass(status_str: Any, sgpi_val: Optional[float] = None) -> bool:
-    """Determine pass status from result string or SGPI."""
+    """
+    Determine academic pass status.
+    Academic Standard (Mumbai University / CBCS):
+    - If GPA is null, empty, 0.0, or withheld, the student has a KT (Keep Terms / failed semester).
+    - If status explicitly indicates Fail/ATKT/KT/ABS, student failed.
+    - Otherwise, student is considered passed if SGPI >= 4.0.
+    """
+    if sgpi_val is None or sgpi_val <= 0.0:
+        return False
     s = str(status_str).strip().upper() if status_str else ""
+    if any(w in s for w in ["FAIL", "F", "UNSUCCESSFUL", "FAILED", "ATKT", "KT", "ABS"]):
+        return False
     if s in ("P", "PASS", "SUCCESSFUL", "PASSED"):
         return True
-    if s in ("F", "FAIL", "UNSUCCESSFUL", "FAILED"):
-        return False
-    # Fallback to SGPI
-    if sgpi_val is not None:
-        return sgpi_val >= 4.0
-    return False
+    return sgpi_val >= 4.0
 
 
 class EDAEngine:
@@ -360,7 +365,11 @@ class EDAEngine:
                 )
                 demographics["gender"]["female"]["avg_sgpi"] = round(float(np.mean(female_sgpis)), 2) if female_sgpis else 0.0
 
-        # 5. Top Performers (Ranked by SGPI then Total Marks)
+        kt_null_gpa_count = sum(1 for s in sgpi_clean if s is None or s <= 0.0)
+        iqr_sgpi = round(float(p75_sgpi - p25_sgpi), 2) if valid_sgpi else 0.0
+        health_score = round(float((pass_pct * 0.6) + ((avg_sgpi / 10.0) * 100 * 0.4)), 1) if total_students else 0.0
+
+        # 5. Top Performers and Lowest Performers
         student_records = []
         for i in range(total_students):
             st = {
@@ -372,8 +381,9 @@ class EDAEngine:
             }
             student_records.append(st)
 
+        valid_records = [p for p in student_records if p["sgpi"] > 0.0]
         sorted_performers = sorted(
-            student_records,
+            valid_records,
             key=lambda x: (x["sgpi"], x["total_marks"]),
             reverse=True
         )
@@ -387,15 +397,51 @@ class EDAEngine:
                 "total_marks": p["total_marks"]
             })
 
-        # 6. Remedial Intervention Alerts (Students failing or SGPI < 4.5)
+        # Lowest performers with valid evaluated SGPI
+        sorted_lowest = sorted(
+            valid_records,
+            key=lambda x: (x["sgpi"], x["total_marks"])
+        )
+        bottom_performers = []
+        for rank, p in enumerate(sorted_lowest[:5], 1):
+            bottom_performers.append({
+                "rank": rank,
+                "seat_no": p["seat_no"],
+                "student_name": p["student_name"],
+                "sgpi": p["sgpi"],
+                "total_marks": p["total_marks"]
+            })
+
+        lowest_performer = bottom_performers[0] if bottom_performers else None
+
+        # 6. Remedial Intervention Alerts (KT / ATKT / Null GPA or SGPI < 5.0)
         remedial_alerts = []
         for i in range(total_students):
-            if not pass_flags[i] or (sgpi_clean[i] is not None and sgpi_clean[i] < 4.5):
+            seat = str(df[seat_col].iloc[i]) if seat_col and seat_col in df.columns else f"#{i+1}"
+            name = str(df[name_col].iloc[i]) if name_col and name_col in df.columns else "Student"
+            sg_clean = sgpi_clean[i]
+            is_p = pass_flags[i]
+
+            if sg_clean is None or sg_clean <= 0.0:
                 remedial_alerts.append({
-                    "seat_no": str(df[seat_col].iloc[i]) if seat_col and seat_col in df.columns else f"#{i+1}",
-                    "student_name": str(df[name_col].iloc[i]) if name_col and name_col in df.columns else "Student",
-                    "sgpi": sgpi_clean[i] if sgpi_clean[i] is not None else 0.0,
-                    "reason": "Failed semester" if not pass_flags[i] else "Low SGPI (< 4.5)"
+                    "seat_no": seat,
+                    "student_name": name,
+                    "sgpi": 0.0,
+                    "reason": "Null / Unannounced GPA (KT - Course Backlog)"
+                })
+            elif not is_p or sg_clean < 4.0:
+                remedial_alerts.append({
+                    "seat_no": seat,
+                    "student_name": name,
+                    "sgpi": sg_clean,
+                    "reason": f"Failed semester (SGPI {sg_clean:.2f})"
+                })
+            elif sg_clean < 5.0:
+                remedial_alerts.append({
+                    "seat_no": seat,
+                    "student_name": name,
+                    "sgpi": sg_clean,
+                    "reason": f"Borderline Pass (SGPI {sg_clean:.2f})"
                 })
 
         return {
@@ -409,9 +455,11 @@ class EDAEngine:
                 "median_sgpi": median_sgpi,
                 "std_sgpi": std_sgpi,
                 "max_sgpi": max_sgpi,
-                "min_sgpi": min_sgpi,
+                "min_sgpi": lowest_performer["sgpi"] if lowest_performer else min_sgpi,
                 "p25_sgpi": p25_sgpi,
                 "p75_sgpi": p75_sgpi,
+                "iqr_sgpi": iqr_sgpi,
+                "curriculum_health_score": health_score,
                 "avg_total_marks": avg_marks,
                 "median_total_marks": median_marks,
                 "max_total_marks": max_marks,
@@ -422,6 +470,9 @@ class EDAEngine:
                 "second_class_count": second_class,
                 "pass_class_count": pass_class,
                 "atkt_fail_count": atkt_fail,
+                "kt_null_gpa_count": kt_null_gpa_count,
+                "kt_total_count": failed_count,
+                "lowest_sgpi_student": lowest_performer
             },
             "sgpi_distribution": hist_buckets,
             "subject_analytics": subject_stats,
@@ -429,7 +480,9 @@ class EDAEngine:
             "top_scoring_subject": top_scoring_subject,
             "demographics": demographics,
             "top_performers": top_performers,
-            "remedial_alerts": remedial_alerts[:15],
+            "bottom_performers": bottom_performers,
+            "lowest_performer": lowest_performer,
+            "remedial_alerts": remedial_alerts[:20],
             "mapping_meta": {
                 "tier_used": map_res.get("tier_used"),
                 "token_usage": map_res.get("token_usage", 0),

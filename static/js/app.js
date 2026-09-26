@@ -763,42 +763,141 @@ async function initCloudModal() {
   const apiKeyInput = document.getElementById("cloudApiKey");
   const maskedKeyPreview = document.getElementById("maskedKeyPreview");
   const toggleEyeBtn = document.getElementById("btnToggleKeyVisibility");
+  const modelSelect = document.getElementById("cloudModelSelect");
   const modelInput = document.getElementById("cloudModelInput");
+  const customModelWrapper = document.getElementById("customModelWrapper");
+  const toggleCustomModelBtn = document.getElementById("btnToggleCustomModel");
+  const refreshModelsBtn = document.getElementById("btnRefreshCloudModels");
   const modelChipsContainer = document.getElementById("modelQuickChips");
   const routingSelect = document.getElementById("cloudRoutingMode");
   const testBtn = document.getElementById("btnTestCloudConn");
   const testAlert = document.getElementById("cloudTestAlert");
 
   const providerModels = {
-    gemini: ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"],
-    openai: ["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"],
-    groq: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"],
+    groq: [
+      { id: "openai/gpt-oss-120b", label: "openai/gpt-oss-120b (Recommended - 120B Flagship)" },
+      { id: "qwen/qwen3.8-27b", label: "qwen/qwen3.8-27b (Fast 27B Reasoning)" },
+      { id: "openai/gpt-oss-20b", label: "openai/gpt-oss-20b (Lightweight 20B)" },
+      { id: "allam-2-7b", label: "allam-2-7b (7B Multilingual)" },
+      { id: "llama-3.3-70b-versatile", label: "llama-3.3-70b-versatile (Preview)" },
+      { id: "llama-3.1-8b-instant", label: "llama-3.1-8b-instant (Fast 8B)" }
+    ],
+    gemini: [
+      { id: "gemini-flash-latest", label: "gemini-flash-latest (Recommended - Fast & High Quota)" },
+      { id: "gemini-flash-lite-latest", label: "gemini-flash-lite-latest (Ultra Fast Lite)" },
+      { id: "gemini-2.5-flash", label: "gemini-2.5-flash (Balanced)" },
+      { id: "gemini-2.5-pro", label: "gemini-2.5-pro (Deep Reasoning)" }
+    ],
+    openai: [
+      { id: "gpt-4o-mini", label: "gpt-4o-mini (Recommended - Efficient & Fast)" },
+      { id: "gpt-4o", label: "gpt-4o (Flagship Multimodal)" },
+      { id: "gpt-3.5-turbo", label: "gpt-3.5-turbo (Legacy Fast)" }
+    ],
     custom: []
   };
 
-  function updateProviderUI(provider) {
+  async function updateProviderUI(provider, targetModel = null, fetchLive = false) {
     if (provider === "custom") {
       customUrlGroup.style.display = "flex";
+      if (customModelWrapper) customModelWrapper.style.display = "block";
     } else {
       customUrlGroup.style.display = "none";
     }
 
-    const models = providerModels[provider] || [];
-    modelChipsContainer.innerHTML = "";
-    models.forEach(m => {
-      const chip = document.createElement("button");
-      chip.type = "button";
-      chip.className = "chip-mini";
-      chip.textContent = m;
-      chip.addEventListener("click", () => {
-        modelInput.value = m;
-      });
-      modelChipsContainer.appendChild(chip);
-    });
-
-    if (models.length > 0 && (!modelInput.value || !models.includes(modelInput.value))) {
-      modelInput.value = models[0];
+    let models = [];
+    if (fetchLive) {
+      try {
+        const payload = {
+          provider: provider,
+          api_key: apiKeyInput.value.trim()
+        };
+        const res = await fetch("/api/cloud/models", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.success && data.models && data.models.length > 0) {
+          models = data.models;
+        }
+      } catch (err) {
+        console.warn("Live models fetch failed, using curated models:", err);
+      }
     }
+
+    if (models.length === 0) {
+      models = providerModels[provider] || [];
+    }
+
+    // Populate dropdown
+    if (modelSelect) {
+      modelSelect.innerHTML = "";
+      if (models.length === 0) {
+        const opt = document.createElement("option");
+        opt.value = targetModel || "default";
+        opt.textContent = targetModel || "default";
+        modelSelect.appendChild(opt);
+      } else {
+        models.forEach(m => {
+          const opt = document.createElement("option");
+          opt.value = typeof m === "string" ? m : m.id;
+          opt.textContent = typeof m === "string" ? m : (m.label || m.id);
+          modelSelect.appendChild(opt);
+        });
+      }
+
+      // Select target model or first model
+      const modelIds = models.map(m => typeof m === "string" ? m : m.id);
+      if (targetModel && modelIds.includes(targetModel)) {
+        modelSelect.value = targetModel;
+      } else if (modelIds.length > 0) {
+        modelSelect.value = modelIds[0];
+      }
+      if (modelInput) modelInput.value = modelSelect.value;
+    }
+
+    // Populate quick chips
+    if (modelChipsContainer) {
+      modelChipsContainer.innerHTML = "";
+      models.slice(0, 4).forEach(m => {
+        const mid = typeof m === "string" ? m : m.id;
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "chip-mini";
+        chip.textContent = mid.split("/").pop();
+        chip.title = mid;
+        chip.addEventListener("click", () => {
+          if (modelSelect) modelSelect.value = mid;
+          if (modelInput) modelInput.value = mid;
+        });
+        modelChipsContainer.appendChild(chip);
+      });
+    }
+  }
+
+  if (modelSelect) {
+    modelSelect.addEventListener("change", (e) => {
+      if (modelInput) modelInput.value = e.target.value;
+    });
+  }
+
+  if (toggleCustomModelBtn && customModelWrapper) {
+    toggleCustomModelBtn.addEventListener("click", () => {
+      const isHidden = customModelWrapper.style.display === "none";
+      customModelWrapper.style.display = isHidden ? "block" : "none";
+      toggleCustomModelBtn.textContent = isHidden ? "📋 Use Preset Dropdown" : "✏️ Custom Model ID";
+      if (isHidden && modelInput) modelInput.focus();
+    });
+  }
+
+  if (refreshModelsBtn) {
+    refreshModelsBtn.addEventListener("click", async () => {
+      refreshModelsBtn.disabled = true;
+      refreshModelsBtn.textContent = "⏳ Detecting...";
+      await updateProviderUI(providerSelect.value, modelSelect ? modelSelect.value : null, true);
+      refreshModelsBtn.disabled = false;
+      refreshModelsBtn.textContent = "🔄 Detect Live Models";
+    });
   }
 
   // Load current cloud config from server
@@ -807,8 +906,7 @@ async function initCloudModal() {
       const res = await fetch("/api/cloud/config");
       const data = await res.json();
       if (data) {
-        providerSelect.value = data.provider || "gemini";
-        modelInput.value = data.model || "gemini-2.0-flash";
+        providerSelect.value = data.provider || "groq";
         routingSelect.value = data.routing_mode || "auto_hybrid";
         customUrlInput.value = data.custom_base_url || "";
         if (data.masked_key) {
@@ -816,7 +914,7 @@ async function initCloudModal() {
         } else {
           maskedKeyPreview.textContent = "No API key configured yet.";
         }
-        updateProviderUI(providerSelect.value);
+        await updateProviderUI(providerSelect.value, data.model);
       }
     } catch (e) {
       console.error("Failed to fetch cloud config:", e);
@@ -854,6 +952,19 @@ async function initCloudModal() {
     updateProviderUI(e.target.value);
   });
 
+  function getEffectiveModel() {
+    if (customModelWrapper && customModelWrapper.style.display !== "none" && modelInput && modelInput.value.trim()) {
+      return modelInput.value.trim();
+    }
+    if (modelSelect && modelSelect.value) {
+      return modelSelect.value;
+    }
+    if (modelInput && modelInput.value.trim()) {
+      return modelInput.value.trim();
+    }
+    return "default";
+  }
+
   // Test connection button
   if (testBtn) {
     testBtn.addEventListener("click", async () => {
@@ -862,10 +973,11 @@ async function initCloudModal() {
       testBtn.textContent = "⚡ Testing...";
 
       try {
+        const effectiveModel = getEffectiveModel();
         const payload = {
           provider: providerSelect.value,
           api_key: apiKeyInput.value.trim(),
-          model: modelInput.value.trim(),
+          model: effectiveModel,
           custom_base_url: customUrlInput.value.trim()
         };
         const res = await fetch("/api/cloud/test", {
@@ -902,9 +1014,10 @@ async function initCloudModal() {
       if (saveBtn) saveBtn.disabled = true;
 
       try {
+        const effectiveModel = getEffectiveModel();
         const payload = {
           provider: providerSelect.value,
-          model: modelInput.value.trim(),
+          model: effectiveModel,
           routing_mode: routingSelect.value,
           custom_base_url: customUrlInput.value.trim()
         };
@@ -1068,12 +1181,26 @@ function renderEdaKPIs(eda) {
   const maxPossible = o.max_possible_marks ? ` / ${Math.round(o.max_possible_marks)}` : "";
   setText("kpiMaxMarks", `Max Marks: ${Math.round(o.max_total_marks || 0)}${maxPossible}`);
 
+  // Lowest Cleared Performer
+  const lowP = eda.lowest_performer || o.lowest_sgpi_student || null;
+  if (lowP && lowP.sgpi) {
+    setText("kpiMinSgpi", (lowP.sgpi || 0).toFixed(2));
+    setText("kpiMinStudentName", `${lowP.student_name || 'Student'} (${lowP.seat_no || ''})`);
+  } else if (o.min_sgpi) {
+    setText("kpiMinSgpi", (o.min_sgpi || 0).toFixed(2));
+    setText("kpiMinStudentName", "Lowest Cleared");
+  } else {
+    setText("kpiMinSgpi", "--");
+    setText("kpiMinStudentName", "No cleared students");
+  }
+
   setText("kpiDistinction", o.distinction_count || 0);
   const distPct = o.total_students ? Math.round((o.distinction_count / o.total_students) * 100) : 0;
   setText("kpiDistinctionPct", `${distPct}% of cohort (SGPI ≥ 7.5)`);
 
   setText("kpiFailCount", o.atkt_fail_count || o.failed_count || 0);
-  setText("kpiFailPct", `${o.fail_percentage || 0}% KT / ATKT`);
+  const ktNull = o.kt_null_gpa_count ? ` (${o.kt_null_gpa_count} Null GPA)` : "";
+  setText("kpiFailPct", `${o.fail_percentage || 0}% KT / ATKT${ktNull}`);
 }
 
 function setText(id, text) {
@@ -1410,6 +1537,25 @@ function renderEdaTables(eda) {
           </tr>
         `;
       }).join("");
+    }
+  }
+
+  // Lowest Cleared Performers Table
+  const bottomBody = document.getElementById("bottomPerformersBody");
+  if (bottomBody) {
+    const list = eda.bottom_performers || [];
+    if (list.length === 0) {
+      bottomBody.innerHTML = `<tr><td colspan="5" class="empty-cell">No cleared records available</td></tr>`;
+    } else {
+      bottomBody.innerHTML = list.map(p => `
+        <tr>
+          <td><strong>#${p.rank}</strong></td>
+          <td>${escapeHtml(p.seat_no)}</td>
+          <td><strong>${escapeHtml(p.student_name)}</strong></td>
+          <td><span class="text-warning font-bold">${(p.sgpi || 0).toFixed(2)}</span></td>
+          <td>${p.total_marks || '--'}</td>
+        </tr>
+      `).join("");
     }
   }
 

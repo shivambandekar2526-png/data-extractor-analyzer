@@ -38,15 +38,31 @@ class AIInsightsSynthesizer:
         gender = demographics.get("gender", {})
 
         # Build compact payload (~150 tokens)
+        lowest_st = eda_data.get("lowest_performer") or overview.get("lowest_sgpi_student") or {}
+        top_st = (eda_data.get("top_performers") or [{}])[0]
+
         compact_metrics = {
             "total_students": overview.get("total_students", 0),
             "pass_rate_pct": overview.get("pass_percentage", 0.0),
             "avg_sgpi": overview.get("avg_sgpi", 0.0),
+            "median_sgpi": overview.get("median_sgpi", 0.0),
             "distinction_count": overview.get("distinction_count", 0),
             "distinction_pct": round(
                 (overview.get("distinction_count", 0) / max(1, overview.get("total_students", 1))) * 100, 1
             ),
             "atkt_fail_count": overview.get("atkt_fail_count", 0),
+            "kt_null_gpa_count": overview.get("kt_null_gpa_count", 0),
+            "curriculum_health_score": overview.get("curriculum_health_score", 0.0),
+            "topper": {
+                "name": top_st.get("student_name", "N/A"),
+                "seat": top_st.get("seat_no", "N/A"),
+                "sgpi": top_st.get("sgpi", 0.0)
+            },
+            "lowest_cleared_student": {
+                "name": lowest_st.get("student_name", "N/A"),
+                "seat": lowest_st.get("seat_no", "N/A"),
+                "sgpi": lowest_st.get("sgpi", 0.0)
+            },
             "toughest_course": {
                 "name": toughest.get("name", "N/A"),
                 "pass_pct": toughest.get("pass_pct", 0.0)
@@ -165,27 +181,34 @@ class AIInsightsSynthesizer:
         dist_count = metrics["distinction_count"]
         dist_pct = metrics["distinction_pct"]
         fail_count = metrics["atkt_fail_count"]
+        kt_null = metrics.get("kt_null_gpa_count", 0)
+        topper = metrics.get("topper", {})
+        lowest = metrics.get("lowest_cleared_student", {})
         toughest = metrics["toughest_course"]
         top = metrics["top_course"]
         demo = metrics["demographics"]
 
         lines = [
             "### 1. Executive Summary",
-            f"The cohort comprising **{total} students** achieved an overall pass rate of **{pass_pct}%** with a mean SGPI of **{avg_sgpi}**. "
-            f"A notable **{dist_pct}%** ({dist_count} students) secured First Class with Distinction, while {fail_count} students require academic remediation under KT/ATKT provisions.",
+            f"The cohort comprising **{total} students** achieved an overall clearance pass rate of **{pass_pct}%** with a mean SGPI of **{avg_sgpi}**. "
+            f"A notable **{dist_pct}%** ({dist_count} students) secured First Class with Distinction (SGPI ≥ 7.50). "
+            f"A total of **{fail_count} student(s)** have a KT / semester backlog (including {kt_null} student(s) whose GPA was withheld/null due to pending clearance).",
             "",
-            "### 2. Academic Strengths",
-            f"- **High Achievers**: {dist_count} students demonstrated exceptional performance with SGPI ≥ 7.50.",
+            "### 2. Academic Strengths & Top Merit",
+            f"- **Cohort Topper**: **{topper.get('name', 'N/A')}** (Seat `{topper.get('seat', '--')}`) achieved the highest score with **SGPI: {topper.get('sgpi', 0.0):.2f}**.",
+            f"- **Distinction Cohort**: {dist_count} students demonstrated exceptional mastery with SGPI ≥ 7.50.",
             f"- **Peak Course Performance**: **{top['name']}** registered the highest scoring engagement with an average score of {top['avg_marks']}.",
             f"- **Demographic Engagement**: Female students achieved a pass rate of {demo['female_pass_pct']}%, compared to {demo['male_pass_pct']}% for male students.",
             "",
-            "### 3. Critical Vulnerabilities & Bottlenecks",
+            "### 3. Critical Vulnerabilities & At-Risk Students",
+            f"- **Lowest Cleared SGPI**: **{lowest.get('name', 'N/A')}** (Seat `{lowest.get('seat', '--')}`) with **SGPI: {lowest.get('sgpi', 0.0):.2f}** represents the minimum passing mark in the cohort.",
+            f"- **KT & Backlog Alert**: {fail_count} students have KT (Keep Terms), requiring focused remediation before university re-examination.",
             f"- **Subject Bottleneck**: **{toughest['name']}** represents the critical hurdle for this semester, with a pass rate of only **{toughest['pass_pct']}%**.",
-            f"- **Cohort Disparity**: Lateral entry diploma students registered a pass rate of {demo['diploma_pass_pct']}%, requiring bridge course alignment with regular students ({demo['regular_pass_pct']}%).",
+            f"- **Cohort Disparity**: Lateral entry diploma students registered a pass rate of {demo['diploma_pass_pct']}%, compared to {demo['regular_pass_pct']}% for regular students.",
             "",
             "### 4. NAAC / NBA Accreditation & Remedial Action Plan",
-            f"1. **Remedial Teaching**: Institute 15 hours of targeted tutorial sessions for students who failed **{toughest['name']}** before the university re-examination.",
-            "2. **Mentorship & Slow Learner Tracking**: Faculty mentors must schedule 1-on-1 performance reviews for the KT students to align with NAAC Criterion 2.2.1.",
-            "3. **Peer Learning Groups**: Pair high-performing distinction students with lateral-entry students for difficult analytical theory subjects."
+            f"1. **Remedial Tutorial Sessions**: Institute 15 hours of targeted tutorial sessions for students who failed **{toughest['name']}** before the university re-examination.",
+            f"2. **Mentorship for At-Risk & KT Students**: Faculty mentors must schedule 1-on-1 performance reviews for the {fail_count} KT students and borderline students (SGPI < 5.0) to align with NAAC Criterion 2.2.1.",
+            "3. **Peer Mentoring Circles**: Pair high-performing distinction students with lateral-entry and at-risk students for analytical theory courses."
         ]
         return "\n".join(lines)

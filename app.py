@@ -449,6 +449,29 @@ def test_cloud_connection():
     return jsonify({"success": ok, "message": msg})
 
 
+@app.route("/api/cloud/models", methods=["GET", "POST"])
+def get_cloud_models():
+    """Fetch live or curated available models for a given provider and API key."""
+    data = {}
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+    else:
+        data = {
+            "provider": request.args.get("provider"),
+            "api_key": request.args.get("api_key")
+        }
+    client = CloudClient()
+    provider = data.get("provider") or client.config.get("provider", "gemini")
+    api_key = (data.get("api_key") or client.config.get("api_key", "")).strip()
+
+    models = client.fetch_live_models(provider=provider, api_key=api_key)
+    return jsonify({
+        "success": True,
+        "provider": provider,
+        "models": models
+    })
+
+
 @app.route("/api/models", methods=["GET"])
 def get_available_models():
     """List locally downloaded Ollama models and currently active model."""

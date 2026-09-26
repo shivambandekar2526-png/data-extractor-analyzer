@@ -1539,6 +1539,10 @@ body {
   padding: 1rem;
 }
 
+.eda-subtable-card.full-width {
+  grid-column: 1 / -1;
+}
+
 .subtable-header {
   display: flex;
   justify-content: space-between;
@@ -1603,6 +1607,47 @@ body {
   color: var(--text-muted);
   font-style: italic;
   padding: 1rem !important;
+}
+
+.btn-link-action {
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  transition: color 0.15s ease;
+}
+
+.btn-link-action:hover {
+  color: #38BDF8;
+  text-decoration: underline;
+}
+
+.btn-link-text {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0;
+  margin-top: 0.25rem;
+  transition: color 0.15s ease;
+}
+
+.btn-link-text:hover {
+  color: var(--text-main);
+  text-decoration: underline;
+}
+
+.custom-model-toggle-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.2rem;
 }
 
 

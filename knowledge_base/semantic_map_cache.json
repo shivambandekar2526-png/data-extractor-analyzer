@@ -595,5 +595,20 @@
     ],
     "tier_used": 1,
     "token_usage": 0
+  },
+  "92af37de869d92e7": {
+    "mappings": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "sgpi": "SGPI",
+      "total_marks": "Total_Marks",
+      "result": "Result",
+      "gender": "Gender",
+      "candidate_type": "Candidate_Type"
+    },
+    "subjects": {},
+    "unmapped": [],
+    "tier_used": 1,
+    "token_usage": 0
   }
 }

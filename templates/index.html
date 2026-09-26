@@ -293,9 +293,14 @@
               <span class="eda-kpi-sub" id="kpiMedianSgpi">Median: 0.00 | Std: 0.00</span>
             </div>
             <div class="eda-kpi-card">
-              <span class="eda-kpi-label">HIGHEST SGPI</span>
+              <span class="eda-kpi-label">HIGHEST SGPI (TOPPER)</span>
               <strong class="eda-kpi-value text-warning" id="kpiMaxSgpi">0.00</strong>
               <span class="eda-kpi-sub" id="kpiMaxMarks">Max Marks: 0</span>
+            </div>
+            <div class="eda-kpi-card">
+              <span class="eda-kpi-label">LOWEST SGPI (CLEARED)</span>
+              <strong class="eda-kpi-value text-accent" id="kpiMinSgpi">0.00</strong>
+              <span class="eda-kpi-sub" id="kpiMinStudentName">Cleared Student</span>
             </div>
             <div class="eda-kpi-card">
               <span class="eda-kpi-label">DISTINCTION (≥ 7.5)</span>
@@ -303,9 +308,9 @@
               <span class="eda-kpi-sub" id="kpiDistinctionPct">0% of cohort</span>
             </div>
             <div class="eda-kpi-card kpi-danger">
-              <span class="eda-kpi-label">REMEDIAL / KT / FAIL</span>
+              <span class="eda-kpi-label">KT / ATKT / FAIL</span>
               <strong class="eda-kpi-value text-danger" id="kpiFailCount">0</strong>
-              <span class="eda-kpi-sub" id="kpiFailPct">0% ATKT/Failed</span>
+              <span class="eda-kpi-sub" id="kpiFailPct">0% KT / Backlog</span>
             </div>
           </div>
 
@@ -397,7 +402,7 @@
             </div>
           </div>
 
-          <!-- Mini Detail Tables: Top Performers & Remedial Alerts -->
+          <!-- Mini Detail Tables: Top Performers, Bottom Cleared Performers & Remedial Alerts -->
           <div class="eda-tables-grid">
             <!-- Top Performers -->
             <div class="eda-subtable-card">
@@ -423,11 +428,35 @@
               </div>
             </div>
 
-            <!-- Remedial Action List -->
+            <!-- Bottom 5 Cleared Performers -->
             <div class="eda-subtable-card">
               <div class="subtable-header">
+                <h4>📉 Lowest 5 Cleared Performers (Borderline Monitoring)</h4>
+                <span class="subtable-badge text-warning">Passed (At-Risk)</span>
+              </div>
+              <div class="table-responsive-mini">
+                <table class="eda-mini-table" id="bottomPerformersTable">
+                  <thead>
+                    <tr>
+                      <th>Rank</th>
+                      <th>Seat No</th>
+                      <th>Student Name</th>
+                      <th>SGPI</th>
+                      <th>Total Marks</th>
+                    </tr>
+                  </thead>
+                  <tbody id="bottomPerformersBody">
+                    <tr><td colspan="5" class="empty-cell">No records available</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Remedial Action List -->
+            <div class="eda-subtable-card full-width">
+              <div class="subtable-header">
                 <h4>⚠️ At-Risk / Slow Learners Mentoring List (NAAC 2.2.1)</h4>
-                <span class="subtable-badge text-danger">Target Remedial</span>
+                <span class="subtable-badge text-danger">Target Remedial / Backlog</span>
               </div>
               <div class="table-responsive-mini">
                 <table class="eda-mini-table" id="remedialTable">
@@ -476,9 +505,9 @@
           <div class="form-group">
             <label for="cloudProviderSelect">AI Provider</label>
             <select id="cloudProviderSelect" class="form-select">
-              <option value="gemini">Google Gemini (Recommended - Free Tier)</option>
+              <option value="groq">Groq (Ultra-Fast LPUs: openai/gpt-oss-120b, qwen3.8)</option>
+              <option value="gemini">Google Gemini (gemini-flash-latest, 2.5-flash)</option>
               <option value="openai">OpenAI (GPT-4o-mini / GPT-4o)</option>
-              <option value="groq">Groq (Ultra-Fast Llama-3.3 70B)</option>
               <option value="custom">Custom (OpenAI-Compatible / Local Server)</option>
             </select>
           </div>
@@ -494,15 +523,26 @@
               <span class="hint-text" id="keyConfigHint">Stored locally, never shared</span>
             </div>
             <div class="password-input-wrapper">
-              <input type="password" id="cloudApiKey" class="form-input" placeholder="Enter API Key (e.g. AIzaSy... or sk-...)">
+              <input type="password" id="cloudApiKey" class="form-input" placeholder="Enter API Key (e.g. gsk_... or AIzaSy... or sk-...)">
               <button type="button" id="btnToggleKeyVisibility" class="btn-toggle-eye" title="Show / Hide API Key">👁️</button>
             </div>
             <small class="field-help" id="maskedKeyPreview"></small>
           </div>
 
           <div class="form-group">
-            <label for="cloudModelInput">Model</label>
-            <input type="text" id="cloudModelInput" class="form-input" placeholder="e.g. gemini-2.0-flash" value="gemini-2.0-flash">
+            <div class="label-with-hint">
+              <label for="cloudModelSelect">Model</label>
+              <button type="button" id="btnRefreshCloudModels" class="btn-link-action" title="Fetch live models available for your API key">🔄 Detect Live Models</button>
+            </div>
+            <select id="cloudModelSelect" class="form-select">
+              <!-- Dynamically populated -->
+            </select>
+            <div class="custom-model-wrapper" id="customModelWrapper" style="display: none; margin-top: 0.35rem;">
+              <input type="text" id="cloudModelInput" class="form-input" placeholder="Enter custom model ID (e.g. openai/gpt-oss-120b)">
+            </div>
+            <div class="custom-model-toggle-row">
+              <button type="button" id="btnToggleCustomModel" class="btn-link-text">✏️ Custom Model ID</button>
+            </div>
             <div class="model-quick-chips" id="modelQuickChips"></div>
           </div>
 
@@ -541,6 +581,6 @@
     <p>Data Extractor AI • Local GPU Acceleration • Independent Standalone Architecture</p>
   </footer>
 
-  <script src="/static/js/app.js"></script>
+  <script src="/static/js/app.js?v=2.2"></script>
 </body>
 </html>

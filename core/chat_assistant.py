@@ -13,13 +13,16 @@ from typing import Any, Dict, List, Optional, Tuple
 try:
     from .ollama_client import OllamaClient
     from .cloud_client import CloudClient
+    from .query_planner import LocalQueryPlanner, df_to_markdown_table
 except Exception:
     try:
         from data_extractor_AI.core.ollama_client import OllamaClient
         from data_extractor_AI.core.cloud_client import CloudClient
+        from data_extractor_AI.core.query_planner import LocalQueryPlanner, df_to_markdown_table
     except Exception:
         from core.ollama_client import OllamaClient
         from core.cloud_client import CloudClient
+        from core.query_planner import LocalQueryPlanner, df_to_markdown_table
 
 CHAT_JSON_SCHEMA = {
     "type": "object",
@@ -53,8 +56,8 @@ SYSTEM_PROMPT = (
     "You are an expert academic data assistant analyzing and manipulating a student result dataset. "
     "Respond with valid JSON matching the schema.\n"
     "Supported actions:\n"
-    "1. 'answer': When user asks ANY question about the dataset (counts, toppers, averages, comparisons, explanations). "
-    "   Provide a comprehensive, factual, professional answer in 'reply' using the DATASET SUMMARY provided in the prompt.\n"
+    "1. 'answer': When user asks ANY question about the dataset (individual student details, counts, toppers, averages, comparisons, explanations). "
+    "   Provide a comprehensive, factual, professional answer in 'reply' using the COMPLETE student records and analytics provided in the session context.\n"
     "2. 'delete_slice': Remove N records from start/end. params: {start: 0, count: 2}\n"
     "3. 'delete_where': Remove matching records. params: {key: 'Result_Status', values: ['FAIL', 'F']}\n"
     "4. 'filter_keep': Keep only matching records. params: {key: 'Gender', value: 'F'}\n"
@@ -118,7 +121,7 @@ def calculate_dataset_analytics(students: List[Dict[str, Any]]) -> Dict[str, Any
 
     passed_count = 0
     failed_count = 0
-    other_status_count = 0
+    kt_null_gpa_count = 0
 
     regular_count = 0
     diploma_count = 0
@@ -126,27 +129,57 @@ def calculate_dataset_analytics(students: List[Dict[str, Any]]) -> Dict[str, Any
     male_count = 0
     female_count = 0
 
-    sgpi_list: List[Tuple[float, str, str]] = []  # (sgpi, seat, name)
+    sgpi_list: List[Tuple[float, str, str, float]] = []  # (sgpi, seat, name, marks)
     marks_list: List[Tuple[float, str, str]] = []  # (marks, seat, name)
     failed_students: List[Dict[str, str]] = []
 
+    # Grade buckets
+    distinction_count = 0
+    first_class_count = 0
+    second_class_count = 0
+    pass_class_count = 0
+
     for s in students:
-        seat = _get_field(s, "seat")
-        name = _get_field(s, "name")
+        seat = _get_field(s, "seat") or "--"
+        name = _get_field(s, "name") or "Unknown"
         res = _get_field(s, "result").upper()
         cand = _get_field(s, "type").upper()
         gen = _get_field(s, "gender").upper()
-        sgpi_val = _safe_float(_get_field(s, "sgpi"))
+        raw_sgpi = _get_field(s, "sgpi")
+        sgpi_val = _safe_float(raw_sgpi)
         marks_val = _safe_float(_get_field(s, "marks"))
 
-        # Status
-        if any(w in res for w in ["PASS", "P", "SUCCESSFUL"]):
-            passed_count += 1
-        elif any(w in res for w in ["FAIL", "F", "UNSUCCESSFUL", "ATKT", "KT", "ABS"]):
+        # Academic Rule: If GPA is null/empty/0, student has a KT (Keep Terms / failed semester)
+        is_kt = False
+        kt_reason = ""
+        if not raw_sgpi or raw_sgpi in ("--", "-", "null", "None", "ABS", "N/A") or sgpi_val <= 0.0:
+            is_kt = True
+            kt_null_gpa_count += 1
+            kt_reason = "Null / Withheld GPA (KT in examination)"
+        elif any(w in res for w in ["FAIL", "F", "UNSUCCESSFUL", "ATKT", "KT", "ABS"]) or sgpi_val < 4.0:
+            is_kt = True
+            kt_reason = f"Result marked as {res or 'Fail'} (SGPI: {sgpi_val:.2f})"
+
+        if is_kt:
             failed_count += 1
-            failed_students.append({"seat": seat, "name": name, "sgpi": str(sgpi_val), "result": res})
+            failed_students.append({
+                "seat": seat,
+                "name": name,
+                "sgpi": str(raw_sgpi or "Null/KT"),
+                "result": res or "KT",
+                "reason": kt_reason
+            })
         else:
-            other_status_count += 1
+            passed_count += 1
+            # Classifications
+            if sgpi_val >= 7.5:
+                distinction_count += 1
+            elif sgpi_val >= 6.75:
+                first_class_count += 1
+            elif sgpi_val >= 6.0:
+                second_class_count += 1
+            else:
+                pass_class_count += 1
 
         # Candidate Type
         if "DIPLOMA" in cand or "DSE" in cand or "LATERAL" in cand:
@@ -162,18 +195,53 @@ def calculate_dataset_analytics(students: List[Dict[str, Any]]) -> Dict[str, Any
 
         # Numeric scores
         if sgpi_val > 0.0:
-            sgpi_list.append((sgpi_val, seat, name))
+            sgpi_list.append((sgpi_val, seat, name, marks_val))
         if marks_val > 0.0:
             marks_list.append((marks_val, seat, name))
 
     sgpi_vals = [x[0] for x in sgpi_list]
     marks_vals = [x[0] for x in marks_list]
 
-    sgpi_list_sorted = sorted(sgpi_list, key=lambda x: x[0], reverse=True)
-    marks_list_sorted = sorted(marks_list, key=lambda x: x[0], reverse=True)
+    # Full sorted lists across ALL students
+    sgpi_list_desc = sorted(sgpi_list, key=lambda x: (x[0], x[3]), reverse=True)
+    sgpi_list_asc = sorted(sgpi_list, key=lambda x: (x[0], x[3]))
+    marks_list_desc = sorted(marks_list, key=lambda x: x[0], reverse=True)
 
     pass_pct = round((passed_count / total) * 100, 1) if total else 0.0
     fail_pct = round((failed_count / total) * 100, 1) if total else 0.0
+
+    # Discover subject pass rates
+    subjects_stats: Dict[str, Any] = {}
+    if students:
+        cols = list(students[0].keys())
+        tot_cols = [c for c in cols if c.endswith("_TOT") or c.endswith("_Total") or c.endswith("_TW")]
+        seen_codes = set()
+        for tc in tot_cols:
+            code = tc.split("_")[0]
+            if code in seen_codes or code in ("TOTAL", "MAX", "MIN", "CREDITS", "SGPI", "MARKS"):
+                continue
+            seen_codes.add(code)
+            sub_pass = 0
+            sub_app = 0
+            sub_marks = []
+            for s in students:
+                val = _safe_float(s.get(tc))
+                if val > 0.0:
+                    sub_app += 1
+                    sub_marks.append(val)
+                    if val >= 40.0:
+                        sub_pass += 1
+            if sub_app > 0:
+                subjects_stats[code] = {
+                    "code": code,
+                    "appeared": sub_app,
+                    "passed": sub_pass,
+                    "pass_pct": round((sub_pass / sub_app) * 100, 1),
+                    "avg": round(sum(sub_marks) / len(sub_marks), 1)
+                }
+
+    toughest_sub = min(subjects_stats.values(), key=lambda x: x["pass_pct"]) if subjects_stats else None
+    top_sub = max(subjects_stats.values(), key=lambda x: x["avg"]) if subjects_stats else None
 
     return {
         "total": total,
@@ -181,6 +249,7 @@ def calculate_dataset_analytics(students: List[Dict[str, Any]]) -> Dict[str, Any
         "failed_count": failed_count,
         "pass_percentage": pass_pct,
         "fail_percentage": fail_pct,
+        "kt_null_gpa_count": kt_null_gpa_count,
         "regular_count": regular_count,
         "diploma_count": diploma_count,
         "regular_percentage": round((regular_count / total) * 100, 1) if total else 0.0,
@@ -193,35 +262,77 @@ def calculate_dataset_analytics(students: List[Dict[str, Any]]) -> Dict[str, Any
         "min_marks": min(marks_vals) if marks_vals else 0.0,
         "max_marks": max(marks_vals) if marks_vals else 0.0,
         "avg_marks": round(sum(marks_vals) / len(marks_vals), 1) if marks_vals else 0.0,
-        "toppers_sgpi": sgpi_list_sorted[:5],
-        "toppers_marks": marks_list_sorted[:5],
+        "distinction_count": distinction_count,
+        "first_class_count": first_class_count,
+        "second_class_count": second_class_count,
+        "pass_class_count": pass_class_count,
+        "toppers_sgpi": [(x[0], x[1], x[2]) for x in sgpi_list_desc[:5]],
+        "lowest_5_sgpi": [(x[0], x[1], x[2]) for x in sgpi_list_asc[:5]],
+        "lowest_sgpi_student": (sgpi_list_asc[0][0], sgpi_list_asc[0][1], sgpi_list_asc[0][2]) if sgpi_list_asc else None,
+        "toppers_marks": marks_list_desc[:5],
         "failed_students": failed_students,
+        "subjects": subjects_stats,
+        "toughest_subject": toughest_sub,
+        "top_subject": top_sub,
         "column_keys": list(students[0].keys()) if students else []
     }
 
 
-def format_dataset_summary_for_prompt(analytics: Dict[str, Any], sample_rows: List[Dict[str, Any]]) -> str:
-    """Format rich analytics block to inject into Ollama prompt context."""
+def format_dataset_summary_for_prompt(
+    analytics: Dict[str, Any],
+    sample_rows: List[Dict[str, Any]],
+    user_prompt: str = "",
+    all_students: Optional[List[Dict[str, Any]]] = None
+) -> str:
+    """Format rich analytics block to inject into prompt context."""
     total = analytics.get("total", 0)
     if total == 0:
         return "No records loaded."
 
     top_sgpi_str = ", ".join([f"{name} ({seat}): {sgpi:.2f}" for sgpi, seat, name in analytics.get("toppers_sgpi", [])[:3]]) or "N/A"
-    failed_preview = ", ".join([f"{s['name']} ({s['seat']})" for s in analytics.get("failed_students", [])[:10]]) or "None"
+    low_student = analytics.get("lowest_sgpi_student")
+    low_sgpi_str = f"{low_student[2]} (Seat {low_student[1]}): {low_student[0]:.2f}" if low_student else "N/A"
+    failed_preview = ", ".join([f"{s['name']} ({s['seat']})" for s in analytics.get("failed_students", [])[:8]]) or "None"
+    toughest = analytics.get("toughest_subject")
+    tough_str = f"{toughest['code']} ({toughest['pass_pct']}% pass)" if toughest else "N/A"
+
+    # Check if a specific student is mentioned in user_prompt to inject their complete profile
+    queried_student_str = ""
+    if user_prompt and all_students:
+        p_clean = user_prompt.upper()
+        # Check seat numbers or names
+        for s in all_students:
+            s_seat = _get_field(s, "seat")
+            s_name = _get_field(s, "name").upper()
+            if (s_seat and s_seat in p_clean) or (s_name and (s_name in p_clean or any(part in p_clean for part in s_name.split() if len(part) >= 4))):
+                queried_student_str = (
+                    f"\n- SPECIFIC STUDENT FOUND IN DATASET: {s_name} (Seat `{s_seat}`), "
+                    f"Result: {_get_field(s, 'result') or 'Pass'}, "
+                    f"SGPI: {_get_field(s, 'sgpi') or 'Null (KT)'}, "
+                    f"Total Marks: {_get_field(s, 'marks') or 'N/A'}, "
+                    f"Candidate Type: {_get_field(s, 'type') or 'Regular'}, "
+                    f"Gender: {_get_field(s, 'gender') or 'N/A'}, "
+                    f"PRN: {_get_field(s, 'prn') or 'N/A'}"
+                )
+                break
 
     return (
-        f"DATASET SUMMARY (Calculated across all {total} students in this cohort):\n"
-        f"- Total Students: {total}\n"
-        f"- Results: {analytics.get('passed_count', 0)} Passed ({analytics.get('pass_percentage', 0.0)}%), "
-        f"{analytics.get('failed_count', 0)} Failed/Unsuccessful ({analytics.get('fail_percentage', 0.0)}%)\n"
-        f"- Candidate Types: {analytics.get('regular_count', 0)} Regular ({analytics.get('regular_percentage', 0.0)}%), "
-        f"{analytics.get('diploma_count', 0)} Diploma ({analytics.get('diploma_percentage', 0.0)}%)\n"
+        f"DATASET FACTS (Calculated across all {total} students in this cohort):\n"
+        f"- Total Enrolled Students: {total}\n"
+        f"- Clearance: {analytics.get('passed_count', 0)} Passed ({analytics.get('pass_percentage', 0.0)}%), "
+        f"{analytics.get('failed_count', 0)} Failed / KT ({analytics.get('fail_percentage', 0.0)}%)\n"
+        f"- Note on KT: In university grading, students with null or unannounced GPA have KT (pending backlogs).\n"
+        f"- Distinction (SGPI >= 7.5): {analytics.get('distinction_count', 0)} students\n"
+        f"- Candidate Types: {analytics.get('regular_count', 0)} Regular, {analytics.get('diploma_count', 0)} Diploma\n"
         f"- Gender: {analytics.get('male_count', 0)} Male, {analytics.get('female_count', 0)} Female\n"
-        f"- SGPI Metrics: Min={analytics.get('min_sgpi', 0.0):.2f}, Max={analytics.get('max_sgpi', 0.0):.2f}, Avg={analytics.get('avg_sgpi', 0.0):.2f}\n"
-        f"- Top Performers (SGPI): {top_sgpi_str}\n"
-        f"- Failed Students ({len(analytics.get('failed_students', []))} total): {failed_preview}\n"
-        f"- Table Columns: {analytics.get('column_keys', [])[:12]}\n"
-        f"- Sample Records (First 3):\n{json.dumps(sample_rows[:3], indent=1)}"
+        f"- SGPI Range (Cleared Students): Min={analytics.get('min_sgpi', 0.0):.2f}, Max={analytics.get('max_sgpi', 0.0):.2f}, Avg={analytics.get('avg_sgpi', 0.0):.2f}\n"
+        f"- Lowest Cleared SGPI Student: {low_sgpi_str}\n"
+        f"- Cohort Topper (Highest SGPI): {top_sgpi_str}\n"
+        f"- Toughest Course: {tough_str}\n"
+        f"- Failed / KT Students ({len(analytics.get('failed_students', []))} total): {failed_preview}\n"
+        f"{queried_student_str}\n"
+        f"- Available Columns: {', '.join(analytics.get('column_keys', [])[:12])}\n"
+        f"IMPORTANT INSTRUCTION: Use the above exact facts to answer. Do NOT guess or recite sample rows."
     )
 
 
@@ -461,15 +572,80 @@ def fallback_rule_engine(
         )
         return students, reply, "answer"
 
-    # 2d. Lowest SGPI / At-risk students
-    if any(k in p for k in ["lowest sgpi", "minimum sgpi", "lowest marks", "worst sgpi"]):
-        toppers = analytics.get("toppers_sgpi", [])
-        if toppers:
-            lowest_sg, low_seat, low_name = toppers[-1]
-            reply = f"⚠️ **Lowest SGPI**: **{low_name}** (Seat `{low_seat}`) with an SGPI of **{lowest_sg:.2f}**."
-            return students, reply, "answer"
+    # 2d. Lowest SGPI / Bottom Performers
+    if any(k in p for k in [
+        "lowest sgpi", "minimum sgpi", "lowest pointer", "minimum pointer", "worst sgpi",
+        "lowest marks", "least marks", "who got lowest", "who is at bottom", "bottom student",
+        "bottom performers", "least sgpi", "minimum score", "lowest score", "who scored lowest"
+    ]):
+        lowest = analytics.get("lowest_sgpi_student")
+        if not lowest:
+            return students, "No valid evaluated SGPI records found in the current dataset.", "answer"
 
-    # 2e. Diploma vs Regular candidate distribution
+        low_sg, low_seat, low_name = lowest
+        null_cnt = analytics.get("kt_null_gpa_count", 0)
+        kt_note = f"\n\n*(Note: {null_cnt} student(s) with null/withheld GPA have KT / failed courses, so their numerical SGPI was not evaluated)*" if null_cnt > 0 else ""
+
+        lines = [
+            f"📉 **Lowest Evaluated SGPI in Cohort**: **{low_name}** (Seat `{low_seat}`) — **SGPI: {low_sg:.2f}**{kt_note}",
+            "",
+            "**Bottom 5 Performers with Valid SGPI**:"
+        ]
+        for i, (sg, st, nm) in enumerate(analytics.get("lowest_5_sgpi", [])):
+            lines.append(f"{i+1}. **{nm}** (Seat `{st}`) — **SGPI: {sg:.2f}**")
+
+        reply = "\n".join(lines)
+        return students, reply, "answer"
+
+    # 2e. Distinction / Grade Classifications
+    if any(k in p for k in [
+        "distinction", "first class", "second class", "pass class", "grade breakdown",
+        "grade distribution", "how many distinction", "how many first class", "classification"
+    ]):
+        d_cnt = analytics.get("distinction_count", 0)
+        f_cnt = analytics.get("first_class_count", 0)
+        s_cnt = analytics.get("second_class_count", 0)
+        p_cnt = analytics.get("pass_class_count", 0)
+        fail_cnt = analytics.get("failed_count", 0)
+        reply = (
+            f"🎓 **Cohort Grade Classification ({total} Students)**:\n"
+            f"• 🥇 **First Class with Distinction (SGPI ≥ 7.50)**: **{d_cnt}** students ({round(d_cnt/total*100, 1) if total else 0}%)\n"
+            f"• 🥈 **First Class (6.75 - 7.49)**: **{f_cnt}** students ({round(f_cnt/total*100, 1) if total else 0}%)\n"
+            f"• 🥉 **Second Class (6.00 - 6.74)**: **{s_cnt}** students ({round(s_cnt/total*100, 1) if total else 0}%)\n"
+            f"• 📜 **Pass Class (4.00 - 5.99)**: **{p_cnt}** students ({round(p_cnt/total*100, 1) if total else 0}%)\n"
+            f"• ❌ **KT / ATKT / Failed (SGPI < 4.0 or Null)**: **{fail_cnt}** students ({round(fail_cnt/total*100, 1) if total else 0}%)"
+        )
+        return students, reply, "answer"
+
+    # 2f. Toughest Subject & Subject-Wise Analysis
+    if any(k in p for k in [
+        "toughest subject", "difficult subject", "hardest subject", "worst subject",
+        "easiest subject", "best subject", "subject analysis", "subject pass",
+        "subject wise", "which subject has most fails", "which subject is hard"
+    ]):
+        toughest = analytics.get("toughest_subject")
+        top = analytics.get("top_subject")
+        subs = analytics.get("subjects", {})
+        if not subs:
+            return students, "No subject-level component columns were discovered in this dataset schema.", "answer"
+
+        lines = ["🎯 **Subject-Wise Curriculum Analytics**:"]
+        if toughest:
+            failed_num = toughest['appeared'] - toughest['passed']
+            lines.append(f"• ⚠️ **Toughest Course (Lowest Pass Rate)**: **{toughest['code']}** with **{toughest['pass_pct']}%** clearance ({failed_num} failed out of {toughest['appeared']} appeared).")
+        if top:
+            lines.append(f"• 🌟 **Highest Scoring Course**: **{top['code']}** with average score of **{top['avg']}** marks.")
+
+        lines.append("\n**Course-by-Course Clearance Rates**:")
+        sorted_subs = sorted(subs.values(), key=lambda x: x["pass_pct"])
+        for s in sorted_subs:
+            icon = "🔴" if s["pass_pct"] < 75 else ("🟡" if s["pass_pct"] < 90 else "🟢")
+            lines.append(f"{icon} **{s['code']}**: **{s['pass_pct']}% pass** (Avg: {s['avg']} | {s['passed']}/{s['appeared']} passed)")
+
+        reply = "\n".join(lines)
+        return students, reply, "answer"
+
+    # 2g. Diploma vs Regular candidate distribution
     if any(k in p for k in [
         "how many diploma", "diploma vs regular", "candidate type", "regular vs diploma",
         "how many regular", "lateral entry count", "diploma students"
@@ -485,7 +661,7 @@ def fallback_rule_engine(
         )
         return students, reply, "answer"
 
-    # 2f. Gender Ratio / Boys vs Girls
+    # 2h. Gender Ratio / Boys vs Girls
     if any(k in p for k in [
         "how many boys", "how many girls", "gender ratio", "male vs female", "gender breakdown", "female count"
     ]):
@@ -498,52 +674,116 @@ def fallback_rule_engine(
         )
         return students, reply, "answer"
 
-    # 2g. List of Failed Students
+    # 2i. List of Failed Students & KT Analysis
     if any(k in p for k in [
-        "who failed", "which students failed", "list failed", "failed list", "show kt", "failed students"
+        "who failed", "which students failed", "list failed", "failed list", "show kt",
+        "failed students", "kt count", "how many kt", "null gpa", "students with kt", "backlogs"
     ]):
         failed_list = analytics.get("failed_students", [])
+        null_cnt = analytics.get("kt_null_gpa_count", 0)
         if not failed_list:
-            return students, "🎉 Excellent news: **All students in this dataset passed!** (0 failed records).", "answer"
+            return students, "🎉 Excellent news: **All students in this dataset passed!** (0 failed / KT records).", "answer"
 
-        lines = [f"❌ **Failed / Unsuccessful Students ({len(failed_list)} total)**:"]
+        lines = [
+            f"❌ **KT (Keep Terms) & Failed Students ({len(failed_list)} total / {analytics.get('fail_percentage', 0.0)}%)**:",
+            f"• **Students with Null / Withheld GPA**: **{null_cnt}** *(In Mumbai University grading, students with unannounced GPA have KT in one or more heads)*",
+            "",
+            "**KT Candidates List**:"
+        ]
         for i, s in enumerate(failed_list[:15]):
-            sgpi_disp = f" — SGPI: {s['sgpi']}" if float(s.get('sgpi', 0)) > 0 else ""
-            lines.append(f"{i+1}. `{s['seat']}`: **{s['name']}**{sgpi_disp}")
+            reason = f" ({s.get('reason')})" if s.get('reason') else ""
+            lines.append(f"{i+1}. `{s['seat']}`: **{s['name']}** — SGPI: `{s['sgpi']}`{reason}")
         if len(failed_list) > 15:
             lines.append(f"*(and {len(failed_list) - 15} more...)*")
 
         return students, "\n".join(lines), "answer"
 
-    # 2h. Lookup single student details
-    m_seat = re.search(r"\b(?:find|search|details of|who is|show|get)\s+(?:student\s+|seat\s+)?(\d{6,10})\b", p)
-    if m_seat:
-        target_seat = m_seat.group(1)
+    # 2j. Score threshold queries: e.g. "students with sgpi greater than 8" or "sgpi less than 6"
+    m_gt = re.search(r"sgpi\s*(?:greater than|above|>|>=)\s*(\d+(?:\.\d+)?)", p)
+    if m_gt:
+        thresh = float(m_gt.group(1))
+        matching = [s for s in students if _safe_float(_get_field(s, "sgpi")) >= thresh]
+        lines = [f"🌟 **Students with SGPI ≥ {thresh:.2f} ({len(matching)} students out of {total})**:"]
+        for i, s in enumerate(matching[:10]):
+            lines.append(f"{i+1}. **{_get_field(s, 'name')}** (Seat `{_get_field(s, 'seat')}`) — SGPI: **{_get_field(s, 'sgpi')}**")
+        if len(matching) > 10:
+            lines.append(f"*(and {len(matching) - 10} more...)*")
+        return students, "\n".join(lines), "answer"
+
+    m_lt = re.search(r"sgpi\s*(?:less than|below|<|<=)\s*(\d+(?:\.\d+)?)", p)
+    if m_lt:
+        thresh = float(m_lt.group(1))
+        matching = [s for s in students if 0.0 < _safe_float(_get_field(s, "sgpi")) <= thresh]
+        lines = [f"⚠️ **Students with Valid SGPI ≤ {thresh:.2f} ({len(matching)} students)**:"]
+        for i, s in enumerate(matching[:10]):
+            lines.append(f"{i+1}. **{_get_field(s, 'name')}** (Seat `{_get_field(s, 'seat')}`) — SGPI: **{_get_field(s, 'sgpi')}**")
+        if len(matching) > 10:
+            lines.append(f"*(and {len(matching) - 10} more...)*")
+        return students, "\n".join(lines), "answer"
+
+    # 2k. Lookup student by Seat Number (supporting direct seat number or prefixed queries)
+    seat_candidates = re.findall(r"\b\d{1,12}\b", p)
+    for target_seat in seat_candidates:
         for s in students:
             if _get_field(s, "seat") == target_seat:
+                raw_sg = _get_field(s, "sgpi")
+                sg_disp = f"**{raw_sg}**" if raw_sg and raw_sg not in ("--", "-", "null") else "**Null (KT - Keep Terms)**"
                 reply = (
                     f"👤 **Student Record Found** (Seat `{target_seat}`):\n"
                     f"• **Name**: **{_get_field(s, 'name')}**\n"
-                    f"• **Result**: **{_get_field(s, 'result')}**\n"
-                    f"• **SGPI**: **{_get_field(s, 'sgpi') or 'N/A'}**\n"
-                    f"• **Candidate Type**: {_get_field(s, 'type')}\n"
-                    f"• **Gender**: {_get_field(s, 'gender')}\n"
-                    f"• **PRN**: `{_get_field(s, 'prn')}`\n"
+                    f"• **Result**: **{_get_field(s, 'result') or 'N/A'}**\n"
+                    f"• **SGPI**: {sg_disp}\n"
+                    f"• **Candidate Type**: {_get_field(s, 'type') or 'Regular'}\n"
+                    f"• **Gender**: {_get_field(s, 'gender') or 'N/A'}\n"
+                    f"• **PRN**: `{_get_field(s, 'prn') or 'N/A'}`\n"
                     f"• **Total Marks**: {_get_field(s, 'marks') or 'N/A'}"
                 )
                 return students, reply, "answer"
-        return students, f"Student with Seat No `{target_seat}` was not found in the current dataset.", "answer"
 
-    # 2i. Overview / Executive Summary
-    if any(k in p for k in ["summary", "overview", "dashboard", "tell me about this data", "analyze this data"]):
+    # 2l. Lookup student by Name (supporting direct name like 'BASUDE ADITYA YASHWANT KALAWATI', surname, or queries)
+    has_subject_inquiry = any(w in p for w in ["score in", "marks in", "grade in", "in ", "subject", "theory", "internal", "lab", "project"])
+    raw_name_query = re.sub(r"^(?:find|search|details of|who is|show|get|pointer of|sgpi of|marks of|result of|status of)\s+", "", p).strip()
+    raw_name_query = re.sub(r"[^\w\s]", "", raw_name_query).strip().upper()
+    stopwords = {"THE", "TOPPER", "STUDENT", "DATASET", "RESULTS", "FAILED", "PASSED", "LOWEST", "HIGHEST", "AVERAGE", "SUMMARY", "OVERVIEW", "ALL", "REPORT"}
+    if not has_subject_inquiry and len(raw_name_query) >= 3 and raw_name_query not in stopwords:
+        matches = []
+        for s in students:
+            s_name = _get_field(s, "name").upper()
+            if raw_name_query == s_name or raw_name_query in s_name or any(part in s_name for part in raw_name_query.split() if len(part) >= 4 and part not in stopwords):
+                matches.append(s)
+        if matches:
+            target_s = matches[0]
+            raw_sg = _get_field(target_s, "sgpi")
+            sg_disp = f"**{raw_sg}**" if raw_sg and raw_sg not in ("--", "-", "null") else "**Null (KT - Keep Terms)**"
+            reply = (
+                f"👤 **Student Record Found**: **{_get_field(target_s, 'name')}** (Seat `{_get_field(target_s, 'seat')}`):\n"
+                f"• **Result**: **{_get_field(target_s, 'result') or 'N/A'}**\n"
+                f"• **SGPI**: {sg_disp}\n"
+                f"• **Candidate Type**: {_get_field(target_s, 'type') or 'Regular'}\n"
+                f"• **Gender**: {_get_field(target_s, 'gender') or 'N/A'}\n"
+                f"• **PRN**: `{_get_field(target_s, 'prn') or 'N/A'}`\n"
+                f"• **Total Marks**: {_get_field(target_s, 'marks') or 'N/A'}"
+            )
+            if len(matches) > 1:
+                reply += f"\n*(found {len(matches)} matching students, displaying best match)*"
+            return students, reply, "answer"
+
+    # 2m. Overview / Executive Summary
+    if any(k in p for k in ["summary", "overview", "dashboard", "tell me about this data", "analyze this data", "report"]):
         toppers = analytics.get("toppers_sgpi", [])
         top_str = f"{toppers[0][2]} (SGPI {toppers[0][0]:.2f})" if toppers else "N/A"
+        lowest_st = analytics.get("lowest_sgpi_student")
+        low_str = f"{lowest_st[2]} (SGPI {lowest_st[0]:.2f})" if lowest_st else "N/A"
+        null_cnt = analytics.get("kt_null_gpa_count", 0)
         reply = (
             f"📋 **Executive Cohort Overview ({total} Students)**:\n"
-            f"• **Pass Clearance**: **{analytics.get('pass_percentage', 0.0)}%** ({analytics.get('passed_count', 0)} Passed, {analytics.get('failed_count', 0)} Failed)\n"
-            f"• **Average SGPI**: **{analytics.get('avg_sgpi', 0.0):.2f}** (Cohort Range: {analytics.get('min_sgpi', 0.0):.2f} - {analytics.get('max_sgpi', 0.0):.2f})\n"
-            f"• **Top Scorer**: **{top_str}**\n"
-            f"• **Candidate Composition**: **{analytics.get('regular_count', 0)}** Regular, **{analytics.get('diploma_count', 0)}** Diploma\n"
+            f"• **Pass Clearance**: **{analytics.get('pass_percentage', 0.0)}%** ({analytics.get('passed_count', 0)} Passed, {analytics.get('failed_count', 0)} KT/Failed)\n"
+            f"• **Average SGPI**: **{analytics.get('avg_sgpi', 0.0):.2f}** (Evaluated Range: {analytics.get('min_sgpi', 0.0):.2f} - {analytics.get('max_sgpi', 0.0):.2f})\n"
+            f"• **Cohort Topper**: **{top_str}**\n"
+            f"• **Lowest Cleared SGPI**: **{low_str}**\n"
+            f"• **KT Backlogs**: **{analytics.get('failed_count', 0)}** students ({null_cnt} with null/withheld GPA)\n"
+            f"• **First Class with Distinction (≥7.5)**: **{analytics.get('distinction_count', 0)}** students\n"
+            f"• **Candidate Mix**: **{analytics.get('regular_count', 0)}** Regular, **{analytics.get('diploma_count', 0)}** Diploma\n"
             f"• **Gender Split**: **{analytics.get('male_count', 0)}** Male / **{analytics.get('female_count', 0)}** Female"
         )
         return students, reply, "answer"
@@ -603,31 +843,76 @@ def process_chat_command(
             "students": []
         }
 
-    # 1. Deterministic Rule Engine for instantaneous sub-millisecond execution & exact stats
-    rule_res = fallback_rule_engine(user_prompt, students)
-    if rule_res is not None:
-        updated_data, desc, action_type = rule_res
-        return {
-            "success": True,
-            "reply": desc,
-            "action": action_type,
-            "total_students": len(updated_data),
-            "students": updated_data,
-            "engine_used": "Instant Analytics Engine"
-        }
-
-    analytics = calculate_dataset_analytics(students)
-    context_summary = format_dataset_summary_for_prompt(analytics, students[:5])
-
     if cloud_client is None:
         cloud_client = CloudClient()
+    if client is None:
+        client = OllamaClient()
 
     routing_mode = cloud_client.config.get("routing_mode", "auto_hybrid")
     complex_query = is_complex_query(user_prompt)
+    is_cloud_active = cloud_client.is_configured()
+    prefer_cloud_active = is_cloud_active and routing_mode == "prefer_cloud"
+
+    # 1. In auto_hybrid or offline mode, check deterministic rule engine first (<1ms, 0 tokens)
+    if not prefer_cloud_active:
+        rule_res = fallback_rule_engine(user_prompt, students)
+        if rule_res is not None:
+            updated_data, desc, action_type = rule_res
+            return {
+                "success": True,
+                "reply": desc,
+                "action": action_type,
+                "total_students": len(updated_data),
+                "students": updated_data,
+                "engine_used": "Instant Analytics Engine"
+            }
+
+    # 2. Extract catalog courses and available columns for query planning
+    catalog_courses = []
+    if isinstance(catalog, dict):
+        catalog_courses = catalog.get("courses", [])
+    elif isinstance(catalog, list):
+        catalog_courses = catalog
+
+    columns = list(students[0].keys()) if students else []
+
+    # 3. Agentic Query Planning: predict required columns and student candidate rows
+    planner = LocalQueryPlanner(ollama_client=client)
+    plan = planner.plan_query(
+        query=user_prompt,
+        columns=columns,
+        catalog_courses=catalog_courses,
+        students=students
+    )
+
+    # If planner identifies a dataset modification action (delete, filter, sort)
+    plan_action = plan.get("action", "answer")
+    if plan_action != "answer" and plan.get("params"):
+        updated_data, detail_msg = apply_action(plan_action, plan["params"], students)
+        cloud_client.notify_dataset_modified(session_id, detail_msg)
+        return {
+            "success": True,
+            "reply": detail_msg,
+            "action": plan_action,
+            "total_students": len(updated_data),
+            "students": updated_data,
+            "engine_used": "Query Planner (Instant Action)"
+        }
+
+    # 4. Extract targeted DataFrame slice in-memory (<1ms)
+    df_slice, md_table, slice_meta = planner.extract_dataframe_slice(students, plan)
+    slice_records = df_slice.to_dict(orient="records") if df_slice is not None else students[:5]
+
+    analytics = calculate_dataset_analytics(students)
+    context_summary = format_dataset_summary_for_prompt(
+        analytics, students[:5], user_prompt=user_prompt, all_students=students
+    )
+
+    planner_tag = "Ollama Planner" if plan.get("planner_type") == "ollama_neural" else "Local Query Planner"
 
     # Determine if Cloud AI should handle this request
-    should_try_cloud = cloud_client.is_configured() and (
-        routing_mode == "prefer_cloud" or (routing_mode == "auto_hybrid" and complex_query)
+    should_try_cloud = is_cloud_active and (
+        prefer_cloud_active or routing_mode == "auto_hybrid" or complex_query
     )
 
     cloud_error = None
@@ -637,7 +922,8 @@ def process_chat_command(
                 user_prompt=user_prompt,
                 system_instruction=SYSTEM_PROMPT,
                 dataset_summary=context_summary,
-                students=students,
+                students=slice_records,
+                dataframe_slice=md_table,
                 session_id=session_id,
                 format_json=True,
                 timeout=40
@@ -656,7 +942,7 @@ def process_chat_command(
                     "action": "answer",
                     "total_students": len(students),
                     "students": students,
-                    "engine_used": f"Cloud AI ({provider_label} - {model_label})"
+                    "engine_used": f"{planner_tag} + Cloud AI ({provider_label} - {model_label})"
                 }
 
             updated_data, detail_msg = apply_action(action, params, students)
@@ -668,24 +954,38 @@ def process_chat_command(
                 "action": action,
                 "total_students": len(updated_data),
                 "students": updated_data,
-                "engine_used": f"Cloud AI ({provider_label} - {model_label})"
+                "engine_used": f"{planner_tag} + Cloud AI ({provider_label} - {model_label})"
             }
         except Exception as e:
             cloud_error = str(e)
-            # Cloud failed (network down, rate limit, quota) -> Fall through to Local Ollama!
+            # If Cloud AI failed (e.g. rate limit, quota, network error), check deterministic rule engine first
+            rule_res = fallback_rule_engine(user_prompt, students)
+            if rule_res is not None:
+                updated_data, desc, action_type = rule_res
+                return {
+                    "success": True,
+                    "reply": f"*(Cloud AI temporarily unavailable [{cloud_error[:60]}] — processed by Instant Analytics Engine)*\n\n{desc}",
+                    "action": action_type,
+                    "total_students": len(updated_data),
+                    "students": updated_data,
+                    "engine_used": "Instant Analytics Engine"
+                }
 
-    if client is None:
-        client = OllamaClient()
-
-    # 3. Local Ollama Neural Fallback
+    # 5. Local Ollama Neural Fallback with focused DataFrame slice (~200 tokens instead of 38,000!)
     if client.is_available():
+        clean_slice = [CloudClient._clean_for_json(s) for s in slice_records]
+        slice_payload = json.dumps(clean_slice, ensure_ascii=False)
+
         llm_prompt = (
             f"USER REQUEST: \"{user_prompt}\"\n\n"
             f"{context_summary}\n\n"
+            f"=== TARGETED RELEVANT DATAFRAME SLICE ({len(slice_records)} STUDENTS, {slice_meta.get('columns', 0)} COLUMNS) ===\n"
+            f"{md_table}\n\n"
+            f"=== COMPACT SLICE JSON ===\n"
+            f"{slice_payload}\n\n"
             "TASK:\n"
-            "- If the user asks a question, set \"action\": \"answer\" and write a detailed, helpful answer in \"reply\".\n"
-            "- If the user asks to modify records (delete, filter, update, sort), return the structured JSON action and parameters.\n"
-            "Return valid JSON matching the schema."
+            "- Answer factually, completely, and accurately using the relevant DataFrame slice above.\n"
+            "- Set \"action\": \"answer\" and return valid JSON with \"reply\" and \"action\"."
         )
 
         try:
@@ -701,7 +1001,7 @@ def process_chat_command(
             reply = parsed.get("reply", "Processed your request.")
             params = parsed.get("params", {})
 
-            engine_note = f"Local Ollama ({client.model})"
+            engine_note = f"{planner_tag} + Local Ollama ({client.model})"
             if cloud_error:
                 reply = f"*(Cloud AI offline or unavailable [{cloud_error[:60]}] — seamlessly routed to Local Ollama)*\n\n{reply}"
 
