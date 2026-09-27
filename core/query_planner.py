@@ -340,7 +340,10 @@ class LocalQueryPlanner:
         """Query local Ollama with a compact prompt to predict the required columns and filters."""
         courses_str = ""
         if catalog_courses:
-            courses_str = "\nAvailable Courses:\n" + "\n".join([f"- {c.get('code')}: {c.get('name')}" for c in catalog_courses[:12]])
+            courses_str = "\nAvailable Courses:\n" + "\n".join([
+                f"- {c.get('code')}: {c.get('name')}" if isinstance(c, dict) else f"- {getattr(c, 'code', str(c))}: {getattr(c, 'name', '')}"
+                for c in catalog_courses[:12]
+            ])
 
         prompt = (
             f"Columns: {columns[:35]}\n"

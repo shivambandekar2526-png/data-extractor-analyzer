@@ -74,10 +74,22 @@ class ContextEnvelope:
 
     def to_compact_prompt_header(self) -> str:
         """Serializes envelope to a concise, token-efficient prompt string (~120 tokens)."""
-        courses_brief = [
-            f"{c.get('code', '')} ({c.get('name', '')[:30]}): heads={','.join(c.get('heads', []))}"
-            for c in self.courses[:25]
-        ]
+        courses_brief = []
+        for c in self.courses[:25]:
+            if isinstance(c, dict):
+                c_code = c.get('code', '')
+                c_name = str(c.get('name', ''))[:30]
+                heads = c.get('heads', [])
+                h_str = ','.join(heads) if isinstance(heads, list) else str(heads)
+                courses_brief.append(f"{c_code} ({c_name}): heads={h_str}")
+            elif hasattr(c, "code"):
+                c_code = getattr(c, "code", "")
+                c_name = str(getattr(c, "name", ""))[:30]
+                heads = getattr(c, "heads", [])
+                h_str = ','.join(heads) if isinstance(heads, list) else str(heads)
+                courses_brief.append(f"{c_code} ({c_name}): heads={h_str}")
+            else:
+                courses_brief.append(str(c))
         courses_text = "; ".join(courses_brief) if courses_brief else "Standard academic courses"
         cols_text = ", ".join(self.valid_columns[:40])
         if len(self.valid_columns) > 40:
@@ -652,7 +664,7 @@ def run_ai_cross_check(
         "structure",
         "STAGE 1 SCHEMA",
         f"Auditing declared syllabus courses vs extracted columns ({len(envelope.valid_columns)} total columns)...",
-        {"courses": [c.get("code") for c in envelope.courses], "total_columns": len(envelope.valid_columns)}
+        {"courses": [c.get("code") if isinstance(c, dict) else getattr(c, "code", str(c)) for c in envelope.courses], "total_columns": len(envelope.valid_columns)}
     )
     p1_text = page_texts[0] if page_texts else ""
     schema_audit = align_schema_with_ai(envelope, students[:3], p1_text, client, audit_cb=audit_cb)

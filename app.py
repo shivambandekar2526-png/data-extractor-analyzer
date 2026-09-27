@@ -47,6 +47,7 @@ from core.ai_cross_checker import run_ai_cross_check, validate_patch_sandbox
 from core.excel_csv_ingester import TabularIngester, sanitize_dict_for_json
 from core.batch_analyzer import BatchAcademicAnalyzer
 from core.batch_excel_generator import BatchExcelReportGenerator
+from exporter import export_ai_extracted_data, write_csv_file, write_excel_file
 
 tabular_ingester = TabularIngester(OUTPUT_DIR)
 batch_analyzer = BatchAcademicAnalyzer(OUTPUT_DIR)
@@ -100,14 +101,16 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosschec
                     jobs[job_id]["audit_logs"].append(entry)
                     if "token_usage" not in jobs[job_id]:
                         jobs[job_id]["token_usage"] = {"input": 0, "output": 0, "total": 0}
-                    t_data = entry.get("details", {}).get("tokens")
-                    if t_data and isinstance(t_data, dict):
-                        in_tok = int(t_data.get("input", 0) or 0)
-                        out_tok = int(t_data.get("output", 0) or 0)
-                        tot_tok = int(t_data.get("total", in_tok + out_tok) or 0)
-                        jobs[job_id]["token_usage"]["input"] += in_tok
-                        jobs[job_id]["token_usage"]["output"] += out_tok
-                        jobs[job_id]["token_usage"]["total"] += tot_tok
+                    details = entry.get("details")
+                    if isinstance(details, dict):
+                        t_data = details.get("tokens")
+                        if t_data and isinstance(t_data, dict):
+                            in_tok = int(t_data.get("input", 0) or 0)
+                            out_tok = int(t_data.get("output", 0) or 0)
+                            tot_tok = int(t_data.get("total", in_tok + out_tok) or 0)
+                            jobs[job_id]["token_usage"]["input"] += in_tok
+                            jobs[job_id]["token_usage"]["output"] += out_tok
+                            jobs[job_id]["token_usage"]["total"] += tot_tok
 
         t0 = time.time()
         if pipeline_mode == "visual_blueprint":
@@ -1297,14 +1300,16 @@ def _run_post_crosscheck_worker(job_id: str, folder_name: str, csv_path: str, pd
                     ai_cc_jobs[job_id]["audit_logs"].append(entry)
                     if "token_usage" not in ai_cc_jobs[job_id]:
                         ai_cc_jobs[job_id]["token_usage"] = {"input": 0, "output": 0, "total": 0}
-                    t_data = entry.get("details", {}).get("tokens")
-                    if t_data and isinstance(t_data, dict):
-                        in_tok = int(t_data.get("input", 0) or 0)
-                        out_tok = int(t_data.get("output", 0) or 0)
-                        tot_tok = int(t_data.get("total", in_tok + out_tok) or 0)
-                        ai_cc_jobs[job_id]["token_usage"]["input"] += in_tok
-                        ai_cc_jobs[job_id]["token_usage"]["output"] += out_tok
-                        ai_cc_jobs[job_id]["token_usage"]["total"] += tot_tok
+                    details = entry.get("details")
+                    if isinstance(details, dict):
+                        t_data = details.get("tokens")
+                        if t_data and isinstance(t_data, dict):
+                            in_tok = int(t_data.get("input", 0) or 0)
+                            out_tok = int(t_data.get("output", 0) or 0)
+                            tot_tok = int(t_data.get("total", in_tok + out_tok) or 0)
+                            ai_cc_jobs[job_id]["token_usage"]["input"] += in_tok
+                            ai_cc_jobs[job_id]["token_usage"]["output"] += out_tok
+                            ai_cc_jobs[job_id]["token_usage"]["total"] += tot_tok
 
         from core.cloud_client import CloudClient, ORCHESTRATION_CANDIDATES
         cc_probe = CloudClient()
