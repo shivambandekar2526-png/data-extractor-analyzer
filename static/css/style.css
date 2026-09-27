@@ -381,6 +381,9 @@ body.dark-theme {
 }
 
 .upload-area {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
   border: 2px dashed rgba(99, 102, 241, 0.35);
   border-radius: var(--radius-md);
   padding: 2.2rem 1.5rem;
@@ -453,7 +456,90 @@ body.dark-theme {
 }
 
 .hidden-input {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+.upload-area:focus-visible {
+  outline: 2px solid var(--accent, #6366F1);
+  outline-offset: 3px;
+}
+
+.selected-file-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  padding: 0.6rem 1.15rem;
+  margin: 0.35rem auto 0.6rem auto;
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  border-radius: var(--radius-sm, 8px);
+  max-width: 92%;
+  color: var(--text-main);
+  animation: badgeSlide 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.selected-file-badge.hidden {
   display: none !important;
+}
+
+.selected-file-icon {
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.selected-file-info {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-file-name {
+  font-weight: 700;
+  color: #F1F5F9;
+  font-size: 0.95rem;
+}
+
+.selected-file-size {
+  font-size: 0.78rem;
+  color: var(--text-muted, #94A3B8);
+  font-family: var(--font-mono, monospace);
+}
+
+.change-file-pill {
+  font-size: 0.74rem;
+  font-weight: 600;
+  padding: 0.2rem 0.6rem;
+  background: rgba(99, 102, 241, 0.22);
+  border: 1px solid rgba(99, 102, 241, 0.45);
+  border-radius: 9999px;
+  color: #C7D2FE;
+  margin-left: 0.4rem;
+  transition: all 0.2s ease;
+}
+
+.upload-area:hover .change-file-pill {
+  background: rgba(99, 102, 241, 0.4);
+  border-color: #A5B4FC;
+  color: #FFFFFF;
+}
+
+@keyframes badgeSlide {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* Pipeline Options Row */
@@ -3047,6 +3133,442 @@ body.dark-theme {
 .text-primary { color: var(--primary-light) !important; }
 .text-muted { color: var(--text-muted) !important; }
 .font-bold { font-weight: 700 !important; }
+
+/* Format Chips Row in Upload Card */
+.format-chips-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.format-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  transition: all 0.18s ease;
+}
+
+.format-chip:hover {
+  background: rgba(99, 102, 241, 0.15);
+  border-color: rgba(99, 102, 241, 0.35);
+  color: #c7d2fe;
+}
+
+/* =========================================================================
+   Tabular Inspection & Dual Ingestion Modal Design System
+   ========================================================================= */
+
+.tabular-modal-card {
+  width: 92%;
+  max-width: 900px;
+  max-height: 90vh;
+  background: #0f172a;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 1rem;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: modalFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.tabular-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.15rem 1.6rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: #1e293b;
+}
+
+.tabular-modal-icon {
+  font-size: 1.45rem;
+  width: 2.4rem;
+  height: 2.4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: 0.65rem;
+  flex-shrink: 0;
+}
+
+.tabular-modal-header .modal-title-group {
+  display: flex;
+  align-items: center;
+  gap: 0.95rem;
+}
+
+.tabular-modal-header h3 {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #f8fafc;
+  margin: 0;
+}
+
+.tabular-modal-body {
+  padding: 1.35rem 1.6rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* Worksheet Selector Bar */
+.tabular-sheet-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 0.85rem;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 0.55rem;
+}
+
+.tabular-bar-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* Format Quality Assessment Banner */
+.tabular-assessment-banner {
+  padding: 1rem 1.25rem;
+  border-radius: 0.75rem;
+  background: rgba(30, 41, 59, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  transition: all 0.25s ease;
+}
+
+.tabular-assessment-banner.banner-clean {
+  background: rgba(16, 185, 129, 0.08);
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.tabular-assessment-banner.banner-warning {
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.assessment-banner-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.assessment-status-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.assessment-score-pill {
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.25rem 0.65rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #e2e8f0;
+}
+
+.score-high {
+  background: rgba(16, 185, 129, 0.15) !important;
+  border-color: rgba(16, 185, 129, 0.4) !important;
+  color: #34d399 !important;
+}
+
+.score-mid {
+  background: rgba(245, 158, 11, 0.15) !important;
+  border-color: rgba(245, 158, 11, 0.4) !important;
+  color: #fbbf24 !important;
+}
+
+.score-low {
+  background: rgba(239, 68, 68, 0.15) !important;
+  border-color: rgba(239, 68, 68, 0.4) !important;
+  color: #f87171 !important;
+}
+
+.assessment-msg {
+  font-size: 0.84rem;
+  color: #cbd5e1;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.assessment-issues-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.25rem;
+}
+
+.issue-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.74rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 0.4rem;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  color: #fde68a;
+}
+
+/* Raw Data Preview Box */
+.tabular-preview-box {
+  background: #0b1120;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+.preview-box-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 1rem;
+  background: rgba(30, 41, 59, 0.5);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.preview-box-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.preview-meta-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.15rem 0.5rem;
+  border-radius: 0.35rem;
+}
+
+.preview-table-container {
+  max-height: 190px;
+  overflow-x: auto;
+  overflow-y: auto;
+}
+
+.tabular-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.76rem;
+  font-family: 'Fira Code', monospace;
+}
+
+.tabular-preview-table th {
+  background: #1e293b;
+  color: #94a3b8;
+  padding: 0.45rem 0.75rem;
+  font-weight: 600;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.tabular-preview-table td {
+  padding: 0.4rem 0.75rem;
+  color: #e2e8f0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tabular-preview-table tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+/* Ingestion Options Grid */
+.tabular-actions-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.tabular-actions-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.tabular-cards-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 768px) {
+  .tabular-cards-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tabular-action-card {
+  padding: 1.15rem;
+  border-radius: 0.85rem;
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.85rem;
+  transition: all 0.22s ease;
+  position: relative;
+}
+
+.tabular-action-card:hover {
+  background: #243248;
+  border-color: rgba(255, 255, 255, 0.18);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+}
+
+.tabular-action-card.card-recommended-direct {
+  border: 2px solid #10b981;
+  background: linear-gradient(180deg, rgba(16, 185, 129, 0.06) 0%, #1e293b 100%);
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.15);
+}
+
+.tabular-action-card.card-recommended-ai {
+  border: 2px solid #8b5cf6;
+  background: linear-gradient(180deg, rgba(139, 92, 246, 0.06) 0%, #1e293b 100%);
+  box-shadow: 0 0 20px rgba(139, 92, 246, 0.15);
+}
+
+.action-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.action-card-title-group {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.action-card-icon {
+  font-size: 1.35rem;
+}
+
+.action-card-header h4 {
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: #f8fafc;
+  margin: 0;
+}
+
+.token-saver-tag {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #34d399;
+  margin-top: 0.15rem;
+}
+
+.ai-smart-tag {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #a78bfa;
+  margin-top: 0.15rem;
+}
+
+.recommended-badge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 0.2rem 0.55rem;
+  border-radius: 9999px;
+  background: #10b981;
+  color: #022c22;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35);
+}
+
+.tabular-action-card.card-recommended-ai .recommended-badge {
+  background: #8b5cf6;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.35);
+}
+
+.action-card-desc {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.btn-outline-action {
+  width: 100%;
+  padding: 0.65rem 1rem;
+  font-size: 0.84rem;
+  font-weight: 600;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #34d399;
+  border-radius: 0.55rem;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+.btn-outline-action:hover {
+  background: #10b981;
+  color: #022c22;
+}
+
+.ai-fix-action-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.ai-fix-action-row select {
+  flex: 1;
+  min-width: 0;
+}
+
+.ai-fix-action-row .btn {
+  white-space: nowrap;
+}
 
 /* App Footer */
 .app-footer {

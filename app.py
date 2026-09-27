@@ -42,9 +42,10 @@ from core.eda_engine import EDAEngine
 from core.ai_insights import AIInsightsSynthesizer
 from core.semantic_mapper import SemanticMapper
 from core.excel_report_generator import AcademicExcelReportGenerator, get_academic_filename
-from exporter import export_ai_extracted_data, write_csv_file, write_excel_file
-from models import CourseCatalog, ExamMeta, StudentRecord
 from core.ai_cross_checker import run_ai_cross_check, validate_patch_sandbox
+from core.excel_csv_ingester import TabularIngester, sanitize_dict_for_json
+
+tabular_ingester = TabularIngester(OUTPUT_DIR)
 
 app = Flask(
     __name__,
@@ -427,27 +428,63 @@ def load_history_entry(folder_name):
 def start_extraction():
     """Trigger AI extraction job."""
     target_pdf_path = None
-    is_sync = request.args.get("sync", "0") in ("1", "true")
+    target_tabular_path = None
 
-    if "pdf_file" in request.files:
-        up = request.files["pdf_file"]
-        if up and up.filename:
-            if not up.filename.lower().endswith(".pdf"):
-                return jsonify({"success": False, "error": "Only PDF files (.pdf) are supported."}), 400
-            safe_name = secure_filename(up.filename)
-            if not safe_name.lower().endswith(".pdf"):
-                safe_name += ".pdf"
-            target_pdf_path = os.path.join(INPUT_DIR, safe_name)
-            up.save(target_pdf_path)
+    # Check for direct file uploads
+    for key in ["pdf_file", "file", "excel_file", "csv_file"]:
+        if key in request.files:
+            up = request.files[key]
+            if up and up.filename:
+                safe_name = secure_filename(up.filename)
+                ext = os.path.splitext(safe_name)[1].lower()
+                if ext not in (".pdf", ".xlsx", ".xls", ".csv"):
+                    return jsonify({"success": False, "error": "Supported formats: .pdf, .xlsx, .xls, .csv"}), 400
+                saved_path = os.path.join(INPUT_DIR, safe_name)
+                up.save(saved_path)
+                if ext == ".pdf":
+                    target_pdf_path = saved_path
+                else:
+                    target_tabular_path = saved_path
+                break
 
     json_data = request.get_json(silent=True) or {}
 
-    if not target_pdf_path:
+    if not target_pdf_path and not target_tabular_path:
         existing = request.form.get("input_file") or request.form.get("existing_input") or json_data.get("input_file")
         if existing:
-            cand = os.path.join(INPUT_DIR, secure_filename(existing))
+            safe_name = secure_filename(existing)
+            ext = os.path.splitext(safe_name)[1].lower()
+            cand = os.path.join(INPUT_DIR, safe_name)
             if os.path.isfile(cand):
-                target_pdf_path = cand
+                if ext == ".pdf":
+                    target_pdf_path = cand
+                elif ext in (".xlsx", ".xls", ".csv"):
+                    target_tabular_path = cand
+
+    pipeline_mode = (
+        request.form.get("pipeline_mode")
+        or json_data.get("pipeline_mode")
+        or request.args.get("pipeline_mode")
+        or "local"
+    )
+
+    if target_tabular_path:
+        # Route tabular file according to formatting inspection or explicit pipeline
+        sheet_name = request.form.get("sheet_name") or json_data.get("sheet_name")
+        insp = tabular_ingester.inspect_file(target_tabular_path, sheet_name=sheet_name)
+        if insp.get("is_clean") and pipeline_mode not in ("cloud", "visual_blueprint"):
+            res = tabular_ingester.direct_import(target_tabular_path, sheet_name=sheet_name)
+        else:
+            oc = OllamaClient()
+            cc = CloudClient()
+            res = tabular_ingester.ai_fix_and_import(
+                target_tabular_path,
+                sheet_name=sheet_name,
+                pipeline_mode=pipeline_mode,
+                ollama_client=oc,
+                cloud_client=cc
+            )
+        return jsonify(res)
 
     if not target_pdf_path:
         batch_rel = request.form.get("batch_file") or json_data.get("batch_file") or json_data.get("pdf_path")
@@ -460,7 +497,7 @@ def start_extraction():
                 target_pdf_path = cand
 
     if not target_pdf_path or not os.path.isfile(target_pdf_path):
-        return jsonify({"success": False, "error": "No valid PDF document provided or found."}), 400
+        return jsonify({"success": False, "error": "No valid PDF document or tabular file provided or found."}), 400
 
     job_id = str(uuid.uuid4())
     with jobs_lock:
@@ -515,6 +552,118 @@ def get_job_status(job_id):
     if not job:
         return jsonify({"success": False, "error": "Job not found."}), 404
     return jsonify(job)
+
+
+# =========================================================================
+# Tabular Ingestion Routes (Excel & CSV Inspection, Direct Import, AI Fix)
+# =========================================================================
+
+@app.route("/api/tabular/inspect", methods=["POST"])
+def inspect_tabular_file():
+    """Inspect uploaded Excel/CSV file to evaluate formatting and structure."""
+    target_path = None
+    target_filename = None
+
+    # Check for direct file upload
+    for key in ["file", "excel_file", "csv_file", "pdf_file"]:
+        if key in request.files:
+            up = request.files[key]
+            if up and up.filename:
+                safe_name = secure_filename(up.filename)
+                target_path = os.path.join(INPUT_DIR, safe_name)
+                up.save(target_path)
+                target_filename = safe_name
+                break
+
+    json_data = request.get_json(silent=True) or {}
+    if not target_path:
+        fname = request.form.get("filename") or json_data.get("filename")
+        if fname:
+            safe_name = secure_filename(fname)
+            cand = os.path.join(INPUT_DIR, safe_name)
+            if os.path.isfile(cand):
+                target_path = cand
+                target_filename = safe_name
+
+    if not target_path or not os.path.isfile(target_path):
+        return jsonify({"success": False, "error": "No valid tabular file uploaded or specified."}), 400
+
+    sheet_name = request.form.get("sheet_name") or json_data.get("sheet_name")
+    assessment = tabular_ingester.inspect_file(target_path, sheet_name=sheet_name)
+    if assessment.get("success"):
+        assessment["filename"] = target_filename
+    return jsonify(sanitize_dict_for_json(assessment))
+
+
+@app.route("/api/tabular/import", methods=["POST"])
+def import_tabular_direct():
+    """Directly import Excel or CSV table without invoking AI (0 tokens)."""
+    data = request.get_json(silent=True) or request.form.to_dict()
+    filename = data.get("filename")
+    sheet_name = data.get("sheet_name")
+    header_row = data.get("header_row")
+    if header_row is not None:
+        try:
+            header_row = int(header_row)
+        except Exception:
+            header_row = None
+
+    if not filename:
+        return jsonify({"success": False, "error": "Filename is required."}), 400
+
+    safe_name = secure_filename(filename)
+    target_path = os.path.join(INPUT_DIR, safe_name)
+    if not os.path.isfile(target_path):
+        found = None
+        for root, _, files in os.walk(BATCH_DATA_DIR):
+            if safe_name in files:
+                found = os.path.join(root, safe_name)
+                break
+        if found:
+            target_path = found
+        else:
+            return jsonify({"success": False, "error": f"File '{safe_name}' not found."}), 404
+
+    result = tabular_ingester.direct_import(target_path, sheet_name=sheet_name, header_row=header_row)
+    return jsonify(sanitize_dict_for_json(result))
+
+
+@app.route("/api/tabular/ai-fix", methods=["POST"])
+def ai_fix_tabular():
+    """Extract and restructure messy/unformatted Excel or CSV using AI."""
+    data = request.get_json(silent=True) or request.form.to_dict()
+    filename = data.get("filename")
+    sheet_name = data.get("sheet_name")
+    pipeline_mode = data.get("pipeline_mode", "local")
+    model = data.get("model")
+
+    if not filename:
+        return jsonify({"success": False, "error": "Filename is required."}), 400
+
+    safe_name = secure_filename(filename)
+    target_path = os.path.join(INPUT_DIR, safe_name)
+    if not os.path.isfile(target_path):
+        found = None
+        for root, _, files in os.walk(BATCH_DATA_DIR):
+            if safe_name in files:
+                found = os.path.join(root, safe_name)
+                break
+        if found:
+            target_path = found
+        else:
+            return jsonify({"success": False, "error": f"File '{safe_name}' not found."}), 404
+
+    oc = OllamaClient()
+    cc = CloudClient()
+    result = tabular_ingester.ai_fix_and_import(
+        target_path,
+        sheet_name=sheet_name,
+        pipeline_mode=pipeline_mode,
+        model=model,
+        ollama_client=oc,
+        cloud_client=cc
+    )
+    return jsonify(sanitize_dict_for_json(result))
 
 
 @app.route("/api/download/<folder>/<filename>", methods=["GET"])

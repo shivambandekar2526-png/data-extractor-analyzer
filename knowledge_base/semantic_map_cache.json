@@ -2279,5 +2279,420 @@
     ],
     "tier_used": 1,
     "token_usage": 0
+  },
+  "3469205d8a10044f": {
+    "mappings": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "sgpi": "SGPI",
+      "total_marks": "Total_Marks",
+      "result": "Result_Status",
+      "gender": "Gender"
+    },
+    "subjects": {
+      "CSC801": {
+        "TW": "CSC801_TW",
+        "TOT": "CSC801_Total"
+      },
+      "CSDO8013": {
+        "TW": "CSDO8013_TW",
+        "TOT": "CSDO8013_Total"
+      },
+      "CSDO8023": {
+        "TW": "CSDO8023_TW",
+        "TOT": "CSDO8023_Total"
+      },
+      "ILO8021": {
+        "TW": "ILO8021_TW",
+        "TOT": "ILO8021_Total",
+        "GP": "ILO8021_GP"
+      },
+      "CSL801": {
+        "CREDITS": "CSL801_Credits",
+        "IA": "CSL801_IA",
+        "TOT": "CSL801_TOT",
+        "GP": "CSL801_GP"
+      },
+      "AIDSCSDOL8013": {
+        "CREDITS": "AIDSCSDOL8013_Credits",
+        "IA": "AIDSCSDOL8013_IA",
+        "TOT": "AIDSCSDOL8013_TOT",
+        "GP": "AIDSCSDOL8013_GP"
+      },
+      "AIDSCSDOL8023": {
+        "CREDITS": "AIDSCSDOL8023_Credits",
+        "IA": "AIDSCSDOL8023_IA",
+        "TOT": "AIDSCSDOL8023_TOT",
+        "GP": "AIDSCSDOL8023_GP"
+      },
+      "AIDSCSP801": {
+        "CREDITS": "AIDSCSP801_Credits",
+        "IA": "AIDSCSP801_IA",
+        "TOT": "AIDSCSP801_TOT",
+        "GP": "AIDSCSP801_GP"
+      }
+    },
+    "unmapped": [
+      "CSC801_TH",
+      "CSC801_GradePt",
+      "CSC801_C_GradePt",
+      "CSDO8013_TH",
+      "CSDO8013_GradePt",
+      "CSDO8013_C_GradePt",
+      "CSDO8023_Credit",
+      "CSDO8023_TH",
+      "CSDO8023_GradePt",
+      "CSDO8023_C_GradePt",
+      "ILO8021_TH",
+      "ILO8021_GradePt",
+      "ILO8021_C_GradePt",
+      "CSL801_TH",
+      "AIDSCSDOL8013_TH",
+      "AIDSCSDOL8023_TH",
+      "AIDSCSP801_TH",
+      "EC_\u03a3Credits",
+      "ECG_\u03a3CGP",
+      "GPA_aa",
+      "Result_PF"
+    ],
+    "tier_used": 1,
+    "token_usage": 0
+  },
+  "98e783d108641d54": {
+    "mappings": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "sgpi": "SGPI",
+      "total_marks": "Total_Marks",
+      "result": "Result_Status",
+      "gender": "Gender",
+      "candidate_type": "Candidate_Type",
+      "prn": "PRN",
+      "semester": "Semester"
+    },
+    "subjects": {
+      "1313311": {
+        "IA": "1313311_IA",
+        "TOT": "1313311_TOT",
+        "GRADE": "1313311_Grade",
+        "GP": "1313311_GP",
+        "CREDITS": "1313311_Credits",
+        "CG": "1313311_CG",
+        "SUBJECT": "1313311_Subject"
+      },
+      "2014411": {
+        "TW": "2014411_TW",
+        "TOT": "2014411_TOT",
+        "GRADE": "2014411_Grade",
+        "GP": "2014411_GP",
+        "CREDITS": "2014411_Credits",
+        "CG": "2014411_CG",
+        "SUBJECT": "2014411_Subject"
+      },
+      "2114111": {
+        "IA": "2114111_IA",
+        "TOT": "2114111_TOT",
+        "GRADE": "2114111_Grade",
+        "GP": "2114111_GP",
+        "CREDITS": "2114111_Credits",
+        "CG": "2114111_CG",
+        "SUBJECT": "2114111_Subject"
+      },
+      "2114112": {
+        "IA": "2114112_IA",
+        "TOT": "2114112_TOT",
+        "GRADE": "2114112_Grade",
+        "GP": "2114112_GP",
+        "CREDITS": "2114112_Credits",
+        "CG": "2114112_CG",
+        "SUBJECT": "2114112_Subject"
+      },
+      "2114113": {
+        "IA": "2114113_IA",
+        "TOT": "2114113_TOT",
+        "GRADE": "2114113_Grade",
+        "GP": "2114113_GP",
+        "CREDITS": "2114113_Credits",
+        "CG": "2114113_CG",
+        "SUBJECT": "2114113_Subject"
+      },
+      "2114114": {
+        "TW": "2114114_TW",
+        "TOT": "2114114_TOT",
+        "GRADE": "2114114_Grade",
+        "GP": "2114114_GP",
+        "CREDITS": "2114114_Credits",
+        "CG": "2114114_CG",
+        "SUBJECT": "2114114_Subject"
+      },
+      "2114115": {
+        "TW": "2114115_TW",
+        "TOT": "2114115_TOT",
+        "GRADE": "2114115_Grade",
+        "GP": "2114115_GP",
+        "CREDITS": "2114115_Credits",
+        "CG": "2114115_CG",
+        "SUBJECT": "2114115_Subject"
+      },
+      "2304211": {
+        "IA": "2304211_IA",
+        "TOT": "2304211_TOT",
+        "GRADE": "2304211_Grade",
+        "GP": "2304211_GP",
+        "CREDITS": "2304211_Credits",
+        "CG": "2304211_CG",
+        "SUBJECT": "2304211_Subject"
+      },
+      "2304212": {
+        "TW": "2304212_TW",
+        "TOT": "2304212_TOT",
+        "GRADE": "2304212_Grade",
+        "GP": "2304212_GP",
+        "CREDITS": "2304212_Credits",
+        "CG": "2304212_CG",
+        "SUBJECT": "2304212_Subject"
+      },
+      "2994511": {
+        "TW": "2994511_TW",
+        "TOT": "2994511_TOT",
+        "GRADE": "2994511_Grade",
+        "GP": "2994511_GP",
+        "CREDITS": "2994511_Credits",
+        "CG": "2994511_CG",
+        "SUBJECT": "2994511_Subject"
+      },
+      "2994512": {
+        "TW": "2994512_TW",
+        "TOT": "2994512_TOT",
+        "GRADE": "2994512_Grade",
+        "GP": "2994512_GP",
+        "CREDITS": "2994512_Credits",
+        "CG": "2994512_CG",
+        "SUBJECT": "2994512_Subject"
+      }
+    },
+    "unmapped": [
+      "Remark",
+      "Credits_Earned",
+      "Total_CG",
+      "1313311_TH",
+      "2014411_PR",
+      "2114111_TH",
+      "2114112_TH",
+      "2114113_TH",
+      "2114114_PR",
+      "2114115_PR",
+      "2304211_TH",
+      "2304212_PR"
+    ],
+    "tier_used": 1,
+    "token_usage": 0
+  },
+  "c87270050160b3d9": {
+    "mappings": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "sgpi": "SGPI",
+      "total_marks": "Total_Marks",
+      "max_marks": "Max_Marks",
+      "result": "Result_Status",
+      "gender": "Gender",
+      "candidate_type": "Candidate_Type",
+      "prn": "PRN",
+      "semester": "Semester"
+    },
+    "subjects": {
+      "CSC801": {
+        "IA": "CSC801_IA",
+        "TOT": "CSC801_TOT",
+        "GRADE": "CSC801_Grade",
+        "GP": "CSC801_GP",
+        "CREDITS": "CSC801_Credits",
+        "CG": "CSC801_CG",
+        "SUBJECT": "CSC801_Subject"
+      },
+      "CSDO8011": {
+        "IA": "CSDO8011_IA",
+        "TOT": "CSDO8011_TOT",
+        "GRADE": "CSDO8011_Grade",
+        "GP": "CSDO8011_GP",
+        "CREDITS": "CSDO8011_Credits",
+        "CG": "CSDO8011_CG",
+        "SUBJECT": "CSDO8011_Subject"
+      },
+      "CSDO8022": {
+        "IA": "CSDO8022_IA",
+        "TOT": "CSDO8022_TOT",
+        "GRADE": "CSDO8022_Grade",
+        "GP": "CSDO8022_GP",
+        "CREDITS": "CSDO8022_Credits",
+        "CG": "CSDO8022_CG",
+        "SUBJECT": "CSDO8022_Subject"
+      },
+      "ILO8021": {
+        "IA": "ILO8021_IA",
+        "TOT": "ILO8021_TOT",
+        "GRADE": "ILO8021_Grade",
+        "GP": "ILO8021_GP",
+        "CREDITS": "ILO8021_Credits",
+        "CG": "ILO8021_CG",
+        "SUBJECT": "ILO8021_Subject"
+      },
+      "CSL801": {
+        "TW": "CSL801_TW",
+        "TOT": "CSL801_TOT",
+        "GRADE": "CSL801_Grade",
+        "GP": "CSL801_GP",
+        "CREDITS": "CSL801_Credits",
+        "CG": "CSL801_CG",
+        "SUBJECT": "CSL801_Subject"
+      },
+      "AIDSCSDOL8011": {
+        "TW": "AIDSCSDOL8011_TW",
+        "TOT": "AIDSCSDOL8011_TOT",
+        "GRADE": "AIDSCSDOL8011_Grade",
+        "GP": "AIDSCSDOL8011_GP",
+        "CREDITS": "AIDSCSDOL8011_Credits",
+        "CG": "AIDSCSDOL8011_CG",
+        "SUBJECT": "AIDSCSDOL8011_Subject"
+      },
+      "AIDSCSDOL8022": {
+        "TW": "AIDSCSDOL8022_TW",
+        "TOT": "AIDSCSDOL8022_TOT",
+        "GRADE": "AIDSCSDOL8022_Grade",
+        "GP": "AIDSCSDOL8022_GP",
+        "CREDITS": "AIDSCSDOL8022_Credits",
+        "CG": "AIDSCSDOL8022_CG",
+        "SUBJECT": "AIDSCSDOL8022_Subject"
+      },
+      "AIDSCSP801": {
+        "TW": "AIDSCSP801_TW",
+        "TOT": "AIDSCSP801_TOT",
+        "GRADE": "AIDSCSP801_Grade",
+        "GP": "AIDSCSP801_GP",
+        "CREDITS": "AIDSCSP801_Credits",
+        "CG": "AIDSCSP801_CG",
+        "SUBJECT": "AIDSCSP801_Subject"
+      },
+      "CSDO8013": {
+        "IA": "CSDO8013_IA",
+        "TOT": "CSDO8013_TOT",
+        "GRADE": "CSDO8013_Grade",
+        "GP": "CSDO8013_GP",
+        "CREDITS": "CSDO8013_Credits",
+        "CG": "CSDO8013_CG",
+        "SUBJECT": "CSDO8013_Subject"
+      },
+      "CSDO8023": {
+        "IA": "CSDO8023_IA",
+        "TOT": "CSDO8023_TOT",
+        "GRADE": "CSDO8023_Grade",
+        "GP": "CSDO8023_GP",
+        "CREDITS": "CSDO8023_Credits",
+        "CG": "CSDO8023_CG",
+        "SUBJECT": "CSDO8023_Subject"
+      },
+      "AIDSCSDOL8013": {
+        "TW": "AIDSCSDOL8013_TW",
+        "TOT": "AIDSCSDOL8013_TOT",
+        "GRADE": "AIDSCSDOL8013_Grade",
+        "GP": "AIDSCSDOL8013_GP",
+        "CREDITS": "AIDSCSDOL8013_Credits",
+        "CG": "AIDSCSDOL8013_CG",
+        "SUBJECT": "AIDSCSDOL8013_Subject"
+      },
+      "AIDSCSDOL8023": {
+        "TW": "AIDSCSDOL8023_TW",
+        "TOT": "AIDSCSDOL8023_TOT",
+        "GRADE": "AIDSCSDOL8023_Grade",
+        "GP": "AIDSCSDOL8023_GP",
+        "CREDITS": "AIDSCSDOL8023_Credits",
+        "CG": "AIDSCSDOL8023_CG",
+        "SUBJECT": "AIDSCSDOL8023_Subject"
+      }
+    },
+    "unmapped": [
+      "Remark",
+      "Credits_Earned",
+      "Total_CG",
+      "CGPI",
+      "CSC801_TH",
+      "CSDO8011_TH",
+      "CSDO8022_TH",
+      "ILO8021_TH",
+      "CSL801_PR",
+      "AIDSCSDOL8011_PR",
+      "AIDSCSDOL8022_PR",
+      "AIDSCSP801_PR",
+      "CSDO8013_TH",
+      "CSDO8023_TH",
+      "AIDSCSDOL8013_PR",
+      "AIDSCSDOL8023_PR",
+      "ABC_ID",
+      "SGPI_Sem_1",
+      "SGPI_Sem_2",
+      "SGPI_Sem_3",
+      "SGPI_Sem_4",
+      "SGPI_Sem_5",
+      "SGPI_Sem_6",
+      "SGPI_Sem_7"
+    ],
+    "tier_used": 1,
+    "token_usage": 0
+  },
+  "d5a1103584e0fb9e": {
+    "mappings": {
+      "seat": "Seat_No",
+      "name": "Candidate_Name",
+      "sgpi": "SGPI",
+      "result": "Result_Status"
+    },
+    "subjects": {},
+    "unmapped": [
+      "Sr._No.",
+      "Application_ID",
+      "Student_Name"
+    ],
+    "tier_used": 1,
+    "token_usage": 0
+  },
+  "fa88614ed377c6ea": {
+    "mappings": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "sgpi": "SGPI",
+      "result": "Result_Status"
+    },
+    "subjects": {
+      "BEE": {
+        "TW": "BEE_TW"
+      },
+      "MECHANICS": {
+        "TW": "Mechanics_TW"
+      }
+    },
+    "unmapped": [
+      "Sr_No",
+      "Maths_I_TH",
+      "Maths_I_IAT",
+      "Maths_I_TW",
+      "Physics_I_TH",
+      "Physics_I_IAT",
+      "Physics_I_TW",
+      "Chemistry_I_TH",
+      "Chemistry_I_IAT",
+      "Chemistry_I_TW",
+      "BEE_TH",
+      "BEE_IAT",
+      "BEE_PR",
+      "Mechanics_TH",
+      "Mechanics_IAT",
+      "Mechanics_PR",
+      "Workshop_II_TW",
+      "EC",
+      "ECG"
+    ],
+    "tier_used": 1,
+    "token_usage": 0
   }
 }

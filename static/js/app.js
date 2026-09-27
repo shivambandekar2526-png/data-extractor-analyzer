@@ -25,6 +25,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initCloudModal();
   initResultsTabs();
   initAiCrosscheckModal();
+  initTabularModal();
 });
 
 // 1. Status Polling & Model Switcher
@@ -149,6 +150,8 @@ async function initBatches() {
       btn.disabled = !e.target.value;
       if (e.target.value) {
         document.getElementById("fileInput").value = "";
+        window.currentSelectedFile = null;
+        resetFileUploadDisplay();
       }
     });
   } catch (e) {
@@ -156,36 +159,58 @@ async function initBatches() {
   }
 }
 
+// Helper: Reset file upload display to prompt state
+function resetFileUploadDisplay() {
+  const uploadPrompt = document.getElementById("uploadPrompt");
+  const selectedFileBadge = document.getElementById("selectedFileBadge");
+  if (uploadPrompt) uploadPrompt.classList.remove("hidden");
+  if (selectedFileBadge) selectedFileBadge.classList.add("hidden");
+}
+
 // 3. File Upload & Drop Area
 function initUpload() {
   const dropArea = document.getElementById("dropArea");
   const fileInput = document.getElementById("fileInput");
-  const browseBtn = document.getElementById("browseBtn");
   const extractBtn = document.getElementById("extractBtn");
 
-  browseBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    fileInput.click();
-  });
+  // Clear value on mousedown so re-selecting the same file triggers 'change'
+  if (dropArea) {
+    dropArea.addEventListener("mousedown", () => {
+      fileInput.value = "";
+    });
+  }
 
-  dropArea.addEventListener("click", () => fileInput.click());
+  // Keyboard navigation support for accessible dropArea label
+  if (dropArea) {
+    dropArea.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        fileInput.click();
+      }
+    });
 
-  dropArea.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    dropArea.classList.add("dragover");
-  });
+    dropArea.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      dropArea.classList.add("dragover");
+    });
 
-  dropArea.addEventListener("dragleave", () => {
-    dropArea.classList.remove("dragover");
-  });
+    dropArea.addEventListener("dragleave", () => {
+      dropArea.classList.remove("dragover");
+    });
 
-  dropArea.addEventListener("drop", (e) => {
-    e.preventDefault();
-    dropArea.classList.remove("dragover");
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFileSelected(e.dataTransfer.files[0]);
-    }
-  });
+    dropArea.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropArea.classList.remove("dragover");
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+        try {
+          fileInput.files = e.dataTransfer.files;
+        } catch (err) {
+          // FileList assignment may be read-only in some legacy environments
+        }
+        handleFileSelected(e.dataTransfer.files[0]);
+      }
+    });
+  }
 
   fileInput.addEventListener("change", (e) => {
     if (e.target.files && e.target.files[0]) {
@@ -228,14 +253,43 @@ function initUpload() {
 }
 
 function handleFileSelected(file) {
-  if (!file.name.toLowerCase().endsWith(".pdf")) {
-    alert("Please select a PDF file (.pdf).");
+  const ext = file.name.split('.').pop().toLowerCase();
+  const validExts = ["pdf", "xlsx", "xls", "csv"];
+  if (!validExts.includes(ext)) {
+    alert("Please select a PDF (.pdf), Excel (.xlsx, .xls), or CSV (.csv) file.");
     return;
   }
-  document.getElementById("batchSelect").value = "";
+  window.currentSelectedFile = file;
+
+  const batchSelect = document.getElementById("batchSelect");
+  if (batchSelect) batchSelect.value = "";
+
   const extractBtn = document.getElementById("extractBtn");
-  extractBtn.disabled = false;
-  document.querySelector(".upload-prompt").innerHTML = `Selected: <strong>${file.name}</strong> (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
+  if (extractBtn) extractBtn.disabled = false;
+
+  const uploadPrompt = document.getElementById("uploadPrompt");
+  const selectedFileBadge = document.getElementById("selectedFileBadge");
+  const selectedFileName = document.getElementById("selectedFileName");
+  const selectedFileSize = document.getElementById("selectedFileSize");
+  const selectedFileIcon = document.getElementById("selectedFileIcon");
+
+  if (uploadPrompt) uploadPrompt.classList.add("hidden");
+  if (selectedFileBadge) {
+    selectedFileBadge.classList.remove("hidden");
+    if (selectedFileName) selectedFileName.textContent = file.name;
+    const mbSize = (file.size / (1024 * 1024)).toFixed(2);
+    if (selectedFileSize) selectedFileSize.textContent = `(${mbSize} MB)`;
+    if (selectedFileIcon) {
+      if (ext === "pdf") selectedFileIcon.textContent = "📄";
+      else if (ext === "csv") selectedFileIcon.textContent = "📑";
+      else selectedFileIcon.textContent = "📊";
+    }
+  }
+
+  // If tabular file, launch Tabular Inspection Modal immediately
+  if (["xlsx", "xls", "csv"].includes(ext)) {
+    inspectTabularFile(file);
+  }
 }
 
 // 4. Start Extraction
@@ -245,12 +299,18 @@ async function startExtraction() {
   const extractBtn = document.getElementById("extractBtn");
 
   const formData = new FormData();
-  if (fileInput.files && fileInput.files[0]) {
-    formData.append("pdf_file", fileInput.files[0]);
-  } else if (batchSelect.value) {
+  const selectedFile = (fileInput.files && fileInput.files[0]) || window.currentSelectedFile;
+  if (selectedFile) {
+    const ext = selectedFile.name.split('.').pop().toLowerCase();
+    if (["xlsx", "xls", "csv"].includes(ext)) {
+      inspectTabularFile(selectedFile);
+      return;
+    }
+    formData.append("pdf_file", selectedFile);
+  } else if (batchSelect && batchSelect.value) {
     formData.append("batch_file", batchSelect.value);
   } else {
-    alert("Please choose or upload a PDF document.");
+    alert("Please choose or upload an academic document or spreadsheet.");
     return;
   }
 
@@ -2464,6 +2524,328 @@ function initAiCrosscheckModal() {
     });
   }
 }
+
+// =========================================================================
+// Tabular File (Excel & CSV) Inspection & Ingestion Controller
+// =========================================================================
+
+let currentTabularFile = null;
+let currentTabularInspection = null;
+
+async function safeParseJson(res) {
+  const rawText = await res.text();
+  try {
+    const sanitized = rawText
+      .replace(/:\s*NaN\b/g, ': ""')
+      .replace(/:\s*Infinity\b/g, ': null')
+      .replace(/:\s*-Infinity\b/g, ': null');
+    return JSON.parse(sanitized);
+  } catch (err) {
+    console.error("JSON parse failure on raw text:", rawText);
+    throw new Error("Invalid response format: " + err.message);
+  }
+}
+
+function initTabularModal() {
+  const modalBackdrop = document.getElementById("tabularModalBackdrop");
+  const closeBtn = document.getElementById("btnTabModalClose");
+  const btnDirect = document.getElementById("btnTabDirectImport");
+  const btnAiFix = document.getElementById("btnTabAiFix");
+  const sheetSelect = document.getElementById("tabSheetSelect");
+
+  if (!modalBackdrop) return;
+
+  if (closeBtn) {
+    closeBtn.addEventListener("click", () => {
+      modalBackdrop.classList.add("hidden");
+    });
+  }
+
+  modalBackdrop.addEventListener("click", (e) => {
+    if (e.target === modalBackdrop) {
+      modalBackdrop.classList.add("hidden");
+    }
+  });
+
+  if (sheetSelect) {
+    sheetSelect.addEventListener("change", async (e) => {
+      const selectedSheet = e.target.value;
+      if (currentTabularInspection && currentTabularInspection.filename) {
+        await reInspectSheet(currentTabularInspection.filename, selectedSheet);
+      }
+    });
+  }
+
+  if (btnDirect) {
+    btnDirect.addEventListener("click", async () => {
+      if (!currentTabularInspection || !currentTabularInspection.filename) return;
+      const originalText = btnDirect.innerHTML;
+      btnDirect.disabled = true;
+      btnDirect.innerHTML = `<span>⏳ Importing...</span>`;
+
+      try {
+        const payload = {
+          filename: currentTabularInspection.filename,
+          sheet_name: currentTabularInspection.selected_sheet || (sheetSelect ? sheetSelect.value : null),
+          header_row: currentTabularInspection.detected_header_row
+        };
+        const res = await fetch("/api/tabular/import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await safeParseJson(res);
+        if (data.success) {
+          modalBackdrop.classList.add("hidden");
+          renderResults(data);
+          appendChatMessage("assistant", `📥 <strong>Direct Import Successful!</strong> Loaded <strong>${data.total_students}</strong> records directly from <em>${escapeHtml(currentTabularInspection.filename)}</em> without consuming any AI tokens. Explore the data table, ask questions, or review the visual EDA analytics!`);
+        } else {
+          alert(`Direct import failed: ${data.error || "Unknown error"}`);
+        }
+      } catch (err) {
+        console.error("Direct import error:", err);
+        alert(`Error importing tabular file: ${err.message}`);
+      } finally {
+        btnDirect.disabled = false;
+        btnDirect.innerHTML = originalText;
+      }
+    });
+  }
+
+  if (btnAiFix) {
+    btnAiFix.addEventListener("click", async () => {
+      if (!currentTabularInspection || !currentTabularInspection.filename) return;
+      const originalText = btnAiFix.innerHTML;
+      btnAiFix.disabled = true;
+      btnAiFix.innerHTML = `<span>✨ Restructuring with AI...</span>`;
+
+      const pipelineSelect = document.getElementById("tabAiPipelineSelect");
+      const pipelineMode = pipelineSelect ? pipelineSelect.value : "local";
+
+      try {
+        const payload = {
+          filename: currentTabularInspection.filename,
+          sheet_name: currentTabularInspection.selected_sheet || (sheetSelect ? sheetSelect.value : null),
+          pipeline_mode: pipelineMode
+        };
+        const res = await fetch("/api/tabular/ai-fix", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await safeParseJson(res);
+        if (data.success) {
+          modalBackdrop.classList.add("hidden");
+          renderResults(data);
+          const tokStr = data.token_usage && data.token_usage.total > 0 ? ` (${data.token_usage.total} tokens used)` : "";
+          appendChatMessage("assistant", `🪄 <strong>AI Structure Normalization Complete!</strong> Extracted <strong>${data.total_students}</strong> student records from <em>${escapeHtml(currentTabularInspection.filename)}</em> using <strong>${escapeHtml(data.engine_used || 'AI')}</strong>${tokStr}. Multi-tier headers merged and student identities mapped.`);
+        } else {
+          alert(`AI fix failed: ${data.error || "Unknown error"}`);
+        }
+      } catch (err) {
+        console.error("AI fix error:", err);
+        alert(`Error during AI fix: ${err.message}`);
+      } finally {
+        btnAiFix.disabled = false;
+        btnAiFix.innerHTML = originalText;
+      }
+    });
+  }
+}
+
+async function inspectTabularFile(file) {
+  const modalBackdrop = document.getElementById("tabularModalBackdrop");
+  if (!modalBackdrop) return;
+
+  currentTabularFile = file;
+  modalBackdrop.classList.remove("hidden");
+
+  const filenameEl = document.getElementById("tabModalFilename");
+  const subEl = document.getElementById("tabModalSubtitle");
+  const statusTitle = document.getElementById("tabStatusTitle");
+  const statusPill = document.getElementById("tabStatusPill");
+  const banner = document.getElementById("tabAssessmentBanner");
+  const scoreVal = document.getElementById("tabScoreVal");
+  const scorePill = document.getElementById("tabScorePill");
+  const msgEl = document.getElementById("tabAssessmentMsg");
+  const issuesContainer = document.getElementById("tabIssuesContainer");
+  const statsEl = document.getElementById("tabMetaStats");
+  const thead = document.getElementById("tabPreviewHeadRow");
+  const tbody = document.getElementById("tabPreviewBody");
+  const sheetBar = document.getElementById("tabSheetBar");
+  const sheetSelect = document.getElementById("tabSheetSelect");
+
+  if (filenameEl) filenameEl.textContent = file.name;
+  if (subEl) subEl.textContent = `Size: ${(file.size / 1024).toFixed(1)} KB • Ingesting...`;
+  if (statusTitle) statusTitle.textContent = "Analyzing spreadsheet formatting & layout...";
+  if (msgEl) msgEl.textContent = "Inspecting headers, row offsets, composite sub-components, and student markers...";
+  if (issuesContainer) issuesContainer.classList.add("hidden");
+  if (thead) thead.innerHTML = "";
+  if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1rem;">Reading table preview...</td></tr>`;
+
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const res = await fetch("/api/tabular/inspect", {
+      method: "POST",
+      body: formData
+    });
+    const data = await safeParseJson(res);
+    if (!data.success) {
+      alert(`Inspection failed: ${data.error || "Unknown error"}`);
+      modalBackdrop.classList.add("hidden");
+      return;
+    }
+
+    renderInspectionData(data);
+  } catch (err) {
+    console.error("Tabular inspection failed:", err);
+    alert(`Could not inspect tabular file: ${err.message}`);
+    modalBackdrop.classList.add("hidden");
+  }
+}
+
+async function reInspectSheet(filename, sheetName) {
+  try {
+    const res = await fetch("/api/tabular/inspect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: filename, sheet_name: sheetName })
+    });
+    const data = await safeParseJson(res);
+    if (data.success) {
+      renderInspectionData(data);
+    }
+  } catch (err) {
+    console.error("Error reinspecting sheet:", err);
+  }
+}
+
+function renderInspectionData(data) {
+  currentTabularInspection = data;
+
+  const filenameEl = document.getElementById("tabModalFilename");
+  const subEl = document.getElementById("tabModalSubtitle");
+  const statusTitle = document.getElementById("tabStatusTitle");
+  const statusPill = document.getElementById("tabStatusPill");
+  const banner = document.getElementById("tabAssessmentBanner");
+  const scoreVal = document.getElementById("tabScoreVal");
+  const scorePill = document.getElementById("tabScorePill");
+  const msgEl = document.getElementById("tabAssessmentMsg");
+  const issuesContainer = document.getElementById("tabIssuesContainer");
+  const statsEl = document.getElementById("tabMetaStats");
+  const thead = document.getElementById("tabPreviewHeadRow");
+  const tbody = document.getElementById("tabPreviewBody");
+  const sheetBar = document.getElementById("tabSheetBar");
+  const sheetSelect = document.getElementById("tabSheetSelect");
+
+  const cardDirect = document.getElementById("cardDirectImport");
+  const cardAi = document.getElementById("cardAiFix");
+  const badgeDirect = document.getElementById("badgeDirectRec");
+  const badgeAi = document.getElementById("badgeAiRec");
+
+  if (filenameEl) filenameEl.textContent = data.filename;
+  if (subEl) subEl.textContent = `${data.file_type.toUpperCase()} • ${data.total_raw_rows} raw rows • ${data.total_raw_cols} columns`;
+
+  // Worksheets
+  if (sheetBar && sheetSelect && data.sheets && data.sheets.length > 1) {
+    sheetBar.classList.remove("hidden");
+    sheetSelect.innerHTML = "";
+    data.sheets.forEach(s => {
+      const opt = document.createElement("option");
+      opt.value = s;
+      opt.textContent = s;
+      if (s === data.selected_sheet) opt.selected = true;
+      sheetSelect.appendChild(opt);
+    });
+  } else if (sheetBar) {
+    sheetBar.classList.add("hidden");
+  }
+
+  // Cleanliness Score & Assessment
+  if (scoreVal) scoreVal.textContent = data.cleanliness_score;
+  if (scorePill) {
+    scorePill.className = "assessment-score-pill";
+    if (data.cleanliness_score >= 80) scorePill.classList.add("score-high");
+    else if (data.cleanliness_score >= 50) scorePill.classList.add("score-mid");
+    else scorePill.classList.add("score-low");
+  }
+
+  if (banner) {
+    banner.className = "tabular-assessment-banner " + (data.is_clean ? "banner-clean" : "banner-warning");
+  }
+
+  if (statusTitle) {
+    statusTitle.textContent = data.is_clean ? "✅ Clean Tabular Data Detected" : "⚠️ Unformatted / Complex Ledger Detected";
+  }
+
+  if (msgEl) {
+    if (data.is_clean) {
+      msgEl.textContent = "All column headers and rows appear clean and rectangular. Direct Import is recommended to save tokens and import instantly.";
+    } else {
+      msgEl.textContent = "Structural irregularities detected. AI Restructuring is recommended to align headers, resolve multi-tier columns, and clean student records.";
+    }
+  }
+
+  // Issues Chips
+  if (issuesContainer) {
+    issuesContainer.innerHTML = "";
+    if (data.detected_issues && data.detected_issues.length > 0) {
+      issuesContainer.classList.remove("hidden");
+      data.detected_issues.forEach(issue => {
+        const chip = document.createElement("span");
+        chip.className = "issue-chip";
+        chip.innerHTML = `⚠️ ${escapeHtml(issue)}`;
+        issuesContainer.appendChild(chip);
+      });
+    } else {
+      issuesContainer.classList.add("hidden");
+    }
+  }
+
+  // Recommendation Highlighting
+  if (data.is_clean) {
+    if (cardDirect) cardDirect.className = "tabular-action-card card-recommended-direct";
+    if (cardAi) cardAi.className = "tabular-action-card";
+    if (badgeDirect) badgeDirect.classList.remove("hidden");
+    if (badgeAi) badgeAi.classList.add("hidden");
+  } else {
+    if (cardDirect) cardDirect.className = "tabular-action-card";
+    if (cardAi) cardAi.className = "tabular-action-card card-recommended-ai";
+    if (badgeDirect) badgeDirect.classList.add("hidden");
+    if (badgeAi) badgeAi.classList.remove("hidden");
+  }
+
+  // Preview Stats
+  if (statsEl) {
+    statsEl.textContent = `${data.total_raw_rows} rows • ${data.total_raw_cols} columns`;
+  }
+
+  // Render Preview Table
+  if (thead) {
+    thead.innerHTML = "";
+    (data.preview_headers || []).forEach(h => {
+      const th = document.createElement("th");
+      th.textContent = h;
+      thead.appendChild(th);
+    });
+  }
+
+  if (tbody) {
+    tbody.innerHTML = "";
+    (data.preview_rows || []).forEach(r => {
+      const tr = document.createElement("tr");
+      r.forEach(c => {
+        const td = document.createElement("td");
+        td.textContent = c !== null && c !== undefined ? c : "";
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+  }
+}
+
 
 
 
