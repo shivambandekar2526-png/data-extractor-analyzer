@@ -309,6 +309,17 @@ function pollJob(jobId) {
         updateAuditLogs(job.audit_logs);
       }
 
+      // Stream live token metrics
+      if (job.token_usage) {
+        const telemTokens = document.getElementById("telemTokens");
+        if (telemTokens) {
+          const inTok = job.token_usage.input || 0;
+          const outTok = job.token_usage.output || 0;
+          const totTok = job.token_usage.total || (inTok + outTok);
+          telemTokens.textContent = `In: ${inTok.toLocaleString()} | Out: ${outTok.toLocaleString()} (Tot: ${totTok.toLocaleString()})`;
+        }
+      }
+
       const telemStatus = document.getElementById("telemStatus");
       if (telemStatus) {
         telemStatus.textContent = job.status === "completed" ? "COMPLETED" : (job.status === "error" ? "FAILED" : "PROCESSING");
@@ -367,6 +378,8 @@ function initAuditControls() {
       document.getElementById("auditLogStream").innerHTML = "";
       document.getElementById("auditEmptyMsg").style.display = "block";
       document.getElementById("telemEventCount").textContent = "0";
+      const telemTokens = document.getElementById("telemTokens");
+      if (telemTokens) telemTokens.textContent = "In: 0 | Out: 0 (Tot: 0)";
     });
   }
 }
@@ -444,6 +457,18 @@ function updateAuditLogs(logs) {
       if (telemStatus) {
         telemStatus.textContent = "AUDIT COMPLETE";
         telemStatus.className = "telemetry-val text-success";
+      }
+    }
+
+    // Live Token Usage Update
+    if (entry.details && entry.details.tokens) {
+      const telemTokens = document.getElementById("telemTokens");
+      if (telemTokens) {
+        const t = entry.details.tokens;
+        const inTok = (t.cumulative_input !== undefined ? t.cumulative_input : t.input) || 0;
+        const outTok = (t.cumulative_output !== undefined ? t.cumulative_output : t.output) || 0;
+        const totTok = (t.cumulative_total !== undefined ? t.cumulative_total : t.total) || (inTok + outTok);
+        telemTokens.textContent = `In: ${inTok.toLocaleString()} | Out: ${outTok.toLocaleString()} (Tot: ${totTok.toLocaleString()})`;
       }
     }
 
@@ -555,6 +580,25 @@ function renderResults(result) {
   // Checksum summary pill
   const sum = result.checksum_summary || {};
   document.getElementById("auditPassedCount").textContent = `${sum.all_passed || result.total_students}/${result.total_students}`;
+
+  // Token usage summary pill & telemetry update
+  const tokenPill = document.getElementById("tokenPill");
+  const tokenPillText = document.getElementById("tokenPillText");
+  if (result.token_usage && (result.token_usage.total > 0 || result.token_usage.input > 0)) {
+    const inTok = result.token_usage.input || 0;
+    const outTok = result.token_usage.output || 0;
+    const totTok = result.token_usage.total || (inTok + outTok);
+    if (tokenPill && tokenPillText) {
+      tokenPillText.textContent = `Tokens: ${inTok.toLocaleString()} in / ${outTok.toLocaleString()} out (${totTok.toLocaleString()} tot)`;
+      tokenPill.classList.remove("hidden");
+    }
+    const telemTokens = document.getElementById("telemTokens");
+    if (telemTokens) {
+      telemTokens.textContent = `In: ${inTok.toLocaleString()} | Out: ${outTok.toLocaleString()} (Tot: ${totTok.toLocaleString()})`;
+    }
+  } else if (tokenPill) {
+    tokenPill.classList.add("hidden");
+  }
 
   currentRecords = result.students || [];
   filteredRecords = [...currentRecords];
@@ -2076,6 +2120,21 @@ function initAiCrosscheckModal() {
             updateAuditLogs(data.audit_logs);
           }
 
+          // Stream live token metrics
+          if (data.token_usage) {
+            const inTok = data.token_usage.input || 0;
+            const outTok = data.token_usage.output || 0;
+            const totTok = data.token_usage.total || (inTok + outTok);
+            const aiStatTokens = document.getElementById("aiStatTokens");
+            if (aiStatTokens) {
+              aiStatTokens.textContent = `${inTok.toLocaleString()} in / ${outTok.toLocaleString()} out (${totTok.toLocaleString()} tot)`;
+            }
+            const telemTokens = document.getElementById("telemTokens");
+            if (telemTokens) {
+              telemTokens.textContent = `In: ${inTok.toLocaleString()} | Out: ${outTok.toLocaleString()} (Tot: ${totTok.toLocaleString()})`;
+            }
+          }
+
           // Stream discrepancy cards live
           if (data.discrepancies && data.discrepancies.length > 0) {
             activeAuditReport = {
@@ -2112,6 +2171,19 @@ function initAiCrosscheckModal() {
     if (statVerified) statVerified.textContent = report.verified_patches || 0;
     if (statRejected) statRejected.textContent = report.rejected_patches || 0;
     if (statApplied) statApplied.textContent = report.applied_patches || 0;
+
+    const aiStatTokens = document.getElementById("aiStatTokens");
+    if (aiStatTokens) {
+      const tu = report.token_usage || (currentResultObj && currentResultObj.token_usage);
+      if (tu && (tu.total > 0 || tu.input > 0)) {
+        const inTok = tu.input || 0;
+        const outTok = tu.output || 0;
+        const totTok = tu.total || (inTok + outTok);
+        aiStatTokens.textContent = `${inTok.toLocaleString()} in / ${outTok.toLocaleString()} out (${totTok.toLocaleString()} tot)`;
+      } else {
+        aiStatTokens.textContent = "--";
+      }
+    }
 
     // Schema pill
     if (schemaStatusPill && report.schema_audit) {

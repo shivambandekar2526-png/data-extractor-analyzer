@@ -317,6 +317,69 @@ class TestVisualBlueprintPipeline(unittest.TestCase):
         self.assertEqual(flat2.get("SGPI_Sem_1"), "8.10")
         self.assertEqual(flat2.get("SGPI_Sem_7"), "9.15")
 
+    def test_token_usage_tracking_in_generate_direct(self):
+        """Test that CloudClient extracts and tracks tokens properly across calls."""
+        client = CloudClient()
+        client.reset_token_usage()
+
+        client.config["provider"] = "gemini"
+        client.config["model"] = "gemini-2.5-flash"
+        client.config["api_keys"]["gemini"] = "dummy_gemini_key"
+        client.config["auto_orchestrate"] = False
+
+        audit_events = []
+        def test_audit_cb(event):
+            audit_events.append(event)
+
+        # Mock urllib response for Gemini format
+        mock_gemini_resp = io.BytesIO(json.dumps({
+            "candidates": [{
+                "content": {"parts": [{"text": json.dumps({"test": "data"})}]}
+            }],
+            "usageMetadata": {
+                "promptTokenCount": 1250,
+                "candidatesTokenCount": 350,
+                "totalTokenCount": 1600
+            }
+        }).encode("utf-8"))
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_cm = MagicMock()
+            mock_cm.__enter__.return_value = mock_gemini_resp
+            mock_urlopen.return_value = mock_cm
+
+            res = client.generate_direct(
+                user_prompt="Extract page table",
+                audit_cb=test_audit_cb
+            )
+
+        usage = client.get_token_usage()
+        self.assertEqual(usage["input_tokens"], 1250)
+        self.assertEqual(usage["output_tokens"], 350)
+        self.assertEqual(usage["total_tokens"], 1600)
+
+        # Verify audit_cb emitted token metadata
+        success_events = [e for e in audit_events if e.get("type") == "cloud_ai_success"]
+        self.assertTrue(len(success_events) > 0)
+        token_details = success_events[0].get("details", {}).get("tokens", {})
+        self.assertEqual(token_details.get("input"), 1250)
+        self.assertEqual(token_details.get("output"), 350)
+        self.assertEqual(token_details.get("total"), 1600)
+
+        # Reset tokens
+        client.reset_token_usage()
+        self.assertEqual(client.get_token_usage()["total_tokens"], 0)
+
+    def test_ui_contains_token_telemetry_elements(self):
+        """Test that index.html contains telemetry strip and results token pills."""
+        res = self.client.get("/")
+        self.assertEqual(res.status_code, 200)
+        html = res.data.decode("utf-8")
+        self.assertIn('id="telemTokens"', html)
+        self.assertIn('id="tokenPill"', html)
+        self.assertIn('id="aiStatTokens"', html)
+
 
 if __name__ == "__main__":
     unittest.main()
+

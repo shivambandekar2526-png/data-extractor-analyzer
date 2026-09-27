@@ -82,6 +82,16 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosschec
                     if "audit_logs" not in jobs[job_id]:
                         jobs[job_id]["audit_logs"] = []
                     jobs[job_id]["audit_logs"].append(entry)
+                    if "token_usage" not in jobs[job_id]:
+                        jobs[job_id]["token_usage"] = {"input": 0, "output": 0, "total": 0}
+                    t_data = entry.get("details", {}).get("tokens")
+                    if t_data and isinstance(t_data, dict):
+                        in_tok = int(t_data.get("input", 0) or 0)
+                        out_tok = int(t_data.get("output", 0) or 0)
+                        tot_tok = int(t_data.get("total", in_tok + out_tok) or 0)
+                        jobs[job_id]["token_usage"]["input"] += in_tok
+                        jobs[job_id]["token_usage"]["output"] += out_tok
+                        jobs[job_id]["token_usage"]["total"] += tot_tok
 
         t0 = time.time()
         if pipeline_mode == "visual_blueprint":
@@ -263,7 +273,8 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosschec
             "students": flat_records,
             "duration_seconds": duration,
             "catalog": meta.catalog.to_dict() if meta.catalog else [],
-            "audit_logs": jobs.get(job_id, {}).get("audit_logs", [])
+            "audit_logs": jobs.get(job_id, {}).get("audit_logs", []),
+            "token_usage": jobs.get(job_id, {}).get("token_usage", {"input": 0, "output": 0, "total": 0})
         }
 
         with jobs_lock:
@@ -459,6 +470,7 @@ def start_extraction():
             "message": "Initializing AI extraction...",
             "created_at": time.time(),
             "audit_logs": [],
+            "token_usage": {"input": 0, "output": 0, "total": 0},
             "result": None,
             "error": None
         }
@@ -888,6 +900,16 @@ def _run_post_crosscheck_worker(job_id: str, folder_name: str, csv_path: str, pd
                     if "audit_logs" not in ai_cc_jobs[job_id]:
                         ai_cc_jobs[job_id]["audit_logs"] = []
                     ai_cc_jobs[job_id]["audit_logs"].append(entry)
+                    if "token_usage" not in ai_cc_jobs[job_id]:
+                        ai_cc_jobs[job_id]["token_usage"] = {"input": 0, "output": 0, "total": 0}
+                    t_data = entry.get("details", {}).get("tokens")
+                    if t_data and isinstance(t_data, dict):
+                        in_tok = int(t_data.get("input", 0) or 0)
+                        out_tok = int(t_data.get("output", 0) or 0)
+                        tot_tok = int(t_data.get("total", in_tok + out_tok) or 0)
+                        ai_cc_jobs[job_id]["token_usage"]["input"] += in_tok
+                        ai_cc_jobs[job_id]["token_usage"]["output"] += out_tok
+                        ai_cc_jobs[job_id]["token_usage"]["total"] += tot_tok
 
         from core.cloud_client import CloudClient, ORCHESTRATION_CANDIDATES
         cc_probe = CloudClient()
@@ -978,6 +1000,8 @@ def run_ai_crosscheck_endpoint():
             "message": "Initializing Cloud AI cross-checker...",
             "created_at": time.time(),
             "discrepancies": [],
+            "audit_logs": [],
+            "token_usage": {"input": 0, "output": 0, "total": 0},
             "result": None,
             "error": None
         }
@@ -1008,6 +1032,7 @@ def get_ai_crosscheck_job_status(job_id):
         "message": job["message"],
         "discrepancies": job.get("discrepancies", []),
         "audit_logs": job.get("audit_logs", []),
+        "token_usage": job.get("token_usage", {"input": 0, "output": 0, "total": 0}),
         "result": job.get("result"),
         "error": job.get("error")
     })

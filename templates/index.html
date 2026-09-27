@@ -197,6 +197,10 @@
           <span class="telemetry-label">AI AUDIT EVENTS:</span>
           <strong id="telemEventCount" class="telemetry-val">0</strong>
         </div>
+        <div class="telemetry-item" id="telemTokenBox">
+          <span class="telemetry-label">TOKENS USED:</span>
+          <strong id="telemTokens" class="telemetry-val" style="color: #38bdf8;">In: 0 | Out: 0 (Tot: 0)</strong>
+        </div>
       </div>
 
       <!-- Scrollable Terminal Window -->
@@ -291,6 +295,9 @@
             <input type="text" id="searchInput" class="search-input" placeholder="Search by seat number, student name, or grade...">
             <div class="audit-summary-pill" id="auditPill">
               <span id="auditPassedCount">0</span> Verified Records
+            </div>
+            <div class="audit-summary-pill token-summary-pill hidden" id="tokenPill" style="background: rgba(56, 189, 248, 0.12); border-color: rgba(56, 189, 248, 0.35); color: #38bdf8;">
+              🪙 <span id="tokenPillText">Tokens: 0 in / 0 out (0 tot)</span>
             </div>
           </div>
 
@@ -719,6 +726,10 @@
             <div class="ai-stat-card border-info">
               <div class="ai-stat-num text-primary" id="aiStatApplied">0</div>
               <div class="ai-stat-label">Applied Patches</div>
+            </div>
+            <div class="ai-stat-card" style="border-color: rgba(56, 189, 248, 0.4);">
+              <div class="ai-stat-num" id="aiStatTokens" style="font-size: 0.85rem; color: #38bdf8; font-weight: 700;">0</div>
+              <div class="ai-stat-label">Tokens Used (In / Out)</div>
             </div>
           </div>
 

@@ -102,14 +102,33 @@ class CloudClient:
     # Provider cooldown tracker: maps "provider" to expiration timestamp (for 429 rate limits)
     _provider_cooldowns: Dict[str, float] = {}
 
+    # Global cumulative token metrics across all CloudClient instances in the process
+    _global_token_usage: Dict[str, int] = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
     def __init__(self):
         self.config = self.load_config()
+        self.token_usage: Dict[str, int] = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        self.last_call_tokens: Dict[str, int] = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
         if CloudClient._locked_model is None and self.config.get("auto_orchestrate", True):
             # Attempt to set initial locked model from config or best candidate
             CloudClient._locked_model = {
                 "provider": self.config.get("provider", "groq"),
                 "model": self.config.get("model", "openai/gpt-oss-120b")
             }
+
+    def get_token_usage(self) -> Dict[str, int]:
+        """Return a copy of cumulative token metrics for this client instance."""
+        return dict(self.token_usage)
+
+    def reset_token_usage(self) -> None:
+        """Reset token metrics for this client instance."""
+        self.token_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        self.last_call_tokens = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
+    @classmethod
+    def get_global_token_usage(cls) -> Dict[str, int]:
+        """Return cumulative token metrics across all CloudClient instances."""
+        return dict(cls._global_token_usage)
 
     @classmethod
     def load_config(cls) -> Dict[str, Any]:
@@ -694,6 +713,25 @@ class CloudClient:
             parts = candidates[0].get("content", {}).get("parts", [])
             reply_text = parts[0].get("text", "") if parts else ""
 
+            # Token tracking
+            usage_meta = resp_data.get("usageMetadata", {})
+            in_tok = int(usage_meta.get("promptTokenCount", 0) or 0)
+            out_tok = int(usage_meta.get("candidatesTokenCount", 0) or 0)
+            tot_tok = int(usage_meta.get("totalTokenCount", 0) or (in_tok + out_tok))
+            if in_tok == 0 and user_turn_text:
+                in_tok = max(1, len(user_turn_text) // 4)
+            if out_tok == 0 and reply_text:
+                out_tok = max(1, len(reply_text) // 4)
+            if tot_tok == 0:
+                tot_tok = in_tok + out_tok
+            self.token_usage["input_tokens"] += in_tok
+            self.token_usage["output_tokens"] += out_tok
+            self.token_usage["total_tokens"] += tot_tok
+            self.last_call_tokens = {"input_tokens": in_tok, "output_tokens": out_tok, "total_tokens": tot_tok}
+            CloudClient._global_token_usage["input_tokens"] += in_tok
+            CloudClient._global_token_usage["output_tokens"] += out_tok
+            CloudClient._global_token_usage["total_tokens"] += tot_tok
+
             contents.append({"role": "model", "parts": [{"text": reply_text}]})
             if len(contents) > 24:
                 contents = contents[:2] + contents[-16:]
@@ -751,6 +789,25 @@ class CloudClient:
             if not choices:
                 raise RuntimeError(f"Empty choices returned from {provider} API.")
             reply_text = choices[0].get("message", {}).get("content", "")
+
+            # Token tracking
+            usage_meta = resp_data.get("usage", {})
+            in_tok = int(usage_meta.get("prompt_tokens", 0) or 0)
+            out_tok = int(usage_meta.get("completion_tokens", 0) or 0)
+            tot_tok = int(usage_meta.get("total_tokens", 0) or (in_tok + out_tok))
+            if in_tok == 0 and user_turn_text:
+                in_tok = max(1, len(user_turn_text) // 4)
+            if out_tok == 0 and reply_text:
+                out_tok = max(1, len(reply_text) // 4)
+            if tot_tok == 0:
+                tot_tok = in_tok + out_tok
+            self.token_usage["input_tokens"] += in_tok
+            self.token_usage["output_tokens"] += out_tok
+            self.token_usage["total_tokens"] += tot_tok
+            self.last_call_tokens = {"input_tokens": in_tok, "output_tokens": out_tok, "total_tokens": tot_tok}
+            CloudClient._global_token_usage["input_tokens"] += in_tok
+            CloudClient._global_token_usage["output_tokens"] += out_tok
+            CloudClient._global_token_usage["total_tokens"] += tot_tok
 
             messages.append({"role": "assistant", "content": reply_text})
             if len(messages) > 24:
@@ -961,6 +1018,11 @@ class CloudClient:
                         parts = candidates[0].get("content", {}).get("parts", [])
                         reply_text = parts[0].get("text", "") if parts else ""
 
+                        usage_meta = resp_data.get("usageMetadata", {})
+                        in_tok = int(usage_meta.get("promptTokenCount", 0) or 0)
+                        out_tok = int(usage_meta.get("candidatesTokenCount", 0) or 0)
+                        tot_tok = int(usage_meta.get("totalTokenCount", 0) or (in_tok + out_tok))
+
                     # 2. OpenAI / Groq / Custom
                     else:
                         base_url = self.config.get("custom_base_url") if provider == "custom" else DEFAULT_PROVIDERS.get(provider, {}).get("base_url", "https://api.openai.com/v1")
@@ -1021,7 +1083,35 @@ class CloudClient:
                             raise RuntimeError(f"Empty choices returned from {provider} API.")
                         reply_text = choices[0].get("message", {}).get("content", "")
 
+                        usage_meta = resp_data.get("usage", {})
+                        in_tok = int(usage_meta.get("prompt_tokens", 0) or 0)
+                        out_tok = int(usage_meta.get("completion_tokens", 0) or 0)
+                        tot_tok = int(usage_meta.get("total_tokens", 0) or (in_tok + out_tok))
+
                     dur = time.time() - t_start
+
+                    # Token usage tracking with intelligent fallback heuristics
+                    if in_tok == 0 and user_prompt:
+                        in_tok = max(1, len(user_prompt) // 4)
+                        if image_bytes:
+                            in_tok += 500  # Vision image base weight
+                    if out_tok == 0 and reply_text:
+                        out_tok = max(1, len(reply_text) // 4)
+                    if tot_tok == 0:
+                        tot_tok = in_tok + out_tok
+
+                    self.token_usage["input_tokens"] += in_tok
+                    self.token_usage["output_tokens"] += out_tok
+                    self.token_usage["total_tokens"] += tot_tok
+                    self.last_call_tokens = {
+                        "input_tokens": in_tok,
+                        "output_tokens": out_tok,
+                        "total_tokens": tot_tok
+                    }
+                    CloudClient._global_token_usage["input_tokens"] += in_tok
+                    CloudClient._global_token_usage["output_tokens"] += out_tok
+                    CloudClient._global_token_usage["total_tokens"] += tot_tok
+
                     # Successful execution: update primary config and return
                     self.config["provider"] = provider
                     self.config["model"] = model
@@ -1032,11 +1122,19 @@ class CloudClient:
                                 "timestamp": time.strftime("%H:%M:%S"),
                                 "type": "cloud_ai_success",
                                 "badge": "CLOUD AI SUCCESS",
-                                "title": f"{provider.upper()} ({model}) responded in {dur:.2f}s",
+                                "title": f"{provider.upper()} ({model}) responded in {dur:.2f}s [Tokens: {in_tok:,} in / {out_tok:,} out ({tot_tok:,} tot)]",
                                 "details": {
                                     "provider": provider,
                                     "model": model,
                                     "duration_sec": round(dur, 2),
+                                    "tokens": {
+                                        "input": in_tok,
+                                        "output": out_tok,
+                                        "total": tot_tok,
+                                        "cumulative_input": self.token_usage["input_tokens"],
+                                        "cumulative_output": self.token_usage["output_tokens"],
+                                        "cumulative_total": self.token_usage["total_tokens"]
+                                    },
                                     "response_preview": reply_text[:280] + "..."
                                 }
                             })
