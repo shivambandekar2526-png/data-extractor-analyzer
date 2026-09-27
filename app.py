@@ -9,6 +9,7 @@ import argparse
 import csv
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -44,8 +45,11 @@ from core.semantic_mapper import SemanticMapper
 from core.excel_report_generator import AcademicExcelReportGenerator, get_academic_filename
 from core.ai_cross_checker import run_ai_cross_check, validate_patch_sandbox
 from core.excel_csv_ingester import TabularIngester, sanitize_dict_for_json
+from core.batch_analyzer import BatchAcademicAnalyzer
+from core.batch_excel_generator import BatchExcelReportGenerator
 
 tabular_ingester = TabularIngester(OUTPUT_DIR)
+batch_analyzer = BatchAcademicAnalyzer(OUTPUT_DIR)
 
 app = Flask(
     __name__,
@@ -60,6 +64,9 @@ app.json.sort_keys = False
 jobs: Dict[str, Dict[str, Any]] = {}
 jobs_lock = threading.Lock()
 
+batch_jobs: Dict[str, Dict[str, Any]] = {}
+batch_jobs_lock = threading.Lock()
+
 
 def update_job_progress(job_id: str, progress: float, message: str) -> None:
     """Thread-safe update of job status and progress bar."""
@@ -67,6 +74,14 @@ def update_job_progress(job_id: str, progress: float, message: str) -> None:
         if job_id in jobs:
             jobs[job_id]["progress"] = round(min(max(float(progress), 0.0), 100.0), 1)
             jobs[job_id]["message"] = message
+
+
+def update_batch_job_progress(job_id: str, progress: float, message: str) -> None:
+    """Thread-safe update of batch analysis job status and progress bar."""
+    with batch_jobs_lock:
+        if job_id in batch_jobs:
+            batch_jobs[job_id]["progress"] = round(min(max(float(progress), 0.0), 100.0), 1)
+            batch_jobs[job_id]["message"] = message
 
 
 def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosscheck: bool = False, pipeline_mode: str = "local") -> None:
@@ -290,7 +305,72 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosschec
             if job_id in jobs:
                 jobs[job_id]["status"] = "error"
                 jobs[job_id]["error"] = str(e)
-                jobs[job_id]["message"] = f"Extraction failed: {e}"
+def _run_batch_analysis_worker(
+    job_id: str,
+    batch_folder: str,
+    target_branch: str = "AIDS",
+    pdf_pipeline: str = "local",
+    excel_mode: str = "direct"
+) -> None:
+    """Background execution worker for 1st-8th semester multi-source batch analysis."""
+    try:
+        update_batch_job_progress(job_id, 2.0, "Initiating multi-semester batch analysis...")
+
+        def on_prog(pct: float, msg: str):
+            update_batch_job_progress(job_id, pct, msg)
+
+        def log_audit(entry: Dict[str, Any]):
+            with batch_jobs_lock:
+                if job_id in batch_jobs:
+                    if "audit_logs" not in batch_jobs[job_id]:
+                        batch_jobs[job_id]["audit_logs"] = []
+                    batch_jobs[job_id]["audit_logs"].append(entry)
+
+        analytics = batch_analyzer.run_batch_analysis_job(
+            batch_folder=batch_folder,
+            target_branch=target_branch,
+            pdf_pipeline=pdf_pipeline,
+            excel_mode=excel_mode,
+            progress_cb=on_prog,
+            audit_cb=log_audit
+        )
+
+        batch_slug = re.sub(r"[^\w\-]", "_", os.path.basename(batch_folder)).strip("_")
+        out_subfolder = f"batch_analysis_{batch_slug}_{job_id[:8]}"
+        out_folder_path = os.path.join(OUTPUT_DIR, out_subfolder)
+        os.makedirs(out_folder_path, exist_ok=True)
+
+        excel_filename = f"{batch_slug}_Complete_Academic_Analysis.xlsx"
+        excel_path = os.path.join(out_folder_path, excel_filename)
+
+        update_batch_job_progress(job_id, 94.0, "Generating official 10-sheet Academic Excel workbook...")
+        excel_gen = BatchExcelReportGenerator(analytics)
+        excel_gen.generate_workbook(excel_path)
+
+        json_filename = f"{batch_slug}_batch_analysis.json"
+        json_path = os.path.join(out_folder_path, json_filename)
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(analytics, f, indent=2, ensure_ascii=False)
+
+        total_stds = analytics.get("overall_summary", {}).get("total_students", 0)
+        total_sems = len(analytics.get("available_semesters", []))
+
+        with batch_jobs_lock:
+            if job_id in batch_jobs:
+                batch_jobs[job_id]["status"] = "completed"
+                batch_jobs[job_id]["progress"] = 100.0
+                batch_jobs[job_id]["message"] = f"Complete batch analysis generated for {total_stds} students across {total_sems} semesters."
+                batch_jobs[job_id]["excel_file"] = excel_filename
+                batch_jobs[job_id]["json_file"] = json_filename
+                batch_jobs[job_id]["output_folder"] = out_subfolder
+                batch_jobs[job_id]["result"] = analytics
+
+    except Exception as e:
+        with batch_jobs_lock:
+            if job_id in batch_jobs:
+                batch_jobs[job_id]["status"] = "error"
+                batch_jobs[job_id]["error"] = str(e)
+                batch_jobs[job_id]["message"] = f"Batch analysis failed: {e}"
 
 
 # --- Routes ---
@@ -342,20 +422,180 @@ def list_inputs():
 
 @app.route("/api/batches", methods=["GET"])
 def list_batches():
-    """List batch datasets from Batch Data/."""
+    """List batch datasets from Batch Data/ including PDF, Excel, and CSV."""
     batches = {}
     if os.path.isdir(BATCH_DATA_DIR):
         for root, dirs, files in os.walk(BATCH_DATA_DIR):
             for f in sorted(files):
-                if f.lower().endswith(".pdf"):
+                ext = os.path.splitext(f)[1].lower()
+                if ext in (".pdf", ".xlsx", ".xls", ".csv"):
                     rel = os.path.relpath(os.path.join(root, f), BATCH_DATA_DIR).replace("\\", "/")
                     batch_name = rel.split("/")[0] if "/" in rel else "Default"
                     batches.setdefault(batch_name, []).append({
                         "rel_path": rel,
                         "filename": f,
+                        "file_type": "pdf" if ext == ".pdf" else "excel",
                         "full_path": os.path.join(root, f)
                     })
     return jsonify({"batches": batches})
+
+
+@app.route("/api/batch-analysis/batches", methods=["GET"])
+def get_batch_analysis_batches():
+    """List all available batch folders with detected semester information."""
+    batch_list = []
+    if os.path.isdir(BATCH_DATA_DIR):
+        for entry in sorted(os.listdir(BATCH_DATA_DIR)):
+            dir_path = os.path.join(BATCH_DATA_DIR, entry)
+            if os.path.isdir(dir_path):
+                try:
+                    info = batch_analyzer.detect_batch_files(dir_path)
+                    batch_list.append(info)
+                except Exception as e:
+                    print(f"[!] Error inspecting batch {entry}: {e}")
+    return jsonify({"success": True, "batches": batch_list})
+
+
+@app.route("/api/batch-analysis/inspect", methods=["POST"])
+def inspect_batch():
+    """Inspect a specific batch folder or uploaded files."""
+    data = request.get_json(silent=True) or {}
+    batch_name = data.get("batch_name", "").strip()
+    target_branch = data.get("target_branch", "AIDS").strip()
+
+    folder_path = os.path.join(BATCH_DATA_DIR, batch_name)
+    if not os.path.isdir(folder_path):
+        alt = os.path.join(INPUT_DIR, batch_name)
+        if os.path.isdir(alt):
+            folder_path = alt
+        else:
+            return jsonify({"success": False, "error": f"Batch folder '{batch_name}' not found."}), 404
+
+    try:
+        info = batch_analyzer.detect_batch_files(folder_path, target_branch=target_branch)
+        return jsonify(sanitize_dict_for_json({"success": True, **info}))
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/batch-analysis/run", methods=["POST"])
+def run_batch_analysis():
+    """Start asynchronous multi-semester batch analysis."""
+    data = request.get_json(silent=True) or {}
+    batch_name = data.get("batch_name", "").strip()
+    target_branch = data.get("target_branch", "AIDS").strip()
+    pdf_pipeline = data.get("pdf_pipeline", "local").strip()
+    excel_mode = data.get("excel_mode", "direct").strip()
+
+    folder_path = os.path.join(BATCH_DATA_DIR, batch_name)
+    if not os.path.isdir(folder_path):
+        alt = os.path.join(INPUT_DIR, batch_name)
+        if os.path.isdir(alt):
+            folder_path = alt
+        else:
+            return jsonify({"success": False, "error": f"Batch folder '{batch_name}' not found."}), 404
+
+    job_id = uuid.uuid4().hex
+    with batch_jobs_lock:
+        batch_jobs[job_id] = {
+            "job_id": job_id,
+            "batch_name": batch_name,
+            "status": "running",
+            "progress": 0.0,
+            "message": "Initializing batch analysis...",
+            "created_at": time.time(),
+            "audit_logs": [],
+            "excel_mode": excel_mode,
+            "pdf_pipeline": pdf_pipeline
+        }
+
+    worker_thread = threading.Thread(
+        target=_run_batch_analysis_worker,
+        args=(job_id, folder_path, target_branch, pdf_pipeline, excel_mode),
+        daemon=True
+    )
+    worker_thread.start()
+
+    return jsonify({"success": True, "job_id": job_id})
+
+
+@app.route("/api/batch-analysis/jobs/<job_id>", methods=["GET"])
+def get_batch_job_status(job_id):
+    """Poll status and progress of a batch analysis job."""
+    with batch_jobs_lock:
+        job = batch_jobs.get(job_id)
+    if not job:
+        return jsonify({"success": False, "error": "Job not found."}), 404
+    return jsonify(sanitize_dict_for_json({"success": True, **job}))
+
+
+@app.route("/api/batch-analysis/download/<job_id>", methods=["GET"])
+def download_batch_excel(job_id):
+    """Download the generated 10-sheet Academic Excel workbook."""
+    with batch_jobs_lock:
+        job = batch_jobs.get(job_id)
+
+    folder_path = None
+    excel_file = None
+
+    if job and job.get("status") == "completed":
+        out_folder = job.get("output_folder")
+        excel_file = job.get("excel_file")
+        folder_path = os.path.join(OUTPUT_DIR, out_folder)
+    else:
+        # Fallback to scanning OUTPUT_DIR for folder matching job_id or folder slug
+        clean_id = secure_filename(job_id)
+        if os.path.isdir(OUTPUT_DIR):
+            for entry in os.listdir(OUTPUT_DIR):
+                if entry == clean_id or entry.endswith(clean_id[:8]) or clean_id in entry:
+                    cand_dir = os.path.join(OUTPUT_DIR, entry)
+                    if os.path.isdir(cand_dir):
+                        for f in os.listdir(cand_dir):
+                            if f.endswith(".xlsx"):
+                                folder_path = cand_dir
+                                excel_file = f
+                                break
+                    if folder_path:
+                        break
+
+    if not folder_path or not excel_file or not os.path.isdir(folder_path):
+        return jsonify({"success": False, "error": "Workbook file not found."}), 404
+
+    return send_from_directory(folder_path, excel_file, as_attachment=True)
+
+
+@app.route("/api/batch-analysis/download-json/<job_id>", methods=["GET"])
+def download_batch_json(job_id):
+    """Download the batch analysis JSON payload."""
+    with batch_jobs_lock:
+        job = batch_jobs.get(job_id)
+
+    folder_path = None
+    json_file = None
+
+    if job and job.get("status") == "completed":
+        out_folder = job.get("output_folder")
+        json_file = job.get("json_file")
+        folder_path = os.path.join(OUTPUT_DIR, out_folder)
+    else:
+        clean_id = secure_filename(job_id)
+        if os.path.isdir(OUTPUT_DIR):
+            for entry in os.listdir(OUTPUT_DIR):
+                if entry == clean_id or entry.endswith(clean_id[:8]) or clean_id in entry:
+                    cand_dir = os.path.join(OUTPUT_DIR, entry)
+                    if os.path.isdir(cand_dir):
+                        for f in os.listdir(cand_dir):
+                            if f.endswith(".json") and "analysis" in f:
+                                folder_path = cand_dir
+                                json_file = f
+                                break
+                    if folder_path:
+                        break
+
+    if not folder_path or not json_file or not os.path.isdir(folder_path):
+        return jsonify({"success": False, "error": "Analysis JSON not found."}), 404
+
+    return send_from_directory(folder_path, json_file, as_attachment=True)
 
 
 @app.route("/api/history", methods=["GET"])
@@ -527,6 +767,12 @@ def start_extraction():
             pipeline_mode = "cloud"
         else:
             pipeline_mode = "local"
+
+    is_sync = (
+        request.args.get("sync", "0") in ("1", "true")
+        or request.form.get("sync", "0") in ("1", "true")
+        or bool(json_data.get("sync"))
+    )
 
     if is_sync:
         _run_ai_extraction_worker(job_id, target_pdf_path, cloud_crosscheck, pipeline_mode=pipeline_mode)

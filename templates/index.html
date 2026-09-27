@@ -55,8 +55,29 @@
   </header>
 
   <main class="app-main">
-    <!-- Top Action Grid -->
-    <div class="action-grid">
+    <!-- Master Workflow Mode Selector -->
+    <div class="mode-navigation-bar">
+      <button type="button" class="mode-nav-btn active" id="btnModeSingle">
+        <span class="mode-nav-icon">📄</span>
+        <div class="mode-nav-text">
+          <span class="mode-nav-title">Single Semester Extraction</span>
+          <span class="mode-nav-sub">Extract individual PDF Gazette, Ledger, or Spreadsheet</span>
+        </div>
+      </button>
+      <button type="button" class="mode-nav-btn" id="btnModeBatch">
+        <span class="mode-nav-icon">🏛️</span>
+        <div class="mode-nav-text">
+          <span class="mode-nav-title">Batch 1st–8th Sem Multi-Source Suite</span>
+          <span class="mode-nav-sub">Full degree cohort cross-analysis • PDF + Excel • 10-Sheet Workbook</span>
+        </div>
+        <span class="badge-new-feature">CORE FEATURE</span>
+      </button>
+    </div>
+
+    <!-- Single Semester Workspace Wrapper -->
+    <div id="singleWorkspaceSection">
+      <!-- Top Action Grid -->
+      <div class="action-grid">
       <!-- Upload Card -->
       <section class="card upload-card">
         <div class="card-header">
@@ -560,6 +581,400 @@
         <p class="empty-text">No extractions recorded yet.</p>
       </div>
     </section>
+    </div> <!-- End singleWorkspaceSection -->
+
+    <!-- ====================================================================== -->
+    <!-- BATCH WORKSPACE SECTION (1ST TO 8TH SEMESTER SUITE)                    -->
+    <!-- ====================================================================== -->
+    <div id="batchWorkspaceSection" class="hidden">
+      <!-- Batch Selection & Inspection Card -->
+      <section class="card batch-workspace-card">
+        <div class="card-header">
+          <div>
+            <h2>🏛️ Batch Multi-Semester Academic Intake (Sem 1 to 8)</h2>
+            <p class="results-meta-text">Analyze full degree cohorts across mixed formats (PDF Gazettes, Ledgers, Excel Spreadsheets)</p>
+          </div>
+          <span class="tag tag-accent">Sem 1 ➔ 8 Suite</span>
+        </div>
+
+        <!-- Controls Row -->
+        <div class="batch-controls-row">
+          <div>
+            <label class="batch-select-label" for="batchSuiteSelect">Select Academic Batch Dataset:</label>
+            <select id="batchSuiteSelect" class="form-select">
+              <option value="">-- Choose Historical Batch Folder --</option>
+            </select>
+          </div>
+          <div>
+            <label class="batch-select-label" for="batchBranchInput">Department / Branch Filter:</label>
+            <input type="text" id="batchBranchInput" class="form-input" value="AIDS" placeholder="e.g. AIDS, COMP, IT, MECH">
+          </div>
+          <div>
+            <button type="button" id="btnInspectBatch" class="btn btn-outline" style="height: 40px; margin-top: auto;">
+              <span>🔍 Scan Semesters</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Semester 1-8 Visual Discovery Matrix -->
+        <div class="semester-grid-title">
+          <span>📁 Detected Cohort Semesters (1st Sem to 8th Sem)</span>
+          <span id="batchDetectSummary" class="chip chip-active hidden">8 Semesters Ready</span>
+        </div>
+
+        <div class="semester-grid" id="semesterGridContainer">
+          <div class="sem-card missing" id="semCard1"><span class="sem-num-badge">Sem 1</span><span class="sem-filename-text">No File</span></div>
+          <div class="sem-card missing" id="semCard2"><span class="sem-num-badge">Sem 2</span><span class="sem-filename-text">No File</span></div>
+          <div class="sem-card missing" id="semCard3"><span class="sem-num-badge">Sem 3</span><span class="sem-filename-text">No File</span></div>
+          <div class="sem-card missing" id="semCard4"><span class="sem-num-badge">Sem 4</span><span class="sem-filename-text">No File</span></div>
+          <div class="sem-card missing" id="semCard5"><span class="sem-num-badge">Sem 5</span><span class="sem-filename-text">No File</span></div>
+          <div class="sem-card missing" id="semCard6"><span class="sem-num-badge">Sem 6</span><span class="sem-filename-text">No File</span></div>
+          <div class="sem-card missing" id="semCard7"><span class="sem-num-badge">Sem 7</span><span class="sem-filename-text">No File</span></div>
+          <div class="sem-card missing" id="semCard8"><span class="sem-num-badge">Sem 8</span><span class="sem-filename-text">No File</span></div>
+        </div>
+
+        <!-- Excel AI Restructuring Prompt Banner -->
+        <div id="batchExcelPromptBanner" class="excel-ai-prompt-banner hidden">
+          <div class="excel-ai-prompt-left">
+            <span class="excel-ai-prompt-icon">🪄</span>
+            <div class="excel-ai-prompt-text">
+              <strong>Excel Spreadsheets Detected in Batch:</strong>
+              <span>Choose whether AI should restructure multi-tier headers and normalize course codes, or ingest directly without token consumption.</span>
+            </div>
+          </div>
+          <div class="excel-ai-prompt-right">
+            <select id="batchExcelModeSelect" class="form-select form-select-sm" style="max-width: 260px;">
+              <option value="direct">⚡ Keep As Is (Direct Import - 0 Tokens)</option>
+              <option value="ai_fix">✨ Fix with AI (Restructure with LLM)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Engine & Options Selection -->
+        <div class="batch-options-grid">
+          <div class="batch-option-box">
+            <label class="batch-option-title" for="batchPdfPipelineSelect">
+              <span>📄 PDF Gazette Extraction Engine:</span>
+            </label>
+            <span class="batch-option-desc">Select the parsing engine used for PDF Tabulation and Gazette Ledgers.</span>
+            <select id="batchPdfPipelineSelect" class="form-select">
+              <option value="local">⚡ Local AI (Possibility &amp; Ollama GPU - Fast &amp; Private)</option>
+              <option value="cloud">☁️ Pure Cloud AI (Groq / Gemini / OpenAI Orchestrator)</option>
+              <option value="visual_blueprint">👁️ Visual Blueprint &amp; Sliced Stream Vision AI</option>
+            </select>
+          </div>
+
+          <div class="batch-option-box">
+            <label class="batch-option-title" for="batchExcelModeSelectMain">
+              <span>📊 Excel Spreadsheet Ingestion Mode:</span>
+            </label>
+            <span class="batch-option-desc">Control whether spreadsheets are parsed directly or normalized via AI.</span>
+            <select id="batchExcelModeSelectMain" class="form-select">
+              <option value="direct">⚡ Keep As Is (Direct Fast Ingestion - 0 Tokens)</option>
+              <option value="ai_fix">🪄 Fix with AI (Multi-Tier Structure Fusion)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Run Analysis Button -->
+        <div style="display: flex; justify-content: flex-end; gap: 1rem; align-items: center;">
+          <span id="batchReadyHint" class="results-meta-text">Select a batch to begin analysis</span>
+          <button type="button" id="btnRunBatchAnalysis" class="btn btn-primary" style="padding: 0.85rem 1.8rem; font-size: 0.95rem;" disabled>
+            <span>🚀 Run Complete Batch Analysis (Sem 1–8)</span>
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <!-- Live Batch Progress Section -->
+    <div id="batchProgressSection" class="progress-section hidden">
+      <div class="card">
+        <div class="progress-header">
+          <div class="progress-info">
+            <span class="spinner"></span>
+            <strong id="batchProgressMessage">Analyzing multi-semester batch...</strong>
+          </div>
+          <span id="batchProgressPercentage" class="progress-num">0%</span>
+        </div>
+        <div class="progress-bar-track">
+          <div id="batchProgressBar" class="progress-bar-fill" style="width: 0%;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Batch Analysis Interactive Showcase Dashboard -->
+    <div id="batchResultsSection" class="batch-results-section hidden">
+      <section class="card">
+        <!-- Results Header -->
+        <div class="batch-results-header">
+          <div>
+            <h2 id="batchResultTitle">Academic Degree Cohort Intelligence</h2>
+            <p id="batchResultMeta" class="results-meta-text">Batch Analysis Complete</p>
+          </div>
+          <div class="batch-actions-row">
+            <a id="btnDownloadBatchExcel" class="btn btn-primary" download title="Download official 10-sheet Academic Excel workbook">
+              🏛️ Export 10-Sheet Batch Excel (.xlsx)
+            </a>
+            <a id="btnDownloadBatchJson" class="btn btn-outline" download title="Download full analytical metrics JSON">
+              📑 Export Analysis JSON
+            </a>
+          </div>
+        </div>
+
+        <!-- Navigation Tabs for 9 Showcase Views -->
+        <div class="batch-nav-tabs">
+          <button type="button" class="batch-tab-btn active" data-batch-tab="tabBatchSummary">📋 1. Overall Summary</button>
+          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchSemester">📊 2. Semester Analysis</button>
+          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchProgression">🎓 3. Student Progression (Sem 1-8)</button>
+          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchKt">⚠️ 4. KT &amp; Backlog Analysis</button>
+          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchTopper">🏆 5. Topper Analysis</button>
+          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchRetention">👥 6. Retention &amp; Progression</button>
+          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchPerformance">📈 7. Student Performance</button>
+          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchQuality">🛡️ 8. Data Quality Log</button>
+          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchData">📑 9. Semester Data Trace</button>
+        </div>
+
+        <!-- TAB 1: Overall Summary -->
+        <div id="tabBatchSummary" class="batch-tab-content active">
+          <div class="eda-kpi-grid">
+            <div class="eda-kpi-card">
+              <span class="eda-kpi-label">TOTAL STUDENTS</span>
+              <strong class="eda-kpi-value" id="kpiBatchTotalStudents">0</strong>
+              <span class="eda-kpi-sub">Distinct Enrolled Candidates</span>
+            </div>
+            <div class="eda-kpi-card kpi-success">
+              <span class="eda-kpi-label">CLEARED ALL AVAILABLE</span>
+              <strong class="eda-kpi-value text-success" id="kpiBatchClearedAll">0</strong>
+              <span class="eda-kpi-sub" id="kpiBatchClearedPct">0% Zero Backlogs</span>
+            </div>
+            <div class="eda-kpi-card kpi-danger">
+              <span class="eda-kpi-label">STUDENTS WITH KT</span>
+              <strong class="eda-kpi-value text-danger" id="kpiBatchAnyKt">0</strong>
+              <span class="eda-kpi-sub" id="kpiBatchKtPct">0% Backlog Burden</span>
+            </div>
+            <div class="eda-kpi-card kpi-accent">
+              <span class="eda-kpi-label">BATCH AVERAGE SGPI</span>
+              <strong class="eda-kpi-value text-accent" id="kpiBatchAvgSgpi">0.00</strong>
+              <span class="eda-kpi-sub">Mean Cumulative Performance</span>
+            </div>
+            <div class="eda-kpi-card">
+              <span class="eda-kpi-label">TOPPER SGPI</span>
+              <strong class="eda-kpi-value text-warning" id="kpiBatchMaxSgpi">0.00</strong>
+              <span class="eda-kpi-sub">Highest Scored Across Sems</span>
+            </div>
+            <div class="eda-kpi-card kpi-success">
+              <span class="eda-kpi-label">GRADUATION ELIGIBLE</span>
+              <strong class="eda-kpi-value text-success" id="kpiBatchGraduated">0</strong>
+              <span class="eda-kpi-sub">Cleared Sem 8 Requirements</span>
+            </div>
+          </div>
+
+          <div style="margin-top: 1.5rem;">
+            <h4 style="margin-bottom: 0.8rem;">🎓 Cohort Grade &amp; Performance Distribution</h4>
+            <div class="batch-table-container">
+              <table id="batchGradeDistTable">
+                <thead>
+                  <tr>
+                    <th>Grade Classification</th>
+                    <th>SGPI Range</th>
+                    <th>Student Count</th>
+                    <th>Cohort Share (%)</th>
+                  </tr>
+                </thead>
+                <tbody id="batchGradeDistBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 2: Semester Analysis -->
+        <div id="tabBatchSemester" class="batch-tab-content hidden">
+          <div class="batch-table-container">
+            <table id="batchSemesterTable">
+              <thead>
+                <tr>
+                  <th>Semester</th>
+                  <th>Format</th>
+                  <th>Total Enrolled</th>
+                  <th>Passed</th>
+                  <th>Failed / KT</th>
+                  <th>Pass Rate (%)</th>
+                  <th>Average SGPI</th>
+                  <th>Highest SGPI</th>
+                  <th>Lowest Passing SGPI</th>
+                  <th>KT Students</th>
+                  <th>Total KT Subjects</th>
+                </tr>
+              </thead>
+              <tbody id="batchSemesterBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- TAB 3: Student Progression -->
+        <div id="tabBatchProgression" class="batch-tab-content hidden">
+          <input type="text" id="batchProgressionSearch" class="batch-search-input" placeholder="🔍 Search students by name, seat number, or ID...">
+          <div class="batch-table-container">
+            <table id="batchProgressionTable">
+              <thead>
+                <tr id="batchProgressionHeadRow"></tr>
+              </thead>
+              <tbody id="batchProgressionBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- TAB 4: KT Analysis -->
+        <div id="tabBatchKt" class="batch-tab-content hidden">
+          <h4 style="margin-bottom: 0.8rem;">⚠️ Semester-Wise Backlog Burden</h4>
+          <div class="batch-table-container" style="margin-bottom: 1.5rem;">
+            <table id="batchKtTable">
+              <thead>
+                <tr>
+                  <th>Semester</th>
+                  <th>Appeared Students</th>
+                  <th>Students with KT</th>
+                  <th>KT Rate (%)</th>
+                  <th>Total KT Subjects</th>
+                  <th>Avg KT per Failed Student</th>
+                </tr>
+              </thead>
+              <tbody id="batchKtBody"></tbody>
+            </table>
+          </div>
+
+          <h4 style="margin-bottom: 0.8rem;">🔄 Repeated KT Occurrences (Students with KT in ≥ 2 Semesters)</h4>
+          <div class="batch-table-container">
+            <table id="batchRepeatKtTable">
+              <thead>
+                <tr>
+                  <th>Student ID</th>
+                  <th>Student Name</th>
+                  <th>KT Semesters Count</th>
+                  <th>Semesters with Backlogs</th>
+                  <th>Latest Available Status</th>
+                </tr>
+              </thead>
+              <tbody id="batchRepeatKtBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- TAB 5: Topper Analysis -->
+        <div id="tabBatchTopper" class="batch-tab-content hidden">
+          <h4 style="margin-bottom: 0.8rem;">🌟 Multi-Semester Consistent Honor Roll (Top 10 in ≥ 2 Semesters)</h4>
+          <div class="batch-table-container" style="margin-bottom: 1.5rem;">
+            <table id="batchMultiTopperTable">
+              <thead>
+                <tr>
+                  <th>Rank</th>
+                  <th>Candidate Name</th>
+                  <th>Identifier</th>
+                  <th>Times in Top 10</th>
+                  <th>Semesters Ranked in Top 10</th>
+                  <th>Cumulative Average SGPI</th>
+                </tr>
+              </thead>
+              <tbody id="batchMultiTopperBody"></tbody>
+            </table>
+          </div>
+
+          <h4 style="margin-bottom: 0.8rem;">🏆 Semester-Wise Merit Rankings</h4>
+          <div class="batch-table-container">
+            <table id="batchSemTopperTable">
+              <thead>
+                <tr>
+                  <th>Semester</th>
+                  <th>Merit Rank</th>
+                  <th>Student Name</th>
+                  <th>Seat / Identifier</th>
+                  <th>SGPI Scored</th>
+                </tr>
+              </thead>
+              <tbody id="batchSemTopperBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- TAB 6: Retention & Progression -->
+        <div id="tabBatchRetention" class="batch-tab-content hidden">
+          <h4 style="margin-bottom: 0.8rem;">👥 Semester Transition &amp; Progression Flow</h4>
+          <div class="batch-table-container" style="margin-bottom: 1.5rem;">
+            <table id="batchRetentionTable">
+              <thead>
+                <tr>
+                  <th>Semester Transition</th>
+                  <th>From Semester</th>
+                  <th>To Semester</th>
+                  <th>Initial Count</th>
+                  <th>Next Count</th>
+                  <th>Continuing Students</th>
+                  <th>Lateral / New Entry</th>
+                  <th>Continuance Rate (%)</th>
+                </tr>
+              </thead>
+              <tbody id="batchRetentionBody"></tbody>
+            </table>
+          </div>
+          <div class="auto-learn-notice">
+            <span>ℹ️ <strong>Mandatory Academic Rule:</strong> Do not assume that a student missing from a semester dropped out. Students may take gap years, transfer, or appear in unrecorded ATKT-specific examination ledgers.</span>
+          </div>
+        </div>
+
+        <!-- TAB 7: Student Performance -->
+        <div id="tabBatchPerformance" class="batch-tab-content hidden">
+          <div id="batchPerformanceCategories"></div>
+        </div>
+
+        <!-- TAB 8: Data Quality Log -->
+        <div id="tabBatchQuality" class="batch-tab-content hidden">
+          <h4 style="margin-bottom: 0.8rem;">🛡️ Non-Destructive Data Quality Audit Log</h4>
+          <div class="batch-table-container">
+            <table id="batchQualityTable">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Issue Category</th>
+                  <th>Semester</th>
+                  <th>Student Identifier</th>
+                  <th>Student Name</th>
+                  <th>Anomaly Description</th>
+                  <th>Severity</th>
+                  <th>Action Protocol</th>
+                </tr>
+              </thead>
+              <tbody id="batchQualityBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- TAB 9: Semester Data Trace -->
+        <div id="tabBatchData" class="batch-tab-content hidden">
+          <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+            <label for="batchRawSemSelect" style="font-weight: 700; font-size: 0.88rem;">Select Semester to Inspect:</label>
+            <select id="batchRawSemSelect" class="form-select form-select-sm" style="max-width: 200px;"></select>
+          </div>
+          <div class="batch-table-container">
+            <table id="batchRawDataTable">
+              <thead>
+                <tr>
+                  <th>Sr No</th>
+                  <th>Seat No</th>
+                  <th>Student Name</th>
+                  <th>PRN / Reg No</th>
+                  <th>Result Status</th>
+                  <th>SGPI</th>
+                  <th>KT Count</th>
+                  <th>Total Marks</th>
+                  <th>Source File Trace</th>
+                </tr>
+              </thead>
+              <tbody id="batchRawDataBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
 
     <!-- Cloud AI & Hybrid Routing Settings Modal -->
     <div id="cloudModalOverlay" class="modal-overlay hidden">
