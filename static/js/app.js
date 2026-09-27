@@ -983,6 +983,41 @@ async function initCloudModal() {
     custom: []
   };
 
+  // Cloud Modal Segmented Tabs
+  const cloudTabs = document.querySelectorAll(".cloud-tab-btn");
+  const cloudPanels = document.querySelectorAll(".cloud-tab-panel");
+
+  function switchToCloudTab(targetPanelId) {
+    cloudTabs.forEach(b => {
+      if (b.getAttribute("data-target-panel") === targetPanelId) {
+        b.classList.add("active");
+      } else {
+        b.classList.remove("active");
+      }
+    });
+    cloudPanels.forEach(p => {
+      if (p.id === targetPanelId) {
+        p.classList.remove("hidden");
+      } else {
+        p.classList.add("hidden");
+      }
+    });
+  }
+
+  cloudTabs.forEach(btn => {
+    btn.addEventListener("click", () => {
+      const targetId = btn.getAttribute("data-target-panel");
+      if (targetId) switchToCloudTab(targetId);
+    });
+  });
+
+  // Escape key to close Cloud Modal
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && modalOverlay && !modalOverlay.classList.contains("hidden")) {
+      closeModal();
+    }
+  });
+
   // Eye toggle buttons for showing / hiding passwords
   document.querySelectorAll(".btn-toggle-eye").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -1041,10 +1076,12 @@ async function initCloudModal() {
       { id: "deepseek", badge: deepseekKeyBadge }
     ];
 
+    let configuredCount = 0;
     list.forEach(item => {
       if (!item.badge) return;
       const mask = maskedKeys[item.id];
       if (mask && mask.trim()) {
+        configuredCount++;
         item.badge.className = "key-status-badge configured";
         item.badge.textContent = `🟢 Saved (${mask})`;
       } else {
@@ -1052,6 +1089,11 @@ async function initCloudModal() {
         item.badge.textContent = "⚪ Not set";
       }
     });
+
+    const pillCount = document.getElementById("tabPillKeysCount");
+    if (pillCount) {
+      pillCount.textContent = configuredCount > 0 ? `${configuredCount} Active / 5 Providers` : "5 Providers";
+    }
   }
 
   async function updateProviderUI(provider, targetModel = null) {
@@ -1181,6 +1223,7 @@ async function initCloudModal() {
   // Probe All Keys Button
   if (probeAllBtn) {
     probeAllBtn.addEventListener("click", async () => {
+      switchToCloudTab("cloudTabPanelDiagnostics");
       probeAllBtn.disabled = true;
       const origText = probeAllBtn.textContent;
       probeAllBtn.textContent = "⏳ Probing Keys...";
@@ -1222,11 +1265,40 @@ async function initCloudModal() {
             }
           };
 
+          const updateDiagCard = (cardId, statusId, latencyId, repProv) => {
+            const card = document.getElementById(cardId);
+            const statusEl = document.getElementById(statusId);
+            const latEl = document.getElementById(latencyId);
+            if (!card || !statusEl || !latEl) return;
+            if (!repProv || !repProv.configured) {
+              card.className = "diag-card";
+              statusEl.textContent = "Not set";
+              latEl.textContent = "Standby";
+              latEl.style.color = "var(--text-muted)";
+            } else if (repProv.success) {
+              card.className = "diag-card success";
+              statusEl.textContent = "Online";
+              latEl.textContent = `${repProv.latency_ms} ms`;
+              latEl.style.color = "#34D399";
+            } else {
+              card.className = "diag-card error";
+              statusEl.textContent = "Failed";
+              latEl.textContent = "Error";
+              latEl.style.color = "#F87171";
+            }
+          };
+
           updateBadgeHelper(groqKeyBadge, rep.groq);
           updateBadgeHelper(geminiKeyBadge, rep.gemini);
           updateBadgeHelper(openaiKeyBadge, rep.openai);
           updateBadgeHelper(anthropicKeyBadge, rep.anthropic);
           updateBadgeHelper(deepseekKeyBadge, rep.deepseek);
+
+          updateDiagCard("diagGroqCard", "diagGroqStatus", "diagGroqLatency", rep.groq);
+          updateDiagCard("diagGeminiCard", "diagGeminiStatus", "diagGeminiLatency", rep.gemini);
+          updateDiagCard("diagAnthropicCard", "diagAnthropicStatus", "diagAnthropicLatency", rep.anthropic);
+          updateDiagCard("diagDeepseekCard", "diagDeepseekStatus", "diagDeepseekLatency", rep.deepseek);
+          updateDiagCard("diagOpenaiCard", "diagOpenaiStatus", "diagOpenaiLatency", rep.openai);
 
           if (data.config) {
             updateLockedBanner(data.config);
