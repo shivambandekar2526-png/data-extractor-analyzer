@@ -63,6 +63,25 @@ DEFAULT_PROVIDERS = {
         ],
         "base_url": "https://api.openai.com/v1"
     },
+    "anthropic": {
+        "name": "Anthropic Claude",
+        "default_model": "claude-3-5-sonnet-20241022",
+        "available_models": [
+            "claude-3-5-sonnet-20241022",
+            "claude-3-5-haiku-20241022",
+            "claude-3-opus-20240229"
+        ],
+        "base_url": "https://api.anthropic.com/v1"
+    },
+    "deepseek": {
+        "name": "DeepSeek",
+        "default_model": "deepseek-chat",
+        "available_models": [
+            "deepseek-chat",
+            "deepseek-reasoner"
+        ],
+        "base_url": "https://api.deepseek.com"
+    },
     "custom": {
         "name": "Custom OpenAI-Compatible",
         "default_model": "default",
@@ -76,11 +95,15 @@ DEFAULT_PROVIDERS = {
 ORCHESTRATION_CANDIDATES = [
     {"provider": "gemini", "model": "gemini-flash-latest", "label": "Google Gemini Flash (250k TPM)", "supports_vision": True},
     {"provider": "gemini", "model": "gemini-flash-lite-latest", "label": "Google Gemini Flash Lite", "supports_vision": True},
+    {"provider": "anthropic", "model": "claude-3-5-sonnet-20241022", "label": "Anthropic Claude 3.5 Sonnet", "supports_vision": True},
+    {"provider": "deepseek", "model": "deepseek-chat", "label": "DeepSeek V3 (64k Context)", "supports_vision": False},
+    {"provider": "groq", "model": "llama-3.3-70b-versatile", "label": "Groq Llama 3.3 70B (30k TPM)", "supports_vision": False},
+    {"provider": "openai", "model": "gpt-4o-mini", "label": "OpenAI GPT-4o-mini", "supports_vision": True},
+    {"provider": "anthropic", "model": "claude-3-5-haiku-20241022", "label": "Anthropic Claude 3.5 Haiku", "supports_vision": True},
+    {"provider": "deepseek", "model": "deepseek-reasoner", "label": "DeepSeek R1 Reasoner", "supports_vision": False},
     {"provider": "gemini", "model": "gemini-2.5-flash", "label": "Google Gemini 2.5 Flash", "supports_vision": True},
     {"provider": "gemini", "model": "gemini-2.5-flash-lite", "label": "Google Gemini 2.5 Flash Lite", "supports_vision": True},
-    {"provider": "groq", "model": "llama-3.3-70b-versatile", "label": "Groq Llama 3.3 70B (30k TPM)", "supports_vision": False},
     {"provider": "groq", "model": "llama-3.1-8b-instant", "label": "Groq Llama 3.1 8B Instant (30k TPM)", "supports_vision": False},
-    {"provider": "openai", "model": "gpt-4o-mini", "label": "OpenAI GPT-4o-mini", "supports_vision": True},
     {"provider": "groq", "model": "qwen/qwen3.8-27b", "label": "Groq Fast Reasoning (27B)", "supports_vision": False},
     {"provider": "openai", "model": "gpt-4o", "label": "OpenAI GPT-4o Flagship", "supports_vision": True},
     {"provider": "groq", "model": "openai/gpt-oss-120b", "label": "Groq Flagship (120B, 8k TPM)", "supports_vision": False}
@@ -101,6 +124,10 @@ class CloudClient:
 
     # Provider cooldown tracker: maps "provider" to expiration timestamp (for 429 rate limits)
     _provider_cooldowns: Dict[str, float] = {}
+
+    # Multi-Key Pool trackers: maps "provider:key_prefix" to expiration timestamp, and "provider" to active pool index
+    _key_cooldowns: Dict[str, float] = {}
+    _key_pool_indices: Dict[str, int] = {}
 
     # Global cumulative token metrics across all CloudClient instances in the process
     _global_token_usage: Dict[str, int] = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
@@ -139,6 +166,8 @@ class CloudClient:
                 "groq": "",
                 "gemini": "",
                 "openai": "",
+                "anthropic": "",
+                "deepseek": "",
                 "custom": ""
             },
             "provider": "groq",
@@ -178,6 +207,8 @@ class CloudClient:
             for p, k in new_cfg["api_keys"].items():
                 if isinstance(k, str) and k.strip():
                     self.config["api_keys"][p.lower()] = k.strip()
+                elif isinstance(k, list):
+                    self.config["api_keys"][p.lower()] = [str(item).strip() for item in k if str(item).strip()]
 
         # Support single api_key update
         if "api_key" in new_cfg and isinstance(new_cfg["api_key"], str):
@@ -191,7 +222,7 @@ class CloudClient:
 
         # Sync primary api_key field for backward compatibility
         cur_prov = self.config.get("provider", "groq").lower()
-        self.config["api_key"] = self.config.get("api_keys", {}).get(cur_prov, "")
+        self.config["api_key"] = self.get_api_key(cur_prov)
 
         # If user explicitly changed provider/model, update the locked model
         if "provider" in new_cfg or "model" in new_cfg:
@@ -207,41 +238,114 @@ class CloudClient:
         except Exception as e:
             return False, f"Failed to write config: {e}"
 
-    def get_api_key(self, provider: Optional[str] = None) -> str:
-        """Retrieve the API key for the requested provider."""
+    def get_key_pool(self, provider: Optional[str] = None) -> List[str]:
+        """Return list of valid, non-empty API keys for a provider (supports comma/newline/semicolon pools)."""
         prov = (provider or self.config.get("provider", "groq")).lower()
         keys_dict = self.config.get("api_keys", {})
-        key = keys_dict.get(prov, "").strip()
-        if not key and prov == self.config.get("provider", "").lower():
-            key = self.config.get("api_key", "").strip()
-        return key
+        raw = keys_dict.get(prov, "")
+        if not raw and prov == self.config.get("provider", "").lower():
+            raw = self.config.get("api_key", "")
+        if isinstance(raw, list):
+            return [str(k).strip() for k in raw if str(k).strip()]
+        if isinstance(raw, str):
+            tokens = re.split(r"[\n,;]+", raw)
+            return [t.strip() for t in tokens if t.strip()]
+        return []
+
+    def get_api_key(self, provider: Optional[str] = None) -> str:
+        """Retrieve the currently active API key from the provider's key pool, respecting cooldowns."""
+        prov = (provider or self.config.get("provider", "groq")).lower()
+        pool = self.get_key_pool(prov)
+        if not pool:
+            return ""
+        now = time.time()
+        start_idx = CloudClient._key_pool_indices.get(prov, 0)
+        # Search for first non-cooling key
+        for i in range(len(pool)):
+            k_candidate = pool[(start_idx + i) % len(pool)]
+            cd = CloudClient._key_cooldowns.get(f"{prov}:{k_candidate[:12]}", 0.0)
+            if now >= cd:
+                CloudClient._key_pool_indices[prov] = (start_idx + i) % len(pool)
+                return k_candidate
+        # Fallback to current index if all cooling
+        return pool[start_idx % len(pool)]
+
+    def rotate_key(
+        self,
+        provider: Optional[str] = None,
+        failed_key: Optional[str] = None,
+        cooldown_seconds: int = 60
+    ) -> Optional[str]:
+        """
+        Mark failed_key on cooldown and rotate pointer to next available key in the provider pool.
+        Returns the new active key, or None if pool has <= 1 key or all are cooling.
+        """
+        prov = (provider or self.config.get("provider", "groq")).lower()
+        pool = self.get_key_pool(prov)
+        if len(pool) <= 1:
+            return None
+
+        if failed_key:
+            CloudClient._key_cooldowns[f"{prov}:{failed_key[:12]}"] = time.time() + cooldown_seconds
+
+        now = time.time()
+        start_idx = (CloudClient._key_pool_indices.get(prov, 0) + 1) % len(pool)
+        for i in range(len(pool)):
+            k_candidate = pool[(start_idx + i) % len(pool)]
+            cd = CloudClient._key_cooldowns.get(f"{prov}:{k_candidate[:12]}", 0.0)
+            if now >= cd:
+                CloudClient._key_pool_indices[prov] = (start_idx + i) % len(pool)
+                return k_candidate
+        return None
 
     def is_configured(self) -> bool:
         """Check if at least one AI provider has an API key configured and cloud AI is enabled."""
         if not self.config.get("enabled", True):
             return False
-        keys_dict = self.config.get("api_keys", {})
-        if any(bool(k.strip()) for k in keys_dict.values()):
-            return True
+        for p in ["groq", "gemini", "openai", "anthropic", "deepseek", "custom"]:
+            if len(self.get_key_pool(p)) > 0:
+                return True
         return bool(self.config.get("api_key", "").strip())
 
     @staticmethod
-    def mask_key(key: str) -> str:
-        """Return masked key for safe UI display (e.g. gsk_7y4...ZR2V)."""
-        k = (key or "").strip()
-        if not k:
+    def mask_key(key: Any) -> str:
+        """Return masked key or pool summary for safe UI display (e.g. gsk_7y4...ZR2V or '2 keys pool')."""
+        if not key:
             return ""
+        if isinstance(key, list):
+            tokens = [str(k).strip() for k in key if str(k).strip()]
+        else:
+            tokens = [t.strip() for t in re.split(r"[\n,;]+", str(key)) if t.strip()]
+        if not tokens:
+            return ""
+        if len(tokens) > 1:
+            first_m = CloudClient._mask_single_key(tokens[0])
+            return f"{len(tokens)} keys pool ({first_m})"
+        return CloudClient._mask_single_key(tokens[0])
+
+    @staticmethod
+    def _mask_single_key(k: str) -> str:
+        k = k.strip()
         if len(k) <= 8:
             return k[:2] + "•" * (len(k) - 2)
         return k[:6] + "•" * (len(k) - 10) + k[-4:]
 
     def get_safe_config(self) -> Dict[str, Any]:
         """Return configuration safe for frontend rendering (never exposes raw API keys)."""
-        keys_dict = self.config.get("api_keys", {})
         active_locked = CloudClient._locked_model or {
             "provider": self.config.get("provider", "groq"),
             "model": self.config.get("model", "openai/gpt-oss-120b")
         }
+
+        all_provs = ["groq", "gemini", "openai", "anthropic", "deepseek", "custom"]
+        keys_summary = {}
+        for prov in all_provs:
+            pool = self.get_key_pool(prov)
+            keys_summary[prov] = {
+                "count": len(pool),
+                "is_configured": len(pool) > 0,
+                "preview": self.mask_key(self.config.get("api_keys", {}).get(prov, ""))
+            }
 
         return {
             "provider": self.config.get("provider", "groq"),
@@ -253,11 +357,12 @@ class CloudClient:
             "is_configured": self.is_configured(),
             "locked_model": active_locked,
             "api_keys_status": {
-                p: bool(self.get_api_key(p)) for p in ["groq", "gemini", "openai", "custom"]
+                p: (len(self.get_key_pool(p)) > 0) for p in all_provs
             },
             "masked_keys": {
-                p: self.mask_key(self.get_api_key(p)) for p in ["groq", "gemini", "openai", "custom"]
+                p: self.mask_key(self.config.get("api_keys", {}).get(p, "")) for p in all_provs
             },
+            "keys_summary": keys_summary,
             "available_providers": DEFAULT_PROVIDERS
         }
 
@@ -302,7 +407,24 @@ class CloudClient:
                         return True, f"Verified ({lat}ms)", lat
                     return False, f"Unexpected HTTP status {resp.status}", lat
 
-            else:  # Groq, OpenAI, or Custom
+            elif prov == "anthropic":
+                url = "https://api.anthropic.com/v1/messages"
+                headers["x-api-key"] = key
+                headers["anthropic-version"] = "2023-06-01"
+                payload = {
+                    "model": model,
+                    "max_tokens": 5,
+                    "messages": [{"role": "user", "content": "Respond with OK"}]
+                }
+                data_bytes = json.dumps(payload).encode("utf-8")
+                req = urllib.request.Request(url, data=data_bytes, headers=headers)
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    lat = round((time.time() - t0) * 1000)
+                    if resp.status == 200:
+                        return True, f"Verified ({lat}ms)", lat
+                    return False, f"Unexpected HTTP status {resp.status}", lat
+
+            else:  # Groq, OpenAI, DeepSeek, or Custom
                 base_url = self.config.get("custom_base_url") if prov == "custom" else DEFAULT_PROVIDERS.get(prov, {}).get("base_url", "https://api.openai.com/v1")
                 url = f"{base_url.rstrip('/')}/chat/completions"
                 headers["Authorization"] = f"Bearer {key}"
@@ -519,11 +641,32 @@ class CloudClient:
                         mid = m.get("id", "")
                         if mid.startswith("gpt-") or "o1" in mid or "o3" in mid:
                             live_models.append(mid)
+
+            elif prov == "deepseek" and key:
+                url = "https://api.deepseek.com/models"
+                headers["Authorization"] = f"Bearer {key}"
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=6) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    for m in data.get("data", []):
+                        live_models.append(m.get("id", ""))
+
+            elif prov == "anthropic" and key:
+                url = "https://api.anthropic.com/v1/models"
+                headers["x-api-key"] = key
+                headers["anthropic-version"] = "2023-06-01"
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=6) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    for m in data.get("data", []):
+                        live_models.append(m.get("id", ""))
         except Exception:
             pass
 
         if live_models:
             priority_order = [
+                "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022",
+                "deepseek-chat", "deepseek-reasoner",
                 "openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b", "allam-2-7b",
                 "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-2.5-flash", "gemini-2.5-pro",
                 "gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"
@@ -738,7 +881,69 @@ class CloudClient:
             session["gemini_contents"] = contents
             return reply_text
 
-        # --- OpenAI / Groq / Custom ---
+        # --- Anthropic Claude ---
+        elif provider == "anthropic":
+            url = "https://api.anthropic.com/v1/messages"
+            headers["x-api-key"] = api_key
+            headers["anthropic-version"] = "2023-06-01"
+
+            messages = list(session.get("messages", []))
+            if is_new or len(messages) == 0:
+                full_ctx = self._build_dataset_context(students, dataset_summary)
+                messages = [
+                    {
+                        "role": "user",
+                        "content": f"{system_instruction}\n\n{full_ctx}\n\n{user_turn_text}"
+                    }
+                ]
+            else:
+                messages.append({"role": "user", "content": user_turn_text})
+
+            payload = {
+                "model": model,
+                "max_tokens": 4096,
+                "temperature": temperature,
+                "messages": messages
+            }
+            if system_instruction:
+                payload["system"] = system_instruction
+
+            data_bytes = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(url, data=data_bytes, headers=headers)
+
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                resp_data = json.loads(resp.read().decode("utf-8"))
+
+            content_blocks = resp_data.get("content", [])
+            reply_text = "".join(b.get("text", "") for b in content_blocks if b.get("type") == "text")
+            reply_text = re.sub(r"^```(?:json)?\s*", "", reply_text.strip(), flags=re.IGNORECASE)
+            reply_text = re.sub(r"\s*```$", "", reply_text).strip()
+
+            usage_meta = resp_data.get("usage", {})
+            in_tok = int(usage_meta.get("input_tokens", 0) or 0)
+            out_tok = int(usage_meta.get("output_tokens", 0) or 0)
+            tot_tok = in_tok + out_tok
+            if in_tok == 0 and user_turn_text:
+                in_tok = max(1, len(user_turn_text) // 4)
+            if out_tok == 0 and reply_text:
+                out_tok = max(1, len(reply_text) // 4)
+            if tot_tok == 0:
+                tot_tok = in_tok + out_tok
+            self.token_usage["input_tokens"] += in_tok
+            self.token_usage["output_tokens"] += out_tok
+            self.token_usage["total_tokens"] += tot_tok
+            self.last_call_tokens = {"input_tokens": in_tok, "output_tokens": out_tok, "total_tokens": tot_tok}
+            CloudClient._global_token_usage["input_tokens"] += in_tok
+            CloudClient._global_token_usage["output_tokens"] += out_tok
+            CloudClient._global_token_usage["total_tokens"] += tot_tok
+
+            messages.append({"role": "assistant", "content": reply_text})
+            if len(messages) > 24:
+                messages = messages[:2] + messages[-16:]
+            session["messages"] = messages
+            return reply_text
+
+        # --- OpenAI / Groq / DeepSeek / Custom ---
         else:
             base_url = self.config.get("custom_base_url") if provider == "custom" else DEFAULT_PROVIDERS.get(provider, {}).get("base_url", "https://api.openai.com/v1")
             url = f"{base_url.rstrip('/')}/chat/completions"
@@ -1023,7 +1228,54 @@ class CloudClient:
                         out_tok = int(usage_meta.get("candidatesTokenCount", 0) or 0)
                         tot_tok = int(usage_meta.get("totalTokenCount", 0) or (in_tok + out_tok))
 
-                    # 2. OpenAI / Groq / Custom
+                    # 2. Anthropic Claude (with multimodal vision & structured JSON)
+                    elif provider == "anthropic":
+                        url = "https://api.anthropic.com/v1/messages"
+                        req_headers = dict(headers)
+                        req_headers["x-api-key"] = api_key
+                        req_headers["anthropic-version"] = "2023-06-01"
+
+                        user_content = []
+                        if image_bytes:
+                            b64_data = base64.b64encode(image_bytes).decode("utf-8")
+                            user_content.append({
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": image_mime,
+                                    "data": b64_data
+                                }
+                            })
+                        user_content.append({"type": "text", "text": user_prompt})
+
+                        payload = {
+                            "model": model,
+                            "max_tokens": 4096,
+                            "temperature": temperature,
+                            "messages": [{"role": "user", "content": user_content}]
+                        }
+                        sys_txt = system_instruction
+                        if format_json:
+                            sys_txt = (sys_txt + "\n" if sys_txt else "") + "Strict requirement: Return ONLY valid raw RFC-8259 JSON matching the required schema. Do NOT include markdown code blocks or backticks."
+                        if sys_txt:
+                            payload["system"] = sys_txt
+
+                        data_bytes = json.dumps(payload).encode("utf-8")
+                        req = urllib.request.Request(url, data=data_bytes, headers=req_headers)
+                        with urllib.request.urlopen(req, timeout=timeout) as resp:
+                            resp_data = json.loads(resp.read().decode("utf-8"))
+
+                        content_blocks = resp_data.get("content", [])
+                        raw_reply = "".join(b.get("text", "") for b in content_blocks if b.get("type") == "text")
+                        reply_text = re.sub(r"^```(?:json)?\s*", "", raw_reply.strip(), flags=re.IGNORECASE)
+                        reply_text = re.sub(r"\s*```$", "", reply_text).strip()
+
+                        usage_meta = resp_data.get("usage", {})
+                        in_tok = int(usage_meta.get("input_tokens", 0) or 0)
+                        out_tok = int(usage_meta.get("output_tokens", 0) or 0)
+                        tot_tok = in_tok + out_tok
+
+                    # 3. OpenAI / Groq / DeepSeek / Custom
                     else:
                         base_url = self.config.get("custom_base_url") if provider == "custom" else DEFAULT_PROVIDERS.get(provider, {}).get("base_url", "https://api.openai.com/v1")
                         url = f"{base_url.rstrip('/')}/chat/completions"
@@ -1159,6 +1411,31 @@ class CloudClient:
                         msg = err_body[:250] if err_body else str(he)
                         last_error = RuntimeError(f"HTTP 413 from {provider}: {msg}")
                         break
+
+                    if is_rate_limit:
+                        # Multi-Key Pool Rotation: check if provider has another key configured
+                        rotated_key = self.rotate_key(provider, failed_key=api_key, cooldown_seconds=60)
+                        if rotated_key:
+                            api_key = rotated_key
+                            pool = self.get_key_pool(provider)
+                            active_idx = CloudClient._key_pool_indices.get(provider, 0) + 1
+                            if audit_cb:
+                                try:
+                                    audit_cb({
+                                        "timestamp": time.strftime("%H:%M:%S"),
+                                        "type": "key_rotation",
+                                        "badge": "KEY POOL ROTATE",
+                                        "title": f"Rate limit on {provider.upper()}. Rotated to Key #{active_idx} of {len(pool)} in pool",
+                                        "details": {
+                                            "provider": provider,
+                                            "active_key_index": active_idx,
+                                            "pool_size": len(pool),
+                                            "model": model
+                                        }
+                                    })
+                                except Exception:
+                                    pass
+                            continue
 
                     if is_rate_limit and rate_attempt <= max_rate_retries:
                         # Extract wait time from Retry-After header or response body

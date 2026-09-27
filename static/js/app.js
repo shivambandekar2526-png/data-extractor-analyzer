@@ -940,9 +940,13 @@ async function initCloudModal() {
   const groqKeyInput = document.getElementById("cloudApiKeyGroq");
   const geminiKeyInput = document.getElementById("cloudApiKeyGemini");
   const openaiKeyInput = document.getElementById("cloudApiKeyOpenAI");
+  const anthropicKeyInput = document.getElementById("cloudApiKeyAnthropic");
+  const deepseekKeyInput = document.getElementById("cloudApiKeyDeepseek");
   const groqKeyBadge = document.getElementById("groqKeyBadge");
   const geminiKeyBadge = document.getElementById("geminiKeyBadge");
   const openaiKeyBadge = document.getElementById("openaiKeyBadge");
+  const anthropicKeyBadge = document.getElementById("anthropicKeyBadge");
+  const deepseekKeyBadge = document.getElementById("deepseekKeyBadge");
 
   // Active Locked Banner Elements
   const lockedModelTitle = document.getElementById("lockedModelTitle");
@@ -966,6 +970,15 @@ async function initCloudModal() {
       { id: "gpt-4o-mini", label: "gpt-4o-mini (Recommended - Efficient & Fast)" },
       { id: "gpt-4o", label: "gpt-4o (Flagship Multimodal)" },
       { id: "gpt-3.5-turbo", label: "gpt-3.5-turbo (Legacy Fast)" }
+    ],
+    anthropic: [
+      { id: "claude-3-5-sonnet-20241022", label: "claude-3-5-sonnet-20241022 (Recommended - Flagship 3.5)" },
+      { id: "claude-3-5-haiku-20241022", label: "claude-3-5-haiku-20241022 (Ultra Fast Haiku)" },
+      { id: "claude-3-opus-20240229", label: "claude-3-opus-20240229 (Legacy Opus)" }
+    ],
+    deepseek: [
+      { id: "deepseek-chat", label: "deepseek-chat (Recommended - V3 Flagship)" },
+      { id: "deepseek-reasoner", label: "deepseek-reasoner (R1 Deep Reasoning)" }
     ],
     custom: []
   };
@@ -1023,7 +1036,9 @@ async function initCloudModal() {
     const list = [
       { id: "groq", badge: groqKeyBadge },
       { id: "gemini", badge: geminiKeyBadge },
-      { id: "openai", badge: openaiKeyBadge }
+      { id: "openai", badge: openaiKeyBadge },
+      { id: "anthropic", badge: anthropicKeyBadge },
+      { id: "deepseek", badge: deepseekKeyBadge }
     ];
 
     list.forEach(item => {
@@ -1181,6 +1196,8 @@ async function initCloudModal() {
         if (groqKeyInput && groqKeyInput.value.trim()) payload.api_keys.groq = groqKeyInput.value.trim();
         if (geminiKeyInput && geminiKeyInput.value.trim()) payload.api_keys.gemini = geminiKeyInput.value.trim();
         if (openaiKeyInput && openaiKeyInput.value.trim()) payload.api_keys.openai = openaiKeyInput.value.trim();
+        if (anthropicKeyInput && anthropicKeyInput.value.trim()) payload.api_keys.anthropic = anthropicKeyInput.value.trim();
+        if (deepseekKeyInput && deepseekKeyInput.value.trim()) payload.api_keys.deepseek = deepseekKeyInput.value.trim();
 
         const res = await fetch("/api/cloud/probe-all", {
           method: "POST",
@@ -1191,45 +1208,25 @@ async function initCloudModal() {
 
         if (data.success && data.report) {
           const rep = data.report;
-          // Update Groq badge
-          if (groqKeyBadge && rep.groq) {
-            if (rep.groq.success) {
-              groqKeyBadge.className = "key-status-badge success";
-              groqKeyBadge.textContent = `✓ Active (${rep.groq.latency_ms}ms)`;
-            } else if (rep.groq.configured) {
-              groqKeyBadge.className = "key-status-badge error";
-              groqKeyBadge.textContent = `✗ ${rep.groq.message.slice(0, 24)}`;
+          const updateBadgeHelper = (badge, repProv) => {
+            if (!badge || !repProv) return;
+            if (repProv.success) {
+              badge.className = "key-status-badge success";
+              badge.textContent = `✓ Active (${repProv.latency_ms}ms)`;
+            } else if (repProv.configured) {
+              badge.className = "key-status-badge error";
+              badge.textContent = `✗ ${repProv.message.slice(0, 24)}`;
             } else {
-              groqKeyBadge.className = "key-status-badge missing";
-              groqKeyBadge.textContent = "⚪ No key";
+              badge.className = "key-status-badge missing";
+              badge.textContent = "⚪ No key";
             }
-          }
-          // Update Gemini badge
-          if (geminiKeyBadge && rep.gemini) {
-            if (rep.gemini.success) {
-              geminiKeyBadge.className = "key-status-badge success";
-              geminiKeyBadge.textContent = `✓ Active (${rep.gemini.latency_ms}ms)`;
-            } else if (rep.gemini.configured) {
-              geminiKeyBadge.className = "key-status-badge error";
-              geminiKeyBadge.textContent = `✗ ${rep.gemini.message.slice(0, 24)}`;
-            } else {
-              geminiKeyBadge.className = "key-status-badge missing";
-              geminiKeyBadge.textContent = "⚪ No key";
-            }
-          }
-          // Update OpenAI badge
-          if (openaiKeyBadge && rep.openai) {
-            if (rep.openai.success) {
-              openaiKeyBadge.className = "key-status-badge success";
-              openaiKeyBadge.textContent = `✓ Active (${rep.openai.latency_ms}ms)`;
-            } else if (rep.openai.configured) {
-              openaiKeyBadge.className = "key-status-badge error";
-              openaiKeyBadge.textContent = `✗ ${rep.openai.message.slice(0, 24)}`;
-            } else {
-              openaiKeyBadge.className = "key-status-badge missing";
-              openaiKeyBadge.textContent = "⚪ No key";
-            }
-          }
+          };
+
+          updateBadgeHelper(groqKeyBadge, rep.groq);
+          updateBadgeHelper(geminiKeyBadge, rep.gemini);
+          updateBadgeHelper(openaiKeyBadge, rep.openai);
+          updateBadgeHelper(anthropicKeyBadge, rep.anthropic);
+          updateBadgeHelper(deepseekKeyBadge, rep.deepseek);
 
           if (data.config) {
             updateLockedBanner(data.config);
@@ -1279,6 +1276,8 @@ async function initCloudModal() {
         if (curProv === "groq" && groqKeyInput) testKey = groqKeyInput.value.trim();
         else if (curProv === "gemini" && geminiKeyInput) testKey = geminiKeyInput.value.trim();
         else if (curProv === "openai" && openaiKeyInput) testKey = openaiKeyInput.value.trim();
+        else if (curProv === "anthropic" && anthropicKeyInput) testKey = anthropicKeyInput.value.trim();
+        else if (curProv === "deepseek" && deepseekKeyInput) testKey = deepseekKeyInput.value.trim();
 
         const payload = {
           provider: curProv,
@@ -1343,6 +1342,12 @@ async function initCloudModal() {
         if (openaiKeyInput && openaiKeyInput.value.trim()) {
           payload.api_keys.openai = openaiKeyInput.value.trim();
         }
+        if (anthropicKeyInput && anthropicKeyInput.value.trim()) {
+          payload.api_keys.anthropic = anthropicKeyInput.value.trim();
+        }
+        if (deepseekKeyInput && deepseekKeyInput.value.trim()) {
+          payload.api_keys.deepseek = deepseekKeyInput.value.trim();
+        }
 
         const res = await fetch("/api/cloud/config", {
           method: "POST",
@@ -1355,6 +1360,8 @@ async function initCloudModal() {
           if (groqKeyInput) groqKeyInput.value = "";
           if (geminiKeyInput) geminiKeyInput.value = "";
           if (openaiKeyInput) openaiKeyInput.value = "";
+          if (anthropicKeyInput) anthropicKeyInput.value = "";
+          if (deepseekKeyInput) deepseekKeyInput.value = "";
 
           closeModal();
           initStatus(); // refresh header status badge

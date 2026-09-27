@@ -379,6 +379,176 @@ class TestVisualBlueprintPipeline(unittest.TestCase):
         self.assertIn('id="tokenPill"', html)
         self.assertIn('id="aiStatTokens"', html)
 
+    def test_multi_key_pool_parsing_and_rotation(self):
+        """Test multi-key pool parsing, masking, rotation and cooldown."""
+        client = CloudClient()
+        client.config["api_keys"]["anthropic"] = "sk-ant-key1, sk-ant-key2; sk-ant-key3\nsk-ant-key4"
+        pool = client.get_key_pool("anthropic")
+        self.assertEqual(pool, ["sk-ant-key1", "sk-ant-key2", "sk-ant-key3", "sk-ant-key4"])
+        self.assertEqual(client.get_api_key("anthropic"), "sk-ant-key1")
+
+        masked = client.mask_key("sk-ant-key1, sk-ant-key2")
+        self.assertIn("2 keys pool", masked)
+
+        next_key = client.rotate_key("anthropic", "sk-ant-key1")
+        self.assertEqual(next_key, "sk-ant-key2")
+        self.assertEqual(client.get_api_key("anthropic"), "sk-ant-key2")
+
+    def test_anthropic_direct_generation_and_tokens(self):
+        """Test Anthropic Messages API dispatch with multimodal image and token tracking."""
+        client = CloudClient()
+        client.reset_token_usage()
+        client.config["provider"] = "anthropic"
+        client.config["model"] = "claude-3-5-sonnet-20241022"
+        client.config["api_keys"]["anthropic"] = "sk-ant-api03-mock"
+        client.config["auto_orchestrate"] = False
+
+        mock_resp = io.BytesIO(json.dumps({
+            "id": "msg_01",
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "text", "text": json.dumps({"students": [{"seat": "1001"}]})}],
+            "model": "claude-3-5-sonnet-20241022",
+            "usage": {
+                "input_tokens": 1450,
+                "output_tokens": 220
+            }
+        }).encode("utf-8"))
+
+        captured_req = []
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_cm = MagicMock()
+            mock_cm.__enter__.return_value = mock_resp
+            def side_effect(req, *args, **kwargs):
+                captured_req.append(req)
+                return mock_cm
+            mock_urlopen.side_effect = side_effect
+
+            res = client.generate_direct(
+                user_prompt="Extract students from page",
+                image_bytes=b"fake_jpeg_content"
+            )
+
+        self.assertIsNotNone(res)
+        self.assertIn("1001", res)
+        self.assertEqual(len(captured_req), 1)
+        req = captured_req[0]
+        self.assertEqual(req.get_full_url(), "https://api.anthropic.com/v1/messages")
+        self.assertEqual(req.headers.get("X-api-key"), "sk-ant-api03-mock")
+        self.assertEqual(req.headers.get("Anthropic-version"), "2023-06-01")
+
+        req_body = json.loads(req.data.decode("utf-8"))
+        self.assertIn("messages", req_body)
+        self.assertEqual(req_body["messages"][0]["role"], "user")
+        content_items = req_body["messages"][0]["content"]
+        self.assertTrue(any(c.get("type") == "image" for c in content_items))
+        self.assertTrue(any(c.get("type") == "text" for c in content_items))
+
+        usage = client.get_token_usage()
+        self.assertEqual(usage["input_tokens"], 1450)
+        self.assertEqual(usage["output_tokens"], 220)
+        self.assertEqual(usage["total_tokens"], 1670)
+
+    def test_deepseek_reasoner_generation_and_tokens(self):
+        """Test DeepSeek OpenAI-compatible endpoint dispatch and token usage."""
+        client = CloudClient()
+        client.reset_token_usage()
+        client.config["provider"] = "deepseek"
+        client.config["model"] = "deepseek-reasoner"
+        client.config["api_keys"]["deepseek"] = "sk-deepseek-mock"
+        client.config["auto_orchestrate"] = False
+
+        mock_resp = io.BytesIO(json.dumps({
+            "choices": [{
+                "message": {
+                    "content": json.dumps({"students": [{"seat": "2002"}]}),
+                    "reasoning_content": "Detailed reasoning here..."
+                }
+            }],
+            "usage": {
+                "prompt_tokens": 800,
+                "completion_tokens": 150,
+                "total_tokens": 950
+            }
+        }).encode("utf-8"))
+
+        captured_req = []
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_cm = MagicMock()
+            mock_cm.__enter__.return_value = mock_resp
+            def side_effect(req, *args, **kwargs):
+                captured_req.append(req)
+                return mock_cm
+            mock_urlopen.side_effect = side_effect
+
+            res = client.generate_direct(
+                user_prompt="Audit student records"
+            )
+
+        self.assertIsNotNone(res)
+        self.assertIn("2002", res)
+        self.assertEqual(len(captured_req), 1)
+        req = captured_req[0]
+        self.assertEqual(req.get_full_url(), "https://api.deepseek.com/chat/completions")
+        self.assertEqual(req.headers.get("Authorization"), "Bearer sk-deepseek-mock")
+
+        usage = client.get_token_usage()
+        self.assertEqual(usage["input_tokens"], 800)
+        self.assertEqual(usage["output_tokens"], 150)
+        self.assertEqual(usage["total_tokens"], 950)
+
+    def test_multi_key_pool_429_auto_rotation_in_generation(self):
+        """Test that hitting HTTP 429 rotates to the next pool key immediately."""
+        import urllib.error
+        client = CloudClient()
+        client.config["provider"] = "groq"
+        client.config["model"] = "openai/gpt-oss-120b"
+        client.config["api_keys"]["groq"] = "gsk_exhausted_key, gsk_fresh_key"
+        client.config["auto_orchestrate"] = False
+
+        mock_success_resp = io.BytesIO(json.dumps({
+            "choices": [{
+                "message": {"content": json.dumps({"recovered": True})}
+            }],
+            "usage": {"prompt_tokens": 50, "completion_tokens": 20, "total_tokens": 70}
+        }).encode("utf-8"))
+
+        call_keys = []
+        def side_effect(req, *args, **kwargs):
+            key = req.headers.get("Authorization", "").replace("Bearer ", "")
+            call_keys.append(key)
+            if key == "gsk_exhausted_key":
+                raise urllib.error.HTTPError(
+                    url=req.get_full_url(),
+                    code=429,
+                    msg="Too Many Requests",
+                    hdrs={},
+                    fp=io.BytesIO(b'{"error": {"message": "Rate limit exceeded"}}')
+                )
+            mock_cm = MagicMock()
+            mock_cm.__enter__.return_value = mock_success_resp
+            return mock_cm
+
+        with patch("urllib.request.urlopen", side_effect=side_effect):
+            res = client.generate_direct(
+                user_prompt="Quick test"
+            )
+
+        self.assertIsNotNone(res)
+        self.assertIn("recovered", res)
+        # Verify first call used exhausted key and second call used fresh key
+        self.assertEqual(call_keys, ["gsk_exhausted_key", "gsk_fresh_key"])
+
+    def test_ui_contains_anthropic_and_deepseek_options(self):
+        """Test that index.html exposes Anthropic and DeepSeek API inputs and provider options."""
+        res = self.client.get("/")
+        self.assertEqual(res.status_code, 200)
+        html = res.data.decode("utf-8")
+        self.assertIn('id="cloudApiKeyAnthropic"', html)
+        self.assertIn('id="cloudApiKeyDeepseek"', html)
+        self.assertIn('value="anthropic"', html)
+        self.assertIn('value="deepseek"', html)
+
 
 if __name__ == "__main__":
     unittest.main()

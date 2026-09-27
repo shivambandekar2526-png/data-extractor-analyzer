@@ -619,8 +619,32 @@
                 <span id="openaiKeyBadge" class="key-status-badge missing">⚪ Not set</span>
               </div>
               <div class="password-input-wrapper">
-                <input type="password" id="cloudApiKeyOpenAI" class="form-input" placeholder="sk-...">
+                <input type="password" id="cloudApiKeyOpenAI" class="form-input" placeholder="sk-... (or comma-separated pool)">
                 <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyOpenAI" title="Show / Hide">👁️</button>
+              </div>
+            </div>
+
+            <!-- Anthropic Claude Key Card -->
+            <div class="provider-key-card">
+              <div class="provider-key-header">
+                <span class="provider-name-tag">🧠 Anthropic Claude API Key <small style="color:var(--text-muted);">(Claude 3.5 Sonnet / Haiku)</small></span>
+                <span id="anthropicKeyBadge" class="key-status-badge missing">⚪ Not set</span>
+              </div>
+              <div class="password-input-wrapper">
+                <input type="password" id="cloudApiKeyAnthropic" class="form-input" placeholder="sk-ant-... (or comma-separated pool)">
+                <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyAnthropic" title="Show / Hide">👁️</button>
+              </div>
+            </div>
+
+            <!-- DeepSeek Key Card -->
+            <div class="provider-key-card">
+              <div class="provider-key-header">
+                <span class="provider-name-tag">🐋 DeepSeek API Key <small style="color:var(--text-muted);">(DeepSeek-V3 / R1 Reasoner)</small></span>
+                <span id="deepseekKeyBadge" class="key-status-badge missing">⚪ Not set</span>
+              </div>
+              <div class="password-input-wrapper">
+                <input type="password" id="cloudApiKeyDeepseek" class="form-input" placeholder="sk-... (or comma-separated pool)">
+                <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyDeepseek" title="Show / Hide">👁️</button>
               </div>
             </div>
           </div>
@@ -635,6 +659,8 @@
               <select id="cloudProviderSelect" class="form-select" style="flex: 1;">
                 <option value="groq">Groq</option>
                 <option value="gemini">Google Gemini</option>
+                <option value="anthropic">Anthropic Claude</option>
+                <option value="deepseek">DeepSeek</option>
                 <option value="openai">OpenAI</option>
                 <option value="custom">Custom</option>
               </select>
