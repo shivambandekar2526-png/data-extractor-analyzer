@@ -482,9 +482,10 @@ body.dark-theme {
   display: flex;
   gap: 0.75rem;
   margin-bottom: 0.75rem;
+  flex-wrap: wrap;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 900px) {
   .pipeline-options-row {
     flex-direction: column;
   }

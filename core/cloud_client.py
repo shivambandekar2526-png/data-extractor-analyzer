@@ -10,6 +10,7 @@ Features:
 - Persistent dataset context token caching to minimize prompt payload and costs.
 """
 
+import base64
 import hashlib
 import json
 import logging
@@ -32,12 +33,12 @@ USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 DEFAULT_PROVIDERS = {
     "groq": {
         "name": "Groq",
-        "default_model": "openai/gpt-oss-120b",
+        "default_model": "llama-3.3-70b-versatile",
         "available_models": [
-            "openai/gpt-oss-120b",
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
             "qwen/qwen3.8-27b",
-            "openai/gpt-oss-20b",
-            "allam-2-7b"
+            "openai/gpt-oss-120b"
         ],
         "base_url": "https://api.groq.com/openai/v1"
     },
@@ -71,17 +72,17 @@ DEFAULT_PROVIDERS = {
 }
 
 # Hierarchy of candidates for automatic orchestration (ranked by speed, capability, & quota)
-# Alternating providers ensures failover seamlessly switches providers if an API key is rate-limited
+# Uses high-TPM models (e.g. Llama 3.3 70B: 30k TPM, Gemini Flash: 250k TPM) to prevent HTTP 413/429
 ORCHESTRATION_CANDIDATES = [
-    {"provider": "groq", "model": "openai/gpt-oss-120b", "label": "Groq Flagship (120B)"},
-    {"provider": "gemini", "model": "gemini-flash-latest", "label": "Google Gemini Flash (Latest)"},
-    {"provider": "groq", "model": "qwen/qwen3.8-27b", "label": "Groq Fast Reasoning (27B)"},
+    {"provider": "gemini", "model": "gemini-flash-latest", "label": "Google Gemini Flash (250k TPM)"},
+    {"provider": "groq", "model": "llama-3.3-70b-versatile", "label": "Groq Llama 3.3 70B (30k TPM)"},
     {"provider": "gemini", "model": "gemini-2.5-flash", "label": "Google Gemini 2.5 Flash"},
+    {"provider": "groq", "model": "llama-3.1-8b-instant", "label": "Groq Llama 3.1 8B Instant (30k TPM)"},
     {"provider": "openai", "model": "gpt-4o-mini", "label": "OpenAI GPT-4o-mini"},
-    {"provider": "groq", "model": "openai/gpt-oss-20b", "label": "Groq Lightweight (20B)"},
+    {"provider": "groq", "model": "qwen/qwen3.8-27b", "label": "Groq Fast Reasoning (27B)"},
     {"provider": "gemini", "model": "gemini-flash-lite-latest", "label": "Google Gemini Flash Lite"},
     {"provider": "openai", "model": "gpt-4o", "label": "OpenAI GPT-4o Flagship"},
-    {"provider": "gemini", "model": "gemini-2.5-pro", "label": "Google Gemini 2.5 Pro"}
+    {"provider": "groq", "model": "openai/gpt-oss-120b", "label": "Groq Flagship (120B, 8k TPM)"}
 ]
 
 
@@ -840,12 +841,14 @@ class CloudClient:
         format_json: bool = True,
         timeout: int = 40,
         temperature: float = 0.1,
-        audit_cb: Optional[Callable[[Dict[str, Any]], None]] = None
+        audit_cb: Optional[Callable[[Dict[str, Any]], None]] = None,
+        response_schema: Optional[Dict[str, Any]] = None,
+        image_bytes: Optional[bytes] = None,
+        image_mime: str = "image/jpeg"
     ) -> str:
         """
         Execute a stateless prompt completion with automatic multi-provider failover.
-        Features in-place exponential backoff pacing on rate limits (HTTP 429) to avoid rapid model thrashing.
-        Emits live telemetry events to audit_cb for UI console display.
+        Supports multimodal image input (Gemini inlineData and OpenAI image_url).
         """
         if not self.is_configured():
             raise RuntimeError("Cloud AI is not configured or disabled.")
@@ -896,6 +899,7 @@ class CloudClient:
                                 "rate_retry": rate_attempt,
                                 "timeout_seconds": timeout,
                                 "prompt_chars": len(user_prompt),
+                                "has_image": bool(image_bytes),
                                 "prompt_preview": user_prompt[:260] + "..."
                             }
                         })
@@ -906,12 +910,27 @@ class CloudClient:
                     # 1. Google Gemini
                     if provider == "gemini":
                         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+                        gen_cfg = {
+                            "temperature": temperature,
+                            "responseMimeType": "application/json" if format_json else "text/plain"
+                        }
+                        if format_json and response_schema:
+                            gen_cfg["responseSchema"] = response_schema
+
+                        parts = []
+                        if image_bytes:
+                            b64_data = base64.b64encode(image_bytes).decode("utf-8")
+                            parts.append({
+                                "inlineData": {
+                                    "mimeType": image_mime,
+                                    "data": b64_data
+                                }
+                            })
+                        parts.append({"text": user_prompt})
+
                         payload = {
-                            "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
-                            "generationConfig": {
-                                "temperature": temperature,
-                                "responseMimeType": "application/json" if format_json else "text/plain"
-                            }
+                            "contents": [{"role": "user", "parts": parts}],
+                            "generationConfig": gen_cfg
                         }
                         if system_instruction:
                             payload["systemInstruction"] = {"parts": [{"text": system_instruction}]}
@@ -937,7 +956,16 @@ class CloudClient:
                         messages = []
                         if system_instruction:
                             messages.append({"role": "system", "content": system_instruction})
-                        messages.append({"role": "user", "content": user_prompt})
+
+                        if image_bytes and provider == "openai":
+                            b64_data = base64.b64encode(image_bytes).decode("utf-8")
+                            content = [
+                                {"type": "image_url", "image_url": {"url": f"data:{image_mime};base64,{b64_data}"}},
+                                {"type": "text", "text": user_prompt}
+                            ]
+                            messages.append({"role": "user", "content": content})
+                        else:
+                            messages.append({"role": "user", "content": user_prompt})
 
                         payload = {
                             "model": model,
@@ -945,7 +973,17 @@ class CloudClient:
                             "temperature": temperature
                         }
                         if format_json:
-                            payload["response_format"] = {"type": "json_object"}
+                            if response_schema and provider in ("openai", "groq"):
+                                payload["response_format"] = {
+                                    "type": "json_schema",
+                                    "json_schema": {
+                                        "name": "structured_academic_extraction",
+                                        "strict": True,
+                                        "schema": response_schema
+                                    }
+                                }
+                            else:
+                                payload["response_format"] = {"type": "json_object"}
 
                         data_bytes = json.dumps(payload).encode("utf-8")
                         req = urllib.request.Request(url, data=data_bytes, headers=req_headers)
@@ -1000,7 +1038,14 @@ class CloudClient:
                     except Exception:
                         pass
 
-                    is_rate_limit = (he.code == 429) or any(k in err_body.lower() for k in ["rate limit", "quota", "resource_exhausted", "too many requests"])
+                    is_payload_limit = (he.code == 413) or ("tokens per minute" in err_body.lower())
+                    is_rate_limit = is_payload_limit or (he.code == 429) or any(k in err_body.lower() for k in ["rate limit", "quota", "resource_exhausted", "too many requests"])
+
+                    if is_payload_limit:
+                        # Prompt exceeded model's TPM limit (e.g. Groq 8k TPM on 120B) -> switch to next model immediately
+                        msg = err_body[:250] if err_body else str(he)
+                        last_error = RuntimeError(f"HTTP 413 from {provider}: {msg}")
+                        break
 
                     if is_rate_limit and rate_attempt <= max_rate_retries:
                         # Extract wait time from Retry-After header or response body

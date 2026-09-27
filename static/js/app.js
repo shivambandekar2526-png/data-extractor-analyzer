@@ -196,26 +196,33 @@ function initUpload() {
   // Pipeline Radio Toggle Listeners
   const pipeLocal = document.getElementById("pipelineLocal");
   const pipeCloud = document.getElementById("pipelineCloud");
+  const pipeVisual = document.getElementById("pipelineVisual");
   const pipeLocalLabel = document.getElementById("pipelineLocalLabel");
   const pipeCloudLabel = document.getElementById("pipelineCloudLabel");
-  if (pipeLocal && pipeCloud) {
-    pipeLocal.addEventListener("change", () => {
-      if (pipeLocalLabel) pipeLocalLabel.classList.add("active");
-      if (pipeCloudLabel) pipeCloudLabel.classList.remove("active");
-      const telemEngine = document.getElementById("telemEngine");
-      const auditGpuText = document.getElementById("auditGpuText");
+  const pipeVisualLabel = document.getElementById("pipelineVisualLabel");
+
+  function setPipelineActive(activeType) {
+    if (pipeLocalLabel) pipeLocalLabel.classList.toggle("active", activeType === "local");
+    if (pipeCloudLabel) pipeCloudLabel.classList.toggle("active", activeType === "cloud");
+    if (pipeVisualLabel) pipeVisualLabel.classList.toggle("active", activeType === "visual_blueprint");
+
+    const telemEngine = document.getElementById("telemEngine");
+    const auditGpuText = document.getElementById("auditGpuText");
+    if (activeType === "local") {
       if (telemEngine) telemEngine.textContent = "Qwen 2.5 (7B) on RTX 4060 GPU";
       if (auditGpuText) auditGpuText.textContent = "Ollama Ready";
-    });
-    pipeCloud.addEventListener("change", () => {
-      if (pipeCloudLabel) pipeCloudLabel.classList.add("active");
-      if (pipeLocalLabel) pipeLocalLabel.classList.remove("active");
-      const telemEngine = document.getElementById("telemEngine");
-      const auditGpuText = document.getElementById("auditGpuText");
+    } else if (activeType === "cloud") {
       if (telemEngine) telemEngine.textContent = "Cloud AI (Multi-Provider Orchestrator: Gemini / Groq)";
       if (auditGpuText) auditGpuText.textContent = "Cloud AI Ready";
-    });
+    } else if (activeType === "visual_blueprint") {
+      if (telemEngine) telemEngine.textContent = "Visual Blueprint & Sliced Stream (Multimodal Vision AI)";
+      if (auditGpuText) auditGpuText.textContent = "Vision AI Ready";
+    }
   }
+
+  if (pipeLocal) pipeLocal.addEventListener("change", () => setPipelineActive("local"));
+  if (pipeCloud) pipeCloud.addEventListener("change", () => setPipelineActive("cloud"));
+  if (pipeVisual) pipeVisual.addEventListener("change", () => setPipelineActive("visual_blueprint"));
 
   extractBtn.addEventListener("click", startExtraction);
 }
@@ -247,9 +254,10 @@ async function startExtraction() {
     return;
   }
 
-  // Pass Cloud Crosscheck Pipeline choice
-  const isCloudCrosscheck = document.querySelector('input[name="extractionPipeline"]:checked')?.value === 'cloud';
-  formData.append("cloud_crosscheck", isCloudCrosscheck ? "1" : "0");
+  // Pass Extraction Pipeline choice
+  const selectedPipeline = document.querySelector('input[name="extractionPipeline"]:checked')?.value || 'local';
+  formData.append("pipeline_mode", selectedPipeline);
+  formData.append("cloud_crosscheck", (selectedPipeline === 'cloud' || selectedPipeline === 'visual_blueprint') ? "1" : "0");
 
   // Reset audit console
   currentAuditLogs = [];

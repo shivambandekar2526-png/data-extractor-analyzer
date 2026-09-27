@@ -68,8 +68,8 @@ def update_job_progress(job_id: str, progress: float, message: str) -> None:
             jobs[job_id]["message"] = message
 
 
-def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosscheck: bool = False) -> None:
-    """Background extraction thread executing the AI pipeline with optional Cloud AI cross-checking."""
+def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosscheck: bool = False, pipeline_mode: str = "local") -> None:
+    """Background extraction thread executing the AI pipeline (Local, Cloud, or Visual Blueprint)."""
     try:
         client = None
         update_job_progress(job_id, 2.0, "Starting AI extraction pipeline...")
@@ -84,7 +84,33 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosschec
                     jobs[job_id]["audit_logs"].append(entry)
 
         t0 = time.time()
-        if cloud_crosscheck:
+        if pipeline_mode == "visual_blueprint":
+            from core.visual_extractor import run_visual_blueprint_pipeline
+            from core.cloud_client import CloudClient, ORCHESTRATION_CANDIDATES
+            cc_probe = CloudClient()
+            active_cand = cc_probe.get_best_working_model()
+
+            log_audit({
+                "timestamp": time.strftime("%H:%M:%S"),
+                "type": "cloud_ai_active",
+                "badge": "VISUAL BLUEPRINT",
+                "title": f"Visual Blueprint Engine Initialized with {active_cand['provider'].upper()} ({active_cand['model']})",
+                "details": {
+                    "provider": active_cand["provider"],
+                    "model": active_cand["model"],
+                    "pipeline": "visual_blueprint",
+                    "auto_failover": True,
+                    "failover_candidates": [c["label"] for c in ORCHESTRATION_CANDIDATES[:5]]
+                }
+            })
+
+            meta, students, archetype = run_visual_blueprint_pipeline(
+                pdf_path=target_pdf_path,
+                progress_cb=on_progress,
+                audit_cb=log_audit,
+                client=cc_probe
+            )
+        elif pipeline_mode == "cloud" or cloud_crosscheck:
             # 100% Pure Cloud AI Pipeline: bypass local Ollama neural inference passes entirely
             from core.cloud_client import CloudClient, ORCHESTRATION_CANDIDATES
             cc_probe = CloudClient()
@@ -142,7 +168,7 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosschec
         flat_records = [s.to_flat_dict(meta.catalog) for s in students]
 
         ai_crosscheck_result = None
-        if cloud_crosscheck and run_ai_cross_check:
+        if (pipeline_mode == "cloud" or (cloud_crosscheck and pipeline_mode != "visual_blueprint")) and run_ai_cross_check:
             update_job_progress(job_id, 86.0, "Auditing & self-healing records with Cloud AI...")
             try:
                 def cc_progress(pct: float, msg: str, card: Optional[Dict[str, Any]] = None):
@@ -209,7 +235,9 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosschec
 
         duration = round(time.time() - t0, 2)
 
-        if cloud_crosscheck:
+        if pipeline_mode == "visual_blueprint":
+            engine_name = "Visual Blueprint & Sliced Vision Pipeline"
+        elif pipeline_mode == "cloud" or cloud_crosscheck:
             engine_name = "Cloud AI (Multi-Provider Orchestrator)"
         elif client is not None and client.is_available():
             engine_name = f"Local AI ({client.model} on GPU)"
@@ -435,20 +463,34 @@ def start_extraction():
             "error": None
         }
 
+    pipeline_mode = (
+        request.form.get("pipeline_mode")
+        or json_data.get("pipeline_mode")
+        or request.args.get("pipeline_mode")
+    )
     cloud_crosscheck = (
         request.form.get("cloud_crosscheck", "0") in ("1", "true", "yes")
         or request.args.get("cloud_crosscheck", "0") in ("1", "true", "yes")
         or bool(json_data.get("cloud_crosscheck"))
     )
+    if not pipeline_mode:
+        if cloud_crosscheck:
+            pipeline_mode = "cloud"
+        else:
+            pipeline_mode = "local"
 
     if is_sync:
-        _run_ai_extraction_worker(job_id, target_pdf_path, cloud_crosscheck)
+        _run_ai_extraction_worker(job_id, target_pdf_path, cloud_crosscheck, pipeline_mode=pipeline_mode)
         res = jobs.get(job_id, {})
         if res.get("status") == "completed":
             return jsonify(res["result"])
         return jsonify({"success": False, "error": res.get("error", "Unknown error")}), 500
 
-    t = threading.Thread(target=_run_ai_extraction_worker, args=(job_id, target_pdf_path, cloud_crosscheck), daemon=True)
+    t = threading.Thread(
+        target=_run_ai_extraction_worker,
+        args=(job_id, target_pdf_path, cloud_crosscheck, pipeline_mode),
+        daemon=True
+    )
     t.start()
     return jsonify({"success": True, "job_id": job_id})
 

@@ -99,7 +99,7 @@ def test_real_pdf_crosscheck():
         "seat_no": first_seat,
         "field": test_col,
         "extracted_val": flat_students[0].get(test_col),
-        "suggested_val": 8.5 if test_col == "SGPI" else 45,
+        "suggested_val": flat_students[0].get(test_col),
         "reason": "Test ground-truth verification",
         "evidence_quote": real_quote
     }

@@ -37,14 +37,29 @@ if PROJECT_ROOT not in sys.path:
 
 try:
     from .cloud_client import CloudClient
+    from .normalizer import are_fields_alias_equivalent, strip_ledger_boilerplate, normalize_identifier
+    from .checksum_verifier import verify_student
+    from ..models import CourseResult, StudentRecord
 except Exception:
     try:
         from core.cloud_client import CloudClient
+        from core.normalizer import are_fields_alias_equivalent, strip_ledger_boilerplate, normalize_identifier
+        from core.checksum_verifier import verify_student
+        from models import CourseResult, StudentRecord
     except Exception:
         try:
             from data_extractor_AI.core.cloud_client import CloudClient
+            from data_extractor_AI.core.normalizer import are_fields_alias_equivalent, strip_ledger_boilerplate, normalize_identifier
+            from data_extractor_AI.core.checksum_verifier import verify_student
+            from data_extractor_AI.models import CourseResult, StudentRecord
         except Exception:
             CloudClient = None  # Handled gracefully if not installed
+            are_fields_alias_equivalent = None
+            strip_ledger_boilerplate = lambda t: t
+            normalize_identifier = lambda x: str(x) if x is not None else ""
+            verify_student = None
+            CourseResult = None
+            StudentRecord = None
 
 
 @dataclass
@@ -193,6 +208,90 @@ def build_context_envelope(meta: Any, students: List[Dict[str, Any]], archetype:
     )
 
 
+def flat_dict_to_student_record(d: Dict[str, Any], catalog: Optional[Any] = None) -> Any:
+    """Reconstructs a StudentRecord dataclass from a flattened CSV/database dictionary."""
+    if StudentRecord is None or CourseResult is None:
+        return None
+    seat = str(d.get("Seat_No", d.get("seat_no", ""))).strip()
+    name = str(d.get("Student_Name", d.get("name", ""))).strip()
+    st = StudentRecord(
+        seat_no=seat,
+        student_name=name,
+        gender=str(d.get("Gender", "M")),
+        candidate_type=str(d.get("Candidate_Type", "Regular")),
+        prn=str(d.get("PRN", "")),
+        abc_id=str(d.get("ABC_ID", "")),
+        result_status=str(d.get("Result_Status", d.get("Result", "PASS"))),
+        total_marks=str(d.get("Total_Marks", "")),
+        credits_earned=str(d.get("Credits_Earned", "")),
+        total_cg=str(d.get("Total_CG", "")),
+        sgpi=str(d.get("SGPI", "")),
+    )
+
+    STANDARD_STUDENT_KEYS = {
+        "seat_no", "student_name", "gender", "candidate_type", "prn", "abc_id",
+        "ern", "mother_name", "semester", "result_status", "remark", "total_marks",
+        "max_marks", "credits_earned", "total_cg", "sgpi", "cgpi", "result", "name"
+    }
+
+    course_map: Dict[str, Any] = {}
+    for k, v in d.items():
+        if "_" in k and k.lower() not in STANDARD_STUDENT_KEYS and not any(k.startswith(pfx) for pfx in ["SGPI_", "Credits_", "Marks_", "Max_"]):
+            parts = k.split("_", 1)
+            c_code = parts[0]
+            suffix = parts[1]
+            if suffix in ("Grade", "GP", "Credits", "CG", "Subject"):
+                if c_code not in course_map:
+                    course_map[c_code] = CourseResult(course_code=c_code)
+                if suffix == "Grade":
+                    course_map[c_code].grade = str(v)
+                elif suffix == "GP":
+                    course_map[c_code].grade_point = str(v)
+                elif suffix == "Credits":
+                    course_map[c_code].credits = str(v)
+                elif suffix == "CG":
+                    course_map[c_code].credit_points = str(v)
+                elif suffix == "Subject":
+                    course_map[c_code].course_name = str(v)
+            else:
+                if c_code not in course_map:
+                    course_map[c_code] = CourseResult(course_code=c_code)
+                course_map[c_code].marks[suffix] = str(v)
+
+    st.course_results = list(course_map.values())
+    return st
+
+
+def is_student_record_mathematically_sound(d: Dict[str, Any], catalog: Optional[Any] = None) -> bool:
+    """Evaluates whether an extracted flat student record already satisfies 100% of mathematical proofs."""
+    if verify_student is None:
+        return False
+    st = flat_dict_to_student_record(d, catalog)
+    if not st or not st.course_results:
+        return False
+    res = verify_student(st, catalog)
+    return bool(res.all_passed)
+
+
+def extract_student_context_lines(seat_no: str, page_text: str, window: int = 8) -> str:
+    """Extracts only the lines immediately surrounding a student's seat number (~300 chars vs 12k chars)."""
+    if not seat_no or not page_text:
+        return page_text[:2000]
+    lines = page_text.splitlines()
+    match_idx = -1
+    clean_seat = str(seat_no).strip()
+    for i, line in enumerate(lines):
+        if clean_seat in line:
+            match_idx = i
+            break
+    if match_idx == -1:
+        return page_text[:2000]
+    start = max(0, match_idx - 2)
+    end = min(len(lines), match_idx + window)
+    return "\n".join(lines[start:end])
+
+
+
 # =========================================================================
 # ZERO-TRUST VALIDATION SANDBOX
 # =========================================================================
@@ -231,6 +330,11 @@ def validate_patch_sandbox(
             if col.lower() == field_name.lower():
                 matched_col = col
                 break
+        if not matched_col and are_fields_alias_equivalent is not None:
+            for col in envelope.valid_columns:
+                if are_fields_alias_equivalent(col, field_name):
+                    matched_col = col
+                    break
         if not matched_col:
             return False, f"Field '{field_name}' is not in valid CSV schema columns."
         candidate["field"] = matched_col
@@ -279,8 +383,29 @@ def validate_patch_sandbox(
                 if val_f > limit:
                     return False, f"Proposed mark ({val_f}) exceeds allowable max bounds ({limit}) for {field_name}."
         except (ValueError, TypeError):
-            # Not a numeric value (could be 'ABS' or '--')
             pass
+
+    # Mathematical Invariant Guard: Protect verified data from corruption
+    if verify_student is not None and seat_no in students_by_seat:
+        orig_dict = students_by_seat[seat_no]
+        orig_sound = is_student_record_mathematically_sound(orig_dict)
+
+        # Clone and simulate patch
+        sim_dict = dict(orig_dict)
+        sim_dict[field_name] = sugg_val
+        sim_st = flat_dict_to_student_record(sim_dict)
+        sim_res = verify_student(sim_st)
+
+        # 1. If original record was already 100% mathematically sound, REJECT any patch that breaks math
+        if orig_sound and not sim_res.all_passed:
+            return False, f"Rejected AI mutation: Record was already mathematically verified, and proposed patch causes math failure ({sim_res.failures})."
+
+        # 2. If original had math failures, patch must not introduce worse failures
+        if not orig_sound and not sim_res.all_passed:
+            orig_st = flat_dict_to_student_record(orig_dict)
+            orig_res = verify_student(orig_st)
+            if len(sim_res.failures) >= len(orig_res.failures) and not sim_res.component_sum_ok:
+                return False, f"Rejected AI mutation: Proposed patch fails to resolve mathematical checksums ({sim_res.failures})."
 
     return True, "Passed zero-trust ground truth verification."
 
@@ -314,10 +439,11 @@ def align_schema_with_ai(
             if not any(k.endswith(x) for x in ["_Grade", "_GP", "_Credits", "_CG", "_Subject"])
         }
 
+    clean_p1 = strip_ledger_boilerplate(first_page_text) if strip_ledger_boilerplate else first_page_text
     prompt = (
         f"{envelope.to_compact_prompt_header()}\n\n"
         f"=== RAW DOCUMENT PAGE 1 (HEADER & LEDGER SPECIFICATION) ===\n"
-        f"{first_page_text[:2200]}\n\n"
+        f"{clean_p1[:12000]}\n\n"
         f"=== EXTRACTED COURSE CODES ===\n"
         f"{json.dumps(detected_courses)}\n\n"
         f"=== SAMPLE EXTRACTED MARKS FOR CANDIDATE 1 ===\n"
@@ -390,10 +516,11 @@ def verify_student_chunk(
             clean_s[k] = v
         clean_chunk.append(clean_s)
 
+    clean_chunk_doc = strip_ledger_boilerplate(chunk_page_text) if strip_ledger_boilerplate else chunk_page_text
     prompt = (
         f"{envelope.to_compact_prompt_header()}\n\n"
         f"=== SOURCE DOCUMENT RAW TEXT FOR THIS CHUNK ===\n"
-        f"{chunk_page_text[:2200]}\n\n"
+        f"{clean_chunk_doc[:12000]}\n\n"
         f"=== CURRENTLY EXTRACTED RECORDS FOR {len(clean_chunk)} CANDIDATES ===\n"
         f"{json.dumps(clean_chunk, ensure_ascii=False)}\n\n"
         f"=== PROOFREADING INSTRUCTIONS ===\n"
@@ -534,15 +661,36 @@ def run_ai_cross_check(
     else:
         _emit("checksum_alert", "SCHEMA DISCREPANCY", f"Stage 1 Finding: {schema_audit.get('summary', 'Header mismatch detected')}", schema_audit)
 
-    # Stage 2: Micro Record Proofreading (Chunk-by-Chunk)
+    # Stage 2: Micro Record Proofreading (Pre-Screened & Gated)
     total_students = len(students)
-    chunks = [students[i:i + chunk_size] for i in range(0, total_students, chunk_size)]
-    total_chunks = len(chunks)
+    sound_students: List[Dict[str, Any]] = []
+    anomalous_students: List[Dict[str, Any]] = []
+
+    for s in students:
+        if is_student_record_mathematically_sound(s):
+            sound_students.append(s)
+        else:
+            anomalous_students.append(s)
+
+    _emit(
+        "checksum_proof",
+        "MATHEMATICAL SCREENING",
+        f"Verified {len(sound_students)}/{len(students)} student records with 100% mathematical certainty. Shielding correct records from AI modification.",
+        {
+            "total_students": len(students),
+            "mathematically_verified": len(sound_students),
+            "anomalies_to_audit": len(anomalous_students)
+        }
+    )
 
     all_discrepancies: List[Dict[str, Any]] = []
     verified_patches = 0
     rejected_patches = 0
     applied_patches = 0
+
+    # Only anomalous records require LLM intervention!
+    chunks = [anomalous_students[i:i + chunk_size] for i in range(0, len(anomalous_students), chunk_size)] if anomalous_students else []
+    total_chunks = len(chunks)
 
     # Promote Stage 1 Schema Discrepancies to first-class Discrepancy Cards
     if schema_audit and schema_audit.get("status") == "DISCREPANCY_DETECTED":
@@ -665,8 +813,14 @@ def run_ai_cross_check(
         combined_text = "\n\n--- PAGE BREAK ---\n\n".join(
             page_texts[p] for p in sorted(chunk_page_indices) if p < len(page_texts)
         )
+        # Extract targeted context windows around the candidate seat numbers to stay under TPM limits
+        targeted_snippets = [
+            extract_student_context_lines(str(s.get("Seat_No", s.get("seat_no", ""))), combined_text)
+            for s in chunk
+        ]
+        chunk_text = "\n\n--- STUDENT LEDGER RECORD ---\n\n".join(targeted_snippets) if targeted_snippets else combined_text[:3000]
 
-        raw_discrepancies = verify_student_chunk(chunk, combined_text, envelope, client, audit_cb=audit_cb)
+        raw_discrepancies = verify_student_chunk(chunk, chunk_text, envelope, client, audit_cb=audit_cb)
 
         for raw_d in raw_discrepancies:
             ok, reason = validate_patch_sandbox(raw_d, page_texts, envelope, students_by_seat)
