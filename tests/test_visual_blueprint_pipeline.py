@@ -27,6 +27,7 @@ from app import app
 from core.checksum_verifier import verify_student
 from core.cloud_client import CloudClient
 from core.visual_extractor import (
+    align_and_heal_student,
     extract_sliced_page,
     extract_visual_blueprint,
     render_page_as_jpeg,
@@ -548,6 +549,84 @@ class TestVisualBlueprintPipeline(unittest.TestCase):
         self.assertIn('id="cloudApiKeyDeepseek"', html)
         self.assertIn('value="anthropic"', html)
         self.assertIn('value="deepseek"', html)
+
+    def test_align_and_heal_student_marks_and_catalog_order(self):
+        """Test anti-hallucination auto-healing: component sums, Grade/GP/CG reconciliation, and catalog ordering."""
+        catalog = CourseCatalog()
+        catalog.courses.append(Course(code="42211", name="Deep Learning", credits=3.0, max_marks={"TH": 80, "IA": 20, "TOT": 100}))
+        catalog.courses.append(Course(code="42212", name="Big Data Analytics", credits=3.0, max_marks={"TH": 80, "IA": 20, "TOT": 100}))
+        catalog.courses.append(Course(code="AIDSCSL701", name="Deep Learning Lab", credits=1.0, max_marks={"TW": 25, "PR": 25, "TOT": 50}))
+
+        # Student with scrambled course order, inconsistent TH+IA, missing IA, and missing PR
+        student = StudentRecord(
+            seat_no="1033195",
+            student_name="TEST CANDIDATE",
+            sgpi="0.0",
+            credits_earned="",
+            total_cg="",
+            total_marks=""
+        )
+        student.course_results = [
+            # Scrambled order: AIDSCSL701 appears first instead of last
+            CourseResult(
+                course_code="AIDSCSL701",
+                marks={"TW": "22", "TOT": "45"},  # PR is missing (should deduce 45 - 22 = 23)
+                grade="O",
+                grade_point="0",  # missing GP (Grade O -> 10)
+                credits="1",
+                credit_points=""   # missing CG (1 * 10 = 10)
+            ),
+            # 42212 appears second
+            CourseResult(
+                course_code="42212",
+                marks={"TH": "50", "TOT": "68"},  # IA is missing (should deduce 68 - 50 = 18)
+                grade="C",
+                grade_point="7",
+                credits="3",
+                credit_points="0"   # missing CG (3 * 7 = 21)
+            ),
+            # 42211 appears third with hallucinated sum (52 + 16 != 99)
+            CourseResult(
+                course_code="42211",
+                marks={"TH": "52", "IA": "16", "TOT": "99"},  # Hallucinated TOT, should heal to 68
+                grade="C",
+                grade_point="7",
+                credits="3",
+                credit_points="21"
+            )
+        ]
+
+        healed = align_and_heal_student(student, catalog=catalog)
+
+        # 1. Verify strict catalog ordering: 42211 -> 42212 -> AIDSCSL701
+        self.assertEqual([cr.course_code for cr in healed.course_results], ["42211", "42212", "AIDSCSL701"])
+
+        # 2. Verify component sum healing for 42211 (52 + 16 = 68)
+        cr_42211 = healed.course_results[0]
+        self.assertEqual(cr_42211.marks["TOT"], "68")
+        self.assertEqual(cr_42211.grade_point, "7")
+        self.assertEqual(cr_42211.credit_points, "21")
+
+        # 3. Verify missing IA deduction for 42212 (68 - 50 = 18)
+        cr_42212 = healed.course_results[1]
+        self.assertEqual(cr_42212.marks["IA"], "18")
+        self.assertEqual(cr_42212.credit_points, "21")
+
+        # 4. Verify missing PR deduction and Grade O -> GP 10 for AIDSCSL701
+        cr_lab = healed.course_results[2]
+        self.assertEqual(cr_lab.marks["PR"], "23")
+        self.assertEqual(cr_lab.grade_point, "10")
+        self.assertEqual(cr_lab.credit_points, "10")
+
+        # 5. Verify semester aggregate invariants:
+        # Total CG = 21 + 21 + 10 = 52
+        # Total Credits = 3 + 3 + 1 = 7
+        # SGPI = 52 / 7 = 7.43
+        # Total Marks = 68 + 68 + 45 = 181
+        self.assertEqual(healed.total_cg, "52")
+        self.assertEqual(healed.credits_earned, "7")
+        self.assertEqual(healed.sgpi, "7.43")
+        self.assertEqual(healed.total_marks, "181")
 
 
 if __name__ == "__main__":
