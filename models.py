@@ -149,14 +149,17 @@ class StudentRecord:
 
         # Historical semester data
         for sem_label, sem_data in self.history.items():
-            if sem_data.get("sgpi"):
-                d[f"SGPI_Sem_{sem_label}"] = sem_data["sgpi"]
-            if sem_data.get("credits"):
-                d[f"Credits_Sem_{sem_label}"] = sem_data["credits"]
-            if sem_data.get("marks"):
-                d[f"Marks_Sem_{sem_label}"] = sem_data["marks"]
-            if sem_data.get("max"):
-                d[f"Max_Sem_{sem_label}"] = sem_data["max"]
+            if isinstance(sem_data, dict):
+                if sem_data.get("sgpi"):
+                    d[f"SGPI_Sem_{sem_label}"] = sem_data["sgpi"]
+                if sem_data.get("credits"):
+                    d[f"Credits_Sem_{sem_label}"] = sem_data["credits"]
+                if sem_data.get("marks"):
+                    d[f"Marks_Sem_{sem_label}"] = sem_data["marks"]
+                if sem_data.get("max"):
+                    d[f"Max_Sem_{sem_label}"] = sem_data["max"]
+            elif isinstance(sem_data, (str, int, float)) and str(sem_data).strip():
+                d[f"SGPI_Sem_{sem_label}"] = str(sem_data).strip()
 
         if self.cgpi:
             d["CGPI"] = self.cgpi

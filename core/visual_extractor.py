@@ -219,6 +219,15 @@ def extract_sliced_page(
     doc.close()
     page_clean_text = strip_ledger_boilerplate(page_text)[:3500]
 
+    # Pre-extract digital anchors from vector text (seat numbers and 16-digit PRNs)
+    seat_candidates = re.findall(r"\b([0-9]{7,8})\b", page_text)
+    seen_sc = set()
+    detected_seats = [s for s in seat_candidates if not (s in seen_sc or seen_sc.add(s))]
+
+    prn_candidates = re.findall(r"\b([0-9]{16})\b", page_text)
+    seen_prn = set()
+    detected_prns = [p for p in prn_candidates if not (p in seen_prn or seen_prn.add(p))]
+
     courses = blueprint.get("courses", [])
     courses_brief = [
         f"{c.get('code')}: heads={','.join(c.get('heads', []))}"
@@ -226,29 +235,55 @@ def extract_sliced_page(
     ]
     courses_str = "; ".join(courses_brief)
 
+    seats_directive = ""
+    if detected_seats:
+        seats_directive = (
+            f"DETECTED SEAT NUMBERS ON THIS PAGE ({len(detected_seats)} expected): {', '.join(detected_seats)}\n"
+            "You MUST extract and output an entry for EVERY detected seat number above. Do not skip or omit any student.\n\n"
+        )
+
     prompt = (
         f"=== ACADEMIC CONTEXT ENVELOPE (PERSISTENT BLUEPRINT) ===\n"
         f"EXAM: {blueprint.get('exam_title', '')} | SEM: {blueprint.get('semester', '')}\n"
         f"DISCOVERED COURSES: {courses_str}\n"
         f"========================================================\n\n"
+        f"{seats_directive}"
+        "CRITICAL EXTRACTION DIRECTIVES:\n"
+        "1. ZERO-CALCULATION DIRECTIVE: DO NOT compute, recalculate, or alter any numbers. Transcribe EXACTLY what is printed on the page verbatim, even if printed numbers do not add up mathematically. Do not round numbers. Do not alter printed values.\n"
+        "2. FEMALE CANDIDATE NOTATION: A leading slash '/' before a student's name (e.g. '/BHALEKAR SANIKA') indicates a Female candidate. Strip the leading '/' from the student name and set gender='F'. If a mother's name appears in parentheses (e.g. '(JYOTI)'), extract it into mother_name.\n"
+        "3. HISTORICAL SGPI & CGPI: For Semester VII and VIII gazettes, extract all previous semester SGPIs (Sem I through VII) and cumulative CGPI from the student block.\n"
+        "4. PRESERVE SYMBOLS & REMARKS: Preserve ledger marks and remarks verbatim ('P', 'F', 'P#', 'RLE', 'RPV', 'ADC', 'ABS', 'A.ABS', '--', '#', '@', '*'). Do not replace with 0 or generic PASS/FAIL.\n"
+        "5. EXACT PRN & NAMES: Use the text hints below to ensure zero spelling mistakes in names and to transcribe full 16-digit PRNs.\n\n"
         "Extract ALL student result records from this page image into structured JSON.\n"
         "Return a JSON object with this exact schema:\n"
         "{\n"
         '  "students": [\n'
         "    {\n"
         '      "seat_no": "Candidate seat number",\n'
-        '      "student_name": "Full student name",\n'
+        '      "student_name": "Full student name without leading slash",\n'
         '      "gender": "M or F",\n'
+        '      "mother_name": "Mother name if in parentheses",\n'
         '      "candidate_type": "Regular or Diploma",\n'
-        '      "prn": "PRN / ABC ID",\n'
-        '      "result_status": "PASS or FAIL or KT",\n'
-        '      "total_marks": "Total semester marks",\n'
-        '      "credits_earned": "Credits earned",\n'
-        '      "total_cg": "Total credit points (äCG)",\n'
-        '      "sgpi": "Semester SGPI",\n'
+        '      "prn": "16-digit PRN or ABC ID",\n'
+        '      "result_status": "PASS or FAIL or KT or RLE or RPV",\n'
+        '      "remark": "Remark if printed (e.g. P, F, RLE, RPV, ADC)",\n'
+        '      "total_marks": "Total semester marks printed",\n'
+        '      "credits_earned": "Credits earned printed",\n'
+        '      "total_cg": "Total credit points (äCG) printed",\n'
+        '      "sgpi": "Current semester SGPI printed",\n'
+        '      "cgpi": "Overall cumulative CGPI printed (if present)",\n'
+        '      "history": {\n'
+        '        "sem1": "Sem 1 SGPI if present",\n'
+        '        "sem2": "Sem 2 SGPI if present",\n'
+        '        "sem3": "Sem 3 SGPI if present",\n'
+        '        "sem4": "Sem 4 SGPI if present",\n'
+        '        "sem5": "Sem 5 SGPI if present",\n'
+        '        "sem6": "Sem 6 SGPI if present",\n'
+        '        "sem7": "Sem 7 SGPI if present"\n'
+        '      },\n'
         '      "courses": [\n'
         "        {\n"
-        '          "code": "Course Code",\n'
+        '          "code": "Course Code (as printed in student table)",\n'
         '          "marks": {"TH": "marks", "IA": "marks", "TOT": "marks", "TW": "marks", "PR": "marks"},\n'
         '          "grade": "Letter grade",\n'
         '          "gp": "Grade point",\n'
@@ -289,28 +324,56 @@ def extract_sliced_page(
         raw_students = []
 
     students: List[StudentRecord] = []
-    for raw in raw_students:
-        raw_seat = raw.get("seat_no") or raw.get("seat")
+    for idx, raw in enumerate(raw_students):
+        raw_seat = str(raw.get("seat_no") or raw.get("seat") or "").strip()
         if not raw_seat:
             continue
 
-        raw_name = raw.get("student_name") or raw.get("name", "")
+        raw_name = str(raw.get("student_name") or raw.get("name") or "").strip()
         norm_name_info = normalize_student_name(raw_name)
-        gender = norm_name_info.get("gender") or raw.get("gender", "M")
+        gender = str(raw.get("gender") or "").strip().upper()
+        if not gender or raw_name.startswith("/") or norm_name_info.get("gender") == "F":
+            gender = norm_name_info.get("gender", "F" if raw_name.startswith("/") else "M")
+
+        # Fallback PRN recovery from digital page text if Vision left PRN empty
+        prn_val = normalize_identifier(raw.get("prn", ""))
+        if not prn_val and detected_prns:
+            seat_pos = page_text.find(raw_seat)
+            if seat_pos != -1:
+                window = page_text[seat_pos:seat_pos + 600]
+                m_prn = re.search(r"\b([0-9]{16})\b", window)
+                if m_prn:
+                    prn_val = m_prn.group(1)
+            if not prn_val and idx < len(detected_prns):
+                prn_val = detected_prns[idx]
+
+        # Extract history block safely
+        hist_raw = raw.get("history", {})
+        hist_dict: Dict[str, Dict[str, str]] = {}
+        if isinstance(hist_raw, dict):
+            for hk, hv in hist_raw.items():
+                clean_hk = hk.lower().replace("sem_", "").replace("sem", "").strip()
+                if isinstance(hv, dict):
+                    hist_dict[clean_hk] = {k: str(v) for k, v in hv.items()}
+                elif isinstance(hv, (str, int, float)) and str(hv).strip():
+                    hist_dict[clean_hk] = {"sgpi": str(hv).strip()}
 
         st = StudentRecord(
             seat_no=normalize_identifier(raw_seat),
-            student_name=norm_name_info.get("student_name", raw_name),
+            student_name=norm_name_info.get("student_name", raw_name.lstrip("/ ").strip()),
             gender=gender,
-            mother_name=norm_name_info.get("mother_name", ""),
+            mother_name=norm_name_info.get("mother_name", "") or str(raw.get("mother_name", "")).strip(),
             candidate_type=raw.get("candidate_type", "Regular"),
-            prn=normalize_identifier(raw.get("prn", "")),
+            prn=prn_val,
             abc_id=normalize_identifier(raw.get("abc_id", "")),
-            result_status=raw.get("result_status", "PASS"),
+            result_status=str(raw.get("result_status", "PASS")).strip(),
+            remark=str(raw.get("remark", "")).strip(),
             total_marks=str(raw.get("total_marks", "")),
             credits_earned=str(raw.get("credits_earned", "")),
             total_cg=str(raw.get("total_cg", "")),
-            sgpi=str(raw.get("sgpi", ""))
+            sgpi=str(raw.get("sgpi", "")),
+            cgpi=str(raw.get("cgpi", "")).strip(),
+            history=hist_dict
         )
 
         courses_raw = raw.get("courses", [])
@@ -432,6 +495,21 @@ def run_visual_blueprint_pipeline(
                 seen_seats.add(s.seat_no)
                 s.semester = s.semester or meta.semester
                 all_students.append(s)
+
+                # Dynamic Course Catalog Auto-Expansion (for electives discovered on later pages)
+                for cr in s.course_results:
+                    if cr.course_code and not meta.catalog.get_by_code(cr.course_code):
+                        try:
+                            cr_val = float(cr.credits) if cr.credits and cr.credits.replace(".", "").isdigit() else 0.0
+                        except Exception:
+                            cr_val = 0.0
+                        new_course = Course(
+                            code=cr.course_code,
+                            name=cr.course_name or cr.course_code,
+                            heads=list(cr.marks.keys()),
+                            credits=cr_val
+                        )
+                        meta.catalog.courses.append(new_course)
 
     if progress_cb:
         progress_cb(82.0, f"Reconstructed {len(all_students)} candidates across {total_pages} pages. Running mathematical verification...")

@@ -200,6 +200,123 @@ class TestVisualBlueprintPipeline(unittest.TestCase):
         # kwargs or args: job_id, target_pdf_path, cloud_crosscheck, pipeline_mode
         self.assertIn("visual_blueprint", kwargs.get("pipeline_mode", args[-1] if len(args) >= 4 else ""))
 
+    @patch("time.sleep")
+    @patch("fitz.open")
+    def test_female_slash_and_prn_recovery(self, mock_fitz_open, mock_sleep):
+        """Test female candidate marker, mother name extraction, and digital PRN recovery."""
+        mock_doc = MagicMock()
+        mock_doc.__len__.return_value = 1
+        mock_page = MagicMock()
+        mock_page.get_pixmap().tobytes.return_value = b"\xff\xd8fakejpeg"
+        # Mock digital text containing seat number and 16-digit PRN
+        mock_page.get_text.return_value = "Seat No: 68115066  /BHALEKAR SANIKA (SUNITA)  PRN: 2021016400987654\n"
+        mock_doc.__getitem__.return_value = mock_page
+        mock_fitz_open.return_value = mock_doc
+
+        mock_client = MagicMock()
+        mock_client.is_configured.return_value = True
+
+        blueprint = {
+            "exam_title": "B.E. SEM VI",
+            "semester": "VI",
+            "courses": [{"code": "CSC601", "name": "Data Analytics", "heads": ["TH", "IA", "TOT"]}]
+        }
+
+        # Simulate Vision AI output with leading slash in name and empty PRN
+        page_records_payload = [
+            {
+                "seat_no": "68115066",
+                "student_name": "/BHALEKAR SANIKA (SUNITA)",
+                "prn": "",  # Empty PRN from Vision AI
+                "sgpi": "8.50",
+                "total_cg": "180",
+                "courses": [{"code": "CSC601", "marks": {"TH": "50", "IA": "18", "TOT": "68"}}]
+            }
+        ]
+        mock_client.generate_direct.return_value = json.dumps(page_records_payload)
+
+        students = extract_sliced_page("dummy.pdf", 0, blueprint, mock_client)
+        self.assertEqual(len(students), 1)
+        s0 = students[0]
+        # Verify female indicator '/' was stripped and gender identified as 'F'
+        self.assertEqual(s0.gender, "F")
+        self.assertFalse(s0.student_name.startswith("/"))
+        self.assertIn("BHALEKAR SANIKA", s0.student_name)
+        self.assertEqual(s0.mother_name, "SUNITA")
+        # Verify 16-digit PRN was recovered from digital text ground truth
+        self.assertEqual(s0.prn, "2021016400987654")
+
+    @patch("time.sleep")
+    @patch("fitz.open")
+    def test_historical_sgpi_and_elective_catalog_expansion(self, mock_fitz_open, mock_sleep):
+        """Test Sem VIII historical semester SGPI extraction and dynamic elective discovery."""
+        mock_doc = MagicMock()
+        mock_doc.__len__.return_value = 2
+        mock_page = MagicMock()
+        mock_page.get_pixmap().tobytes.return_value = b"\xff\xd8fakejpeg"
+        mock_page.get_text.return_value = "Page content\n"
+        mock_doc.__getitem__.return_value = mock_page
+        mock_fitz_open.return_value = mock_doc
+
+        mock_client = MagicMock()
+        mock_client.is_configured.return_value = True
+
+        blueprint_payload = {
+            "exam_title": "B.E. SEM VIII",
+            "semester": "VIII",
+            "courses": [{"code": "CSC801", "name": "Cloud Computing", "credits": 4.0}]
+        }
+
+        # Page 1 student with core course
+        page_1_payload = [
+            {
+                "seat_no": "88111001",
+                "student_name": "STUDENT ONE",
+                "courses": [{"code": "CSC801", "marks": {"TOT": "75"}, "credits": 4.0, "gp": 9, "cg": 36}]
+            }
+        ]
+
+        # Page 2 student with an elective not in Page 1 blueprint, plus historical SGPIs
+        page_2_payload = [
+            {
+                "seat_no": "88111002",
+                "student_name": "STUDENT TWO",
+                "sgpi": "9.20",
+                "cgpi": "8.85",
+                "history": {
+                    "sem1": "8.10",
+                    "sem2": "8.30",
+                    "sem3": "8.50",
+                    "sem4": "8.75",
+                    "sem5": "8.90",
+                    "sem6": "9.00",
+                    "sem7": "9.15"
+                },
+                "courses": [
+                    {"code": "CSDLO8012", "name": "Natural Language Processing", "marks": {"TOT": "80"}, "credits": 3.0, "gp": 10, "cg": 30}
+                ]
+            }
+        ]
+
+        mock_client.generate_direct.side_effect = [
+            json.dumps(blueprint_payload),
+            json.dumps(page_1_payload),
+            json.dumps(page_2_payload)
+        ]
+
+        meta, students, archetype = run_visual_blueprint_pipeline("dummy.pdf", client=mock_client)
+        self.assertEqual(len(students), 2)
+
+        # Verify dynamic elective was added to master catalog
+        catalog_codes = [c.code for c in meta.catalog.courses]
+        self.assertIn("CSDLO8012", catalog_codes)
+
+        # Verify historical SGPIs and CGPI flattened correctly
+        flat2 = students[1].to_flat_dict(meta.catalog)
+        self.assertEqual(flat2.get("CGPI"), "8.85")
+        self.assertEqual(flat2.get("SGPI_Sem_1"), "8.10")
+        self.assertEqual(flat2.get("SGPI_Sem_7"), "9.15")
+
 
 if __name__ == "__main__":
     unittest.main()
