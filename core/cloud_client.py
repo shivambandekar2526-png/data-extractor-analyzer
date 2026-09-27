@@ -74,15 +74,16 @@ DEFAULT_PROVIDERS = {
 # Hierarchy of candidates for automatic orchestration (ranked by speed, capability, & quota)
 # Uses high-TPM models (e.g. Llama 3.3 70B: 30k TPM, Gemini Flash: 250k TPM) to prevent HTTP 413/429
 ORCHESTRATION_CANDIDATES = [
-    {"provider": "gemini", "model": "gemini-flash-latest", "label": "Google Gemini Flash (250k TPM)"},
-    {"provider": "groq", "model": "llama-3.3-70b-versatile", "label": "Groq Llama 3.3 70B (30k TPM)"},
-    {"provider": "gemini", "model": "gemini-2.5-flash", "label": "Google Gemini 2.5 Flash"},
-    {"provider": "groq", "model": "llama-3.1-8b-instant", "label": "Groq Llama 3.1 8B Instant (30k TPM)"},
-    {"provider": "openai", "model": "gpt-4o-mini", "label": "OpenAI GPT-4o-mini"},
-    {"provider": "groq", "model": "qwen/qwen3.8-27b", "label": "Groq Fast Reasoning (27B)"},
-    {"provider": "gemini", "model": "gemini-flash-lite-latest", "label": "Google Gemini Flash Lite"},
-    {"provider": "openai", "model": "gpt-4o", "label": "OpenAI GPT-4o Flagship"},
-    {"provider": "groq", "model": "openai/gpt-oss-120b", "label": "Groq Flagship (120B, 8k TPM)"}
+    {"provider": "gemini", "model": "gemini-flash-latest", "label": "Google Gemini Flash (250k TPM)", "supports_vision": True},
+    {"provider": "gemini", "model": "gemini-flash-lite-latest", "label": "Google Gemini Flash Lite", "supports_vision": True},
+    {"provider": "gemini", "model": "gemini-2.5-flash", "label": "Google Gemini 2.5 Flash", "supports_vision": True},
+    {"provider": "gemini", "model": "gemini-2.5-flash-lite", "label": "Google Gemini 2.5 Flash Lite", "supports_vision": True},
+    {"provider": "groq", "model": "llama-3.3-70b-versatile", "label": "Groq Llama 3.3 70B (30k TPM)", "supports_vision": False},
+    {"provider": "groq", "model": "llama-3.1-8b-instant", "label": "Groq Llama 3.1 8B Instant (30k TPM)", "supports_vision": False},
+    {"provider": "openai", "model": "gpt-4o-mini", "label": "OpenAI GPT-4o-mini", "supports_vision": True},
+    {"provider": "groq", "model": "qwen/qwen3.8-27b", "label": "Groq Fast Reasoning (27B)", "supports_vision": False},
+    {"provider": "openai", "model": "gpt-4o", "label": "OpenAI GPT-4o Flagship", "supports_vision": True},
+    {"provider": "groq", "model": "openai/gpt-oss-120b", "label": "Groq Flagship (120B, 8k TPM)", "supports_vision": False}
 ]
 
 
@@ -313,26 +314,33 @@ class CloudClient:
             lat = round((time.time() - t0) * 1000)
             return False, f"Connection Failed: {e}", lat
 
-    def get_best_working_model(self, force_refresh: bool = False, probe: bool = False) -> Dict[str, str]:
+    def get_best_working_model(self, force_refresh: bool = False, probe: bool = False, requires_vision: bool = False) -> Dict[str, str]:
         """
         Orchestration Core: Selects the best working model across all configured providers.
         STRICT STICKINESS: Once locked onto a working model, sticks to it until an error occurs.
         If probe=False (default during execution failover), selects candidate without burning HTTP calls.
+        If requires_vision=True, limits selection strictly to models capable of multimodal vision.
         """
         now = time.time()
 
-        # If not forcing refresh, check if currently locked model is still valid and not in cooldown
+        # If not forcing refresh, check if currently locked model is still valid, not in cooldown, and satisfies vision reqs
         if not force_refresh and CloudClient._locked_model:
             locked_prov = CloudClient._locked_model.get("provider", "").lower()
             locked_mod = CloudClient._locked_model.get("model", "")
-            cooldown_key = f"{locked_prov}:{locked_mod}"
-            if now >= CloudClient._provider_cooldowns.get(locked_prov, 0) and now >= CloudClient._model_cooldowns.get(cooldown_key, 0):
-                # Has key and not in cooldown -> stick to it!
-                if self.get_api_key(locked_prov):
-                    return CloudClient._locked_model
+            cand_info = next((c for c in ORCHESTRATION_CANDIDATES if c["provider"] == locked_prov and c["model"] == locked_mod), None)
+            vision_ok = (not requires_vision) or (cand_info and cand_info.get("supports_vision", False))
+            if vision_ok:
+                cooldown_key = f"{locked_prov}:{locked_mod}"
+                if now >= CloudClient._provider_cooldowns.get(locked_prov, 0) and now >= CloudClient._model_cooldowns.get(cooldown_key, 0):
+                    # Has key and not in cooldown -> stick to it!
+                    if self.get_api_key(locked_prov):
+                        return CloudClient._locked_model
 
         # Probe or select candidates in order of capability / speed
         for cand in ORCHESTRATION_CANDIDATES:
+            if requires_vision and not cand.get("supports_vision", False):
+                continue
+
             prov = cand["provider"].lower()
             mod = cand["model"]
             key = self.get_api_key(prov)
@@ -361,13 +369,18 @@ class CloudClient:
                     json.dump(self.config, f, indent=2)
             except Exception:
                 pass
-            logger.info("Cloud Orchestrator locked onto model: %s (%s)", mod, prov)
+            logger.info("Cloud Orchestrator locked onto model: %s (%s, vision=%s)", mod, prov, cand.get("supports_vision", False))
             return CloudClient._locked_model
 
-        # Fallback to configured model if all candidates failed or no candidates matched
+        # Fallback to configured model or safe vision fallback
+        if requires_vision:
+            return {
+                "provider": "gemini",
+                "model": "gemini-flash-lite-latest"
+            }
         return {
             "provider": self.config.get("provider", "groq"),
-            "model": self.config.get("model", "openai/gpt-oss-120b")
+            "model": self.config.get("model", "llama-3.3-70b-versatile")
         }
 
     @classmethod
@@ -388,7 +401,8 @@ class CloudClient:
         # Clear locked model so orchestrator picks next working model
         if cls._locked_model and cls._locked_model.get("provider", "").lower() == prov and cls._locked_model.get("model") == model:
             cls._locked_model = None
-        if is_rate_limit:
+        # Only mark entire provider failed if it is a single-quota provider like Groq (Gemini has independent model quotas)
+        if is_rate_limit and prov != "gemini":
             cls.mark_provider_failed(prov, cooldown_seconds=min(cooldown_seconds, 30))
 
     def probe_all_providers(self, keys_dict: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
@@ -854,6 +868,7 @@ class CloudClient:
             raise RuntimeError("Cloud AI is not configured or disabled.")
 
         auto_orchestrate = self.config.get("auto_orchestrate", True)
+        requires_vision = bool(image_bytes)
         attempts = 0
         max_attempts = 4 if auto_orchestrate else 1
         last_error = None
@@ -866,19 +881,19 @@ class CloudClient:
         while attempts < max_attempts:
             attempts += 1
             if auto_orchestrate:
-                active_candidate = self.get_best_working_model(force_refresh=(attempts > 1), probe=False)
+                active_candidate = self.get_best_working_model(force_refresh=(attempts > 1), probe=False, requires_vision=requires_vision)
                 provider = active_candidate["provider"]
                 model = active_candidate["model"]
             else:
-                provider = self.config.get("provider", "groq").lower()
-                model = self.config.get("model", "openai/gpt-oss-120b")
+                provider = self.config.get("provider", "gemini" if requires_vision else "groq").lower()
+                model = self.config.get("model", "gemini-flash-lite-latest" if requires_vision else "llama-3.3-70b-versatile")
 
             api_key = self.get_api_key(provider)
             if not api_key and provider != "custom":
                 continue
 
-            # Per-candidate in-place rate limit pacing retry (up to 2 retries on HTTP 429 before switching models)
-            max_rate_retries = 2
+            # Per-candidate in-place rate limit pacing retry (up to 3 retries on HTTP 429 before switching models)
+            max_rate_retries = 3
             rate_attempt = 0
             candidate_success = False
 
@@ -1057,16 +1072,18 @@ class CloudClient:
                             except Exception:
                                 pass
                         else:
-                            m = re.search(r"try again in ([0-9]+(?:\.[0-9]+)?)s", err_body, re.IGNORECASE)
+                            # Match Google Gemini's "Please retry in 15.64s", Groq's "try again in Xs", or OpenAI's "retry after Xs"
+                            m = re.search(r"(?:try again in|please retry in|retry after|wait)\s*([0-9]+(?:\.[0-9]+)?)\s*s?", err_body, re.IGNORECASE)
                             if m:
                                 try:
-                                    wait_time = float(m.group(1)) + 0.5
+                                    wait_time = float(m.group(1)) + 1.0
                                 except Exception:
-                                    pass
+                                    wait_time = 4.0 * rate_attempt
                             else:
-                                wait_time = min(2.5 * rate_attempt + 1.5, 6.0)
+                                wait_time = min(3.5 * rate_attempt + 2.0, 16.0)
 
-                        wait_time = min(wait_time, 10.0)
+                        # Allow wait times up to 30.0s so Gemini quota recovery works reliably
+                        wait_time = min(wait_time, 30.0)
 
                         if audit_cb:
                             try:

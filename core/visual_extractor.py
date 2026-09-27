@@ -133,7 +133,7 @@ def extract_visual_blueprint(
         user_prompt=prompt,
         system_instruction=system_instruction,
         format_json=True,
-        timeout=45,
+        timeout=60,
         temperature=0.1,
         audit_cb=audit_cb,
         image_bytes=page_1_jpeg,
@@ -273,7 +273,7 @@ def extract_sliced_page(
         user_prompt=prompt,
         system_instruction=system_instruction,
         format_json=True,
-        timeout=50,
+        timeout=90,
         temperature=0.0,
         audit_cb=audit_cb,
         image_bytes=page_jpeg,
@@ -422,9 +422,9 @@ def run_visual_blueprint_pipeline(
         if progress_cb:
             progress_cb(pct, f"Stage 2: Vision AI inferring Page {p_idx + 1}/{total_pages} (sliced stream)...")
 
-        # Polite pacing interval between pages (2.0s) to keep TPM/RPM well under free limits
+        # Polite pacing interval between pages (4.0s) to keep TPM/RPM well under free limits (15 RPM)
         if p_idx > 0:
-            time.sleep(2.0)
+            time.sleep(4.0)
 
         page_students = extract_sliced_page(pdf_path, p_idx, blueprint, client, audit_cb=audit_cb)
         for s in page_students:
