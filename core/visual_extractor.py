@@ -189,7 +189,36 @@ def align_and_heal_student(
                 cr.marks["PR"] = str(int(diff))
                 pr_val = diff
 
-        # 3. Grade & Grade Point (GP) Invariant
+        # 3. Grade & Grade Point (GP) Invariant & Swapping Reconciliation
+        raw_g = (cr.grade or "").strip().upper()
+        raw_gp = (cr.grade_point or "").strip().upper()
+
+        INV_GRADE = {10: "O", 9: "A+", 8: "A", 7: "B+", 6: "B", 5: "C", 4: "D", 0: "F"}
+
+        # Case A: If raw_g is numeric, it is either a GP or TOT marks
+        if raw_g.isdigit() or re.match(r"^\d+(\.\d+)?$", raw_g):
+            num_g = int(float(raw_g))
+            if num_g <= 10:
+                if raw_gp in GRADE_SCALE:
+                    # Swapped! raw_gp is the letter grade, raw_g is the GP number
+                    cr.grade = raw_gp
+                    cr.grade_point = str(num_g)
+                else:
+                    cr.grade_point = str(num_g)
+                    cr.grade = INV_GRADE.get(num_g, "P")
+            else:
+                # num_g > 10, e.g. "63" which was actually the TOT marks
+                if tot_val == 0:
+                    cr.marks["TOT"] = str(num_g)
+                    tot_val = float(num_g)
+                cr.grade = ""
+
+        # Case B: If raw_gp is a letter grade, swap it to grade
+        cur_gp_str = (cr.grade_point or "").strip().upper()
+        if cur_gp_str in GRADE_SCALE and not (cr.grade or "").strip().upper() in GRADE_SCALE:
+            cr.grade = cur_gp_str
+            cr.grade_point = str(int(GRADE_SCALE[cur_gp_str]))
+
         raw_g = (cr.grade or "").strip().upper()
         if raw_g in GRADE_SCALE:
             expected_gp = GRADE_SCALE[raw_g]
@@ -197,16 +226,31 @@ def align_and_heal_student(
             if gp_num == 0 or abs(gp_num - expected_gp) > 0.1:
                 cr.grade_point = str(int(expected_gp))
         elif tot_val > 0:
-            if tot_val >= 80: deduced_g, deduced_gp = "O", 10.0
-            elif tot_val >= 75: deduced_g, deduced_gp = "A", 9.0
-            elif tot_val >= 70: deduced_g, deduced_gp = "B", 8.0
-            elif tot_val >= 60: deduced_g, deduced_gp = "C", 7.0
-            elif tot_val >= 50: deduced_g, deduced_gp = "D", 6.0
-            elif tot_val >= 45: deduced_g, deduced_gp = "E", 5.0
-            elif tot_val >= 40: deduced_g, deduced_gp = "P", 4.0
+            # Map by percentage based on course max marks if available
+            max_m = 100.0
+            if catalog:
+                cm = catalog.get_by_code(cr.course_code)
+                if cm and cm.max_marks and "TOT" in cm.max_marks:
+                    max_m = float(cm.max_marks["TOT"])
+                elif cm and cm.heads:
+                    if cm.heads == ["TW", "PR", "TOT"] and cm.credits == 1.0:
+                        max_m = 50.0
+                    elif cm.heads == ["TW", "TOT"] and cm.credits == 2.0:
+                        max_m = 50.0
+                    elif cm.heads == ["TW", "PR", "TOT"] and cm.credits == 2.0:
+                        max_m = 75.0
+
+            pct = (tot_val / max_m) * 100.0 if max_m > 0 else tot_val
+            if pct >= 80: deduced_g, deduced_gp = "O", 10.0
+            elif pct >= 75: deduced_g, deduced_gp = "A+", 9.0
+            elif pct >= 70: deduced_g, deduced_gp = "A", 8.0
+            elif pct >= 60: deduced_g, deduced_gp = "B+", 7.0
+            elif pct >= 55: deduced_g, deduced_gp = "B", 6.0
+            elif pct >= 50: deduced_g, deduced_gp = "C", 5.0
+            elif pct >= 40: deduced_g, deduced_gp = "D", 4.0
             else: deduced_g, deduced_gp = "F", 0.0
 
-            if not cr.grade:
+            if not cr.grade or cr.grade.isdigit():
                 cr.grade = deduced_g
             if safe_float(cr.grade_point) == 0:
                 cr.grade_point = str(int(deduced_gp))
@@ -283,7 +327,7 @@ def align_and_heal_student(
     return student
 
 
-def render_page_as_jpeg(pdf_path: str, page_index: int = 0, dpi: int = 150) -> bytes:
+def render_page_as_jpeg(pdf_path: str, page_index: int = 0, dpi: int = 200) -> bytes:
     """Renders a specific PDF page to in-memory JPEG bytes at crisp resolution."""
     doc = fitz.open(pdf_path)
     if page_index < 0 or page_index >= len(doc):
@@ -500,12 +544,14 @@ def extract_sliced_page(
         f"{seats_directive}"
         f"{vector_anchors_text}"
         "CRITICAL EXTRACTION DIRECTIVES:\n"
-        "1. STRICT COLUMN ORDER: Courses MUST be returned in the EXACT order defined in DISCOVERED COURSES above. Do not alter or swap subject order.\n"
-        "2. ZERO-CALCULATION DIRECTIVE: DO NOT compute, recalculate, or alter any numbers. Transcribe EXACTLY what is printed on the page verbatim into corresponding heads (TH, IA, TOT, TW, PR).\n"
-        "3. FEMALE CANDIDATE NOTATION: A leading slash '/' before a student's name (e.g. '/BHALEKAR SANIKA') indicates a Female candidate. Strip the leading '/' from the student name and set gender='F'. If a mother's name appears in parentheses (e.g. '(JYOTI)'), extract it into mother_name.\n"
-        "4. HISTORICAL SGPI & CGPI: For Semester VII and VIII gazettes, extract all previous semester SGPIs (Sem I through VII) and cumulative CGPI from the student block.\n"
-        "5. PRESERVE SYMBOLS & REMARKS: Preserve ledger marks and remarks verbatim ('P', 'F', 'P#', 'RLE', 'RPV', 'ADC', 'ABS', 'A.ABS', '--', '#', '@', '*'). Do not replace with 0 or generic PASS/FAIL.\n"
-        "6. EXACT PRN & NAMES: Use the vector text ground truth above to ensure zero spelling mistakes in names and to transcribe full 16-digit PRNs.\n\n"
+        "1. STRICT COLUMN ORDER & NO SKIPPING: Every student MUST have ALL courses listed in DISCOVERED COURSES above, in the exact same left-to-right order. Start from the very leftmost column (Course 1). Never omit Course 1 or shift columns.\n"
+        "2. MUMBAI UNIVERSITY ORDER: On the student's result line, the sequence is: TOT (Total marks) -> GP (Grade Point NUMBER: 10, 9, 8, 7, 6, 5, 4, 0) -> G (Letter Grade: O, A+, A, B+, B, C, D, F) -> C (Credits) -> G*C (Credit Points). DO NOT swap GP and Grade! Put the number in 'gp' and the letter in 'grade'.\n"
+        "3. ZERO-CALCULATION DIRECTIVE: DO NOT compute or alter numbers. Transcribe EXACTLY what is printed on the page verbatim into corresponding heads (TH, IA, TOT, TW, PR).\n"
+        "4. SGPI RULES: SGPI is strictly on a 10.00 scale and CAN NEVER EXCEED 10.00. For students who FAILED or have any Grade F, SGPI is '0.00'.\n"
+        "5. FEMALE CANDIDATE NOTATION: A leading slash '/' before a student's name (e.g. '/BHALEKAR SANIKA') indicates a Female candidate. Strip the leading '/' from the student name and set gender='F'. If a mother's name appears in parentheses (e.g. '(JYOTI)'), extract it into mother_name.\n"
+        "6. HISTORICAL SGPI & CGPI: For Semester VII and VIII gazettes, extract all previous semester SGPIs (Sem I through VII) and cumulative CGPI from the student block.\n"
+        "7. PRESERVE SYMBOLS & REMARKS: Preserve ledger marks and remarks verbatim ('P', 'F', 'P#', 'RLE', 'RPV', 'ADC', 'ABS', 'A.ABS', '--', '#', '@', '*'). Do not replace with 0 or generic PASS/FAIL.\n"
+        "8. EXACT PRN & NAMES: Transcribe full 16-digit PRNs and student names with zero spelling mistakes.\n\n"
         "Extract ALL student result records from this page image into structured JSON.\n"
         "Return a JSON object with this exact schema:\n"
         "{\n"
