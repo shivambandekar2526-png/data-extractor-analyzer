@@ -79,12 +79,40 @@ def parse_catalog_response(raw_text: str) -> Tuple[ExamMeta, CourseCatalog]:
 
         raw_courses = data.get("courses", [])
         if isinstance(raw_courses, list):
+            import math
             for item in raw_courses:
                 if isinstance(item, dict) and item.get("code"):
+                    raw_max = item.get("max_marks", {}) or {}
+                    raw_min = item.get("min_marks", {}) or {}
+                    max_marks = {}
+                    min_marks = {}
+                    if isinstance(raw_max, dict):
+                        for k, v in raw_max.items():
+                            f_v = normalize_numeric(v)
+                            if f_v:
+                                try:
+                                    max_marks[str(k).upper()] = int(float(f_v))
+                                except Exception:
+                                    pass
+                    if isinstance(raw_min, dict):
+                        for k, v in raw_min.items():
+                            f_v = normalize_numeric(v)
+                            if f_v:
+                                try:
+                                    min_marks[str(k).upper()] = int(float(f_v))
+                                except Exception:
+                                    pass
+
+                    for h, mx in list(max_marks.items()):
+                        if h not in min_marks and mx > 0:
+                            min_marks[h] = math.ceil(0.40 * mx)
+
                     c = Course(
                         code=str(item.get("code", "")).strip().replace(" ", "").upper(),
                         name=str(item.get("name", "")).strip(),
                         heads=item.get("heads", []),
+                        max_marks=max_marks,
+                        min_marks=min_marks,
                         credits=float(item.get("credits", 0.0) or 0.0)
                     )
                     catalog.courses.append(c)

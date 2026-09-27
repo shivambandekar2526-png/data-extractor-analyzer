@@ -49,6 +49,8 @@ def build_catalog_prompt(header_text: str, archetype: str) -> Tuple[str, str]:
                 "code": "CSC301",
                 "name": "Engineering Mathematics - III",
                 "heads": ["SE", "IA", "TOT", "TW"],
+                "max_marks": {"SE": 80, "IA": 20, "TOT": 100},
+                "min_marks": {"SE": 32, "IA": 8, "TOT": 40},
                 "credits": 4.0
             }
         ]

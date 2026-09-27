@@ -1494,5 +1494,573 @@
     ],
     "tier_used": 1,
     "token_usage": 0
+  },
+  "8a80cf7433627c4e": {
+    "mappings": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "sgpi": "SGPI",
+      "total_marks": "Total_Marks",
+      "max_marks": "Max_Marks",
+      "result": "Result_Status",
+      "gender": "Gender",
+      "candidate_type": "Candidate_Type",
+      "prn": "PRN",
+      "semester": "Semester"
+    },
+    "subjects": {
+      "1044312": {
+        "IA": "1044312_IA",
+        "TOT": "1044312_TOT",
+        "TW": "1044312_TW",
+        "GRADE": "1044312_Grade",
+        "GP": "1044312_GP",
+        "CREDITS": "1044312_Credits",
+        "CG": "1044312_CG",
+        "SUBJECT": "1044312_Subject"
+      },
+      "1051312": {
+        "IA": "1051312_IA",
+        "TOT": "1051312_TOT",
+        "TW": "1051312_TW",
+        "GRADE": "1051312_Grade",
+        "GP": "1051312_GP",
+        "CREDITS": "1051312_Credits",
+        "CG": "1051312_CG",
+        "SUBJECT": "1051312_Subject"
+      },
+      "1081313": {
+        "IA": "1081313_IA",
+        "TOT": "1081313_TOT",
+        "TW": "1081313_TW",
+        "GRADE": "1081313_Grade",
+        "GP": "1081313_GP",
+        "CREDITS": "1081313_Credits",
+        "CG": "1081313_CG",
+        "SUBJECT": "1081313_Subject"
+      },
+      "1082312": {
+        "IA": "1082312_IA",
+        "TOT": "1082312_TOT",
+        "TW": "1082312_TW",
+        "GRADE": "1082312_Grade",
+        "GP": "1082312_GP",
+        "CREDITS": "1082312_Credits",
+        "CG": "1082312_CG",
+        "SUBJECT": "1082312_Subject"
+      },
+      "1084311": {
+        "IA": "1084311_IA",
+        "TOT": "1084311_TOT",
+        "TW": "1084311_TW",
+        "GRADE": "1084311_Grade",
+        "GP": "1084311_GP",
+        "CREDITS": "1084311_Credits",
+        "CG": "1084311_CG",
+        "SUBJECT": "1084311_Subject"
+      },
+      "1084313": {
+        "IA": "1084313_IA",
+        "TOT": "1084313_TOT",
+        "TW": "1084313_TW",
+        "GRADE": "1084313_Grade",
+        "GP": "1084313_GP",
+        "CREDITS": "1084313_Credits",
+        "CG": "1084313_CG",
+        "SUBJECT": "1084313_Subject"
+      },
+      "1101311": {
+        "IA": "1101311_IA",
+        "TOT": "1101311_TOT",
+        "TW": "1101311_TW",
+        "GRADE": "1101311_Grade",
+        "GP": "1101311_GP",
+        "CREDITS": "1101311_Credits",
+        "CG": "1101311_CG",
+        "SUBJECT": "1101311_Subject"
+      },
+      "1104311": {
+        "IA": "1104311_IA",
+        "TOT": "1104311_TOT",
+        "TW": "1104311_TW",
+        "GRADE": "1104311_Grade",
+        "GP": "1104311_GP",
+        "CREDITS": "1104311_Credits",
+        "CG": "1104311_CG",
+        "SUBJECT": "1104311_Subject"
+      },
+      "1204311": {
+        "IA": "1204311_IA",
+        "TOT": "1204311_TOT",
+        "TW": "1204311_TW",
+        "GRADE": "1204311_Grade",
+        "GP": "1204311_GP",
+        "CREDITS": "1204311_Credits",
+        "CG": "1204311_CG",
+        "SUBJECT": "1204311_Subject"
+      },
+      "1233311": {
+        "IA": "1233311_IA",
+        "TOT": "1233311_TOT",
+        "TW": "1233311_TW",
+        "GRADE": "1233311_Grade",
+        "GP": "1233311_GP",
+        "CREDITS": "1233311_Credits",
+        "CG": "1233311_CG",
+        "SUBJECT": "1233311_Subject"
+      },
+      "1234311": {
+        "IA": "1234311_IA",
+        "TOT": "1234311_TOT",
+        "TW": "1234311_TW",
+        "GRADE": "1234311_Grade",
+        "GP": "1234311_GP",
+        "CREDITS": "1234311_Credits",
+        "CG": "1234311_CG",
+        "SUBJECT": "1234311_Subject"
+      },
+      "1244311": {
+        "IA": "1244311_IA",
+        "TOT": "1244311_TOT",
+        "TW": "1244311_TW",
+        "GRADE": "1244311_Grade",
+        "GP": "1244311_GP",
+        "CREDITS": "1244311_Credits",
+        "CG": "1244311_CG",
+        "SUBJECT": "1244311_Subject"
+      },
+      "1313311": {
+        "IA": "1313311_IA",
+        "TOT": "1313311_TOT",
+        "TW": "1313311_TW",
+        "GRADE": "1313311_Grade",
+        "GP": "1313311_GP",
+        "CREDITS": "1313311_Credits",
+        "CG": "1313311_CG",
+        "SUBJECT": "1313311_Subject"
+      },
+      "2014411": {
+        "IA": "2014411_IA",
+        "TOT": "2014411_TOT",
+        "TW": "2014411_TW",
+        "GRADE": "2014411_Grade",
+        "GP": "2014411_GP",
+        "CREDITS": "2014411_Credits",
+        "CG": "2014411_CG",
+        "SUBJECT": "2014411_Subject"
+      },
+      "2074211": {
+        "IA": "2074211_IA",
+        "TOT": "2074211_TOT",
+        "TW": "2074211_TW",
+        "GRADE": "2074211_Grade",
+        "GP": "2074211_GP",
+        "CREDITS": "2074211_Credits",
+        "CG": "2074211_CG",
+        "SUBJECT": "2074211_Subject"
+      },
+      "2074212": {
+        "IA": "2074212_IA",
+        "TOT": "2074212_TOT",
+        "TW": "2074212_TW",
+        "GRADE": "2074212_Grade",
+        "GP": "2074212_GP",
+        "CREDITS": "2074212_Credits",
+        "CG": "2074212_CG",
+        "SUBJECT": "2074212_Subject"
+      },
+      "2114111": {
+        "IA": "2114111_IA",
+        "TOT": "2114111_TOT",
+        "TW": "2114111_TW",
+        "GRADE": "2114111_Grade",
+        "GP": "2114111_GP",
+        "CREDITS": "2114111_Credits",
+        "CG": "2114111_CG",
+        "SUBJECT": "2114111_Subject"
+      },
+      "2114112": {
+        "IA": "2114112_IA",
+        "TOT": "2114112_TOT",
+        "TW": "2114112_TW",
+        "GRADE": "2114112_Grade",
+        "GP": "2114112_GP",
+        "CREDITS": "2114112_Credits",
+        "CG": "2114112_CG",
+        "SUBJECT": "2114112_Subject"
+      },
+      "2114113": {
+        "IA": "2114113_IA",
+        "TOT": "2114113_TOT",
+        "TW": "2114113_TW",
+        "GRADE": "2114113_Grade",
+        "GP": "2114113_GP",
+        "CREDITS": "2114113_Credits",
+        "CG": "2114113_CG",
+        "SUBJECT": "2114113_Subject"
+      },
+      "2114114": {
+        "IA": "2114114_IA",
+        "TOT": "2114114_TOT",
+        "TW": "2114114_TW",
+        "GRADE": "2114114_Grade",
+        "GP": "2114114_GP",
+        "CREDITS": "2114114_Credits",
+        "CG": "2114114_CG",
+        "SUBJECT": "2114114_Subject"
+      },
+      "2114115": {
+        "IA": "2114115_IA",
+        "TOT": "2114115_TOT",
+        "TW": "2114115_TW",
+        "GRADE": "2114115_Grade",
+        "GP": "2114115_GP",
+        "CREDITS": "2114115_Credits",
+        "CG": "2114115_CG",
+        "SUBJECT": "2114115_Subject"
+      },
+      "2304211": {
+        "IA": "2304211_IA",
+        "TOT": "2304211_TOT",
+        "TW": "2304211_TW",
+        "GRADE": "2304211_Grade",
+        "GP": "2304211_GP",
+        "CREDITS": "2304211_Credits",
+        "CG": "2304211_CG",
+        "SUBJECT": "2304211_Subject"
+      },
+      "2304212": {
+        "IA": "2304212_IA",
+        "TOT": "2304212_TOT",
+        "TW": "2304212_TW",
+        "GRADE": "2304212_Grade",
+        "GP": "2304212_GP",
+        "CREDITS": "2304212_Credits",
+        "CG": "2304212_CG",
+        "SUBJECT": "2304212_Subject"
+      },
+      "2314211": {
+        "IA": "2314211_IA",
+        "TOT": "2314211_TOT",
+        "TW": "2314211_TW",
+        "GRADE": "2314211_Grade",
+        "GP": "2314211_GP",
+        "CREDITS": "2314211_Credits",
+        "CG": "2314211_CG",
+        "SUBJECT": "2314211_Subject"
+      },
+      "2314212": {
+        "IA": "2314212_IA",
+        "TOT": "2314212_TOT",
+        "TW": "2314212_TW",
+        "GRADE": "2314212_Grade",
+        "GP": "2314212_GP",
+        "CREDITS": "2314212_Credits",
+        "CG": "2314212_CG",
+        "SUBJECT": "2314212_Subject"
+      },
+      "2344211": {
+        "IA": "2344211_IA",
+        "TOT": "2344211_TOT",
+        "TW": "2344211_TW",
+        "GRADE": "2344211_Grade",
+        "GP": "2344211_GP",
+        "CREDITS": "2344211_Credits",
+        "CG": "2344211_CG",
+        "SUBJECT": "2344211_Subject"
+      },
+      "2994511": {
+        "IA": "2994511_IA",
+        "TOT": "2994511_TOT",
+        "TW": "2994511_TW",
+        "GRADE": "2994511_Grade",
+        "GP": "2994511_GP",
+        "CREDITS": "2994511_Credits",
+        "CG": "2994511_CG",
+        "SUBJECT": "2994511_Subject"
+      },
+      "2994512": {
+        "IA": "2994512_IA",
+        "TOT": "2994512_TOT",
+        "TW": "2994512_TW",
+        "GRADE": "2994512_Grade",
+        "GP": "2994512_GP",
+        "CREDITS": "2994512_Credits",
+        "CG": "2994512_CG",
+        "SUBJECT": "2994512_Subject"
+      }
+    },
+    "unmapped": [
+      "ABC_ID",
+      "Remark",
+      "Credits_Earned",
+      "Total_CG",
+      "1044312_TH",
+      "1044312_PR",
+      "1051312_TH",
+      "1051312_PR",
+      "1081313_TH",
+      "1081313_PR",
+      "1082312_TH",
+      "1082312_PR",
+      "1084311_TH",
+      "1084311_PR",
+      "1084313_TH",
+      "1084313_PR",
+      "1101311_TH",
+      "1101311_PR",
+      "1104311_TH",
+      "1104311_PR",
+      "1204311_TH",
+      "1204311_PR",
+      "1233311_TH",
+      "1233311_PR",
+      "1234311_TH",
+      "1234311_PR",
+      "1244311_TH",
+      "1244311_PR",
+      "1313311_TH",
+      "1313311_PR",
+      "2014411_TH",
+      "2014411_PR",
+      "2074211_TH",
+      "2074211_PR",
+      "2074212_TH",
+      "2074212_PR",
+      "2114111_TH",
+      "2114111_PR",
+      "2114112_TH",
+      "2114112_PR",
+      "2114113_TH",
+      "2114113_PR",
+      "2114114_TH",
+      "2114114_PR",
+      "2114115_TH",
+      "2114115_PR",
+      "2304211_TH",
+      "2304211_PR",
+      "2304212_TH",
+      "2304212_PR",
+      "2314211_TH",
+      "2314211_PR",
+      "2314212_TH",
+      "2314212_PR",
+      "2344211_TH",
+      "2344211_PR",
+      "2994511_TH",
+      "2994511_PR",
+      "2994512_TH",
+      "2994512_PR",
+      "Mother_Name",
+      "CGPI"
+    ],
+    "tier_used": 1,
+    "token_usage": 0
+  },
+  "659d704861873ea9": {
+    "mappings": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "sgpi": "SGPI",
+      "total_marks": "Total_Marks",
+      "max_marks": "Max_Marks",
+      "result": "Result_Status",
+      "gender": "Gender",
+      "candidate_type": "Candidate_Type",
+      "prn": "PRN",
+      "semester": "Semester"
+    },
+    "subjects": {
+      "1313311": {
+        "IA": "1313311_IA",
+        "TOT": "1313311_TOT",
+        "GRADE": "1313311_Grade",
+        "GP": "1313311_GP",
+        "CREDITS": "1313311_Credits",
+        "CG": "1313311_CG",
+        "SUBJECT": "1313311_Subject"
+      },
+      "2014411": {
+        "TW": "2014411_TW",
+        "TOT": "2014411_TOT",
+        "GRADE": "2014411_Grade",
+        "GP": "2014411_GP",
+        "CREDITS": "2014411_Credits",
+        "CG": "2014411_CG",
+        "SUBJECT": "2014411_Subject"
+      },
+      "2114111": {
+        "IA": "2114111_IA",
+        "TOT": "2114111_TOT",
+        "GRADE": "2114111_Grade",
+        "GP": "2114111_GP",
+        "CREDITS": "2114111_Credits",
+        "CG": "2114111_CG",
+        "SUBJECT": "2114111_Subject"
+      },
+      "2114112": {
+        "IA": "2114112_IA",
+        "TOT": "2114112_TOT",
+        "GRADE": "2114112_Grade",
+        "GP": "2114112_GP",
+        "CREDITS": "2114112_Credits",
+        "CG": "2114112_CG",
+        "SUBJECT": "2114112_Subject"
+      },
+      "2114113": {
+        "IA": "2114113_IA",
+        "TOT": "2114113_TOT",
+        "GRADE": "2114113_Grade",
+        "GP": "2114113_GP",
+        "CREDITS": "2114113_Credits",
+        "CG": "2114113_CG",
+        "SUBJECT": "2114113_Subject"
+      },
+      "2114114": {
+        "TW": "2114114_TW",
+        "GRADE": "2114114_Grade",
+        "GP": "2114114_GP",
+        "CREDITS": "2114114_Credits",
+        "CG": "2114114_CG",
+        "SUBJECT": "2114114_Subject",
+        "TOT": "2114114_TOT"
+      },
+      "2114115": {
+        "TW": "2114115_TW",
+        "TOT": "2114115_TOT",
+        "GRADE": "2114115_Grade",
+        "GP": "2114115_GP",
+        "CREDITS": "2114115_Credits",
+        "CG": "2114115_CG",
+        "SUBJECT": "2114115_Subject"
+      },
+      "2304211": {
+        "IA": "2304211_IA",
+        "TOT": "2304211_TOT",
+        "GRADE": "2304211_Grade",
+        "GP": "2304211_GP",
+        "CREDITS": "2304211_Credits",
+        "CG": "2304211_CG",
+        "SUBJECT": "2304211_Subject"
+      },
+      "2304212": {
+        "TW": "2304212_TW",
+        "TOT": "2304212_TOT",
+        "GRADE": "2304212_Grade",
+        "GP": "2304212_GP",
+        "CREDITS": "2304212_Credits",
+        "CG": "2304212_CG",
+        "SUBJECT": "2304212_Subject"
+      },
+      "2994511": {
+        "TW": "2994511_TW",
+        "TOT": "2994511_TOT",
+        "GRADE": "2994511_Grade",
+        "GP": "2994511_GP",
+        "CREDITS": "2994511_Credits",
+        "CG": "2994511_CG",
+        "SUBJECT": "2994511_Subject"
+      },
+      "2994512": {
+        "TW": "2994512_TW",
+        "TOT": "2994512_TOT",
+        "GRADE": "2994512_Grade",
+        "GP": "2994512_GP",
+        "CREDITS": "2994512_Credits",
+        "CG": "2994512_CG",
+        "SUBJECT": "2994512_Subject"
+      }
+    },
+    "unmapped": [
+      "ABC_ID",
+      "Remark",
+      "Credits_Earned",
+      "Total_CG",
+      "1313311_TH",
+      "2014411_PR",
+      "2114111_TH",
+      "2114112_TH",
+      "2114113_TH",
+      "2114114_PR",
+      "2114115_PR",
+      "2304211_TH",
+      "2304212_PR",
+      "Mother_Name",
+      "CGPI"
+    ],
+    "tier_used": 1,
+    "token_usage": 0
+  },
+  "dab02af681cbccd9": {
+    "mappings": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "sgpi": "SGPI",
+      "total_marks": "Total_Marks",
+      "max_marks": "Max_Marks",
+      "result": "Result_Status",
+      "gender": "Gender",
+      "candidate_type": "Candidate_Type",
+      "prn": "PRN",
+      "semester": "Semester"
+    },
+    "subjects": {
+      "ASD": {
+        "TOT": "ASD_TOT",
+        "GRADE": "ASD_Grade",
+        "GP": "ASD_GP",
+        "CREDITS": "ASD_Credits",
+        "CG": "ASD_CG",
+        "SUBJECT": "ASD_Subject"
+      },
+      "AIS": {
+        "TOT": "AIS_TOT",
+        "GRADE": "AIS_Grade",
+        "GP": "AIS_GP",
+        "CREDITS": "AIS_Credits",
+        "CG": "AIS_CG",
+        "SUBJECT": "AIS_Subject"
+      },
+      "CN": {
+        "TOT": "CN_TOT",
+        "GRADE": "CN_Grade",
+        "GP": "CN_GP",
+        "CREDITS": "CN_Credits",
+        "CG": "CN_CG",
+        "SUBJECT": "CN_Subject"
+      },
+      "MAM": {
+        "TOT": "MAM_TOT",
+        "GRADE": "MAM_Grade",
+        "GP": "MAM_GP",
+        "CREDITS": "MAM_Credits",
+        "CG": "MAM_CG",
+        "SUBJECT": "MAM_Subject"
+      },
+      "SML": {
+        "TOT": "SML_TOT",
+        "GRADE": "SML_Grade",
+        "GP": "SML_GP",
+        "CREDITS": "SML_Credits",
+        "CG": "SML_CG",
+        "SUBJECT": "SML_Subject"
+      },
+      "WMC": {
+        "TOT": "WMC_TOT",
+        "GRADE": "WMC_Grade",
+        "GP": "WMC_GP",
+        "CREDITS": "WMC_Credits",
+        "CG": "WMC_CG",
+        "SUBJECT": "WMC_Subject"
+      }
+    },
+    "unmapped": [
+      "ABC_ID",
+      "Remark",
+      "Credits_Earned",
+      "Total_CG"
+    ],
+    "tier_used": 1,
+    "token_usage": 0
   }
 }

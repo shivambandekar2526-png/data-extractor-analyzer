@@ -372,6 +372,8 @@ def extract_visual_blueprint(
         '      "code": "Course Code (e.g. CSC801, 1T01234)",\n'
         '      "name": "Full course/subject name",\n'
         '      "heads": ["TH", "IN", "Total"],\n'
+        '      "max_marks": {"TH": 60, "IN": 40, "Total": 100},\n'
+        '      "min_marks": {"TH": 24, "IN": 16, "Total": 40},\n'
         '      "credits": 4\n'
         '    }\n'
         '  ],\n'
@@ -389,6 +391,8 @@ def extract_visual_blueprint(
         '    }\n'
         '  }\n'
         "}\n\n"
+        "SCHEME INSTRUCTION: Inspect table headers/course schemes for maximum and minimum passing marks "
+        "(e.g. 60/24, 40/16, 25/10, 80/32, 20/8). If min_marks is not printed, apply 40% of max_marks.\n\n"
         f"FALLBACK TEXT CONTEXT:\n{p1_clean_text}\n"
     )
 
@@ -435,6 +439,7 @@ def extract_visual_blueprint(
         }
 
     # Normalize courses in catalog
+    import math
     catalog_courses: List[Course] = []
     for c in blueprint.get("courses", []):
         c_code = str(c.get("code", "")).strip().upper()
@@ -447,7 +452,36 @@ def extract_visual_blueprint(
             c_credits = float(c.get("credits", 0.0))
         except Exception:
             pass
-        catalog_courses.append(Course(code=c_code, name=c_name, heads=c_heads, credits=c_credits))
+
+        # Parse max_marks & min_marks
+        raw_max = c.get("max_marks", {}) or {}
+        raw_min = c.get("min_marks", {}) or {}
+        max_marks = {}
+        min_marks = {}
+        if isinstance(raw_max, dict):
+            for k, v in raw_max.items():
+                f_v = safe_float(v)
+                if f_v and f_v > 0:
+                    max_marks[normalize_head(str(k))] = int(f_v)
+        if isinstance(raw_min, dict):
+            for k, v in raw_min.items():
+                f_v = safe_float(v)
+                if f_v and f_v > 0:
+                    min_marks[normalize_head(str(k))] = int(f_v)
+
+        # 40% Passing Rule fallback: min_marks = ceil(0.40 * max_marks)
+        for h, mx in list(max_marks.items()):
+            if h not in min_marks and mx > 0:
+                min_marks[h] = math.ceil(0.40 * mx)
+
+        catalog_courses.append(Course(
+            code=c_code,
+            name=c_name,
+            heads=c_heads,
+            max_marks=max_marks,
+            min_marks=min_marks,
+            credits=c_credits
+        ))
 
     meta = ExamMeta(
         exam_title=blueprint.get("exam_title", ""),
