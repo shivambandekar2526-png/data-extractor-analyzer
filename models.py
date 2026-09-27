@@ -137,8 +137,15 @@ class StudentRecord:
                 c_obj = catalog.get_by_code(cr.course_code)
                 if c_obj:
                     c_name = c_obj.name
+            allowed_heads = None
+            if catalog:
+                c_obj = catalog.get_by_code(cr.course_code)
+                if c_obj and c_obj.heads:
+                    allowed_heads = set(c_obj.heads)
 
             for head, val in cr.marks.items():
+                if allowed_heads is not None and head not in allowed_heads:
+                    continue
                 d[f"{cr.course_code}_{head}"] = val
             d[f"{cr.course_code}_Grade"] = cr.grade
             d[f"{cr.course_code}_GP"] = cr.grade_point

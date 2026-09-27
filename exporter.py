@@ -156,14 +156,57 @@ def export_ai_extracted_data(
     if flat_rows is None:
         flat_rows = [s.to_flat_dict(meta.catalog) for s in students]
 
-    # Collect union of field names
+    # Construct canonical field names
+    fieldnames: List[str] = []
     seen_fields = set()
-    fieldnames = []
+
+    def add_field(f: str):
+        if f not in seen_fields:
+            seen_fields.add(f)
+            fieldnames.append(f)
+
+    # 1. Base student identity & academic status
+    base_headers = [
+        "Seat_No", "Student_Name", "Gender", "Candidate_Type", "PRN",
+        "Semester", "Result_Status", "Remark", "Total_Marks",
+        "Credits_Earned", "Total_CG", "SGPI"
+    ]
+    # Check if ERN, Mother_Name, ABC_ID exist in data
+    if any("Mother_Name" in r and r["Mother_Name"] for r in flat_rows):
+        base_headers.insert(5, "Mother_Name")
+    if any("ERN" in r and r["ERN"] for r in flat_rows):
+        base_headers.insert(5, "ERN")
+    if any("ABC_ID" in r and r["ABC_ID"] for r in flat_rows):
+        base_headers.insert(5, "ABC_ID")
+    if any("CGPI" in r and r["CGPI"] for r in flat_rows):
+        base_headers.append("CGPI")
+
+    for bh in base_headers:
+        add_field(bh)
+
+    # 2. Courses in exact catalog order with only authorized heads
+    if meta and meta.catalog and meta.catalog.courses:
+        for c in meta.catalog.courses:
+            heads = c.heads if c.heads else ["TH", "IA", "TOT"]
+            for h in heads:
+                add_field(f"{c.code}_{h}")
+            add_field(f"{c.code}_Grade")
+            add_field(f"{c.code}_GP")
+            add_field(f"{c.code}_Credits")
+            add_field(f"{c.code}_CG")
+            add_field(f"{c.code}_Subject")
+
+    # 3. Add any historical or remaining custom fields from flat rows (excluding hallucinated heads)
     for r in flat_rows:
         for k in r.keys():
             if k not in seen_fields:
-                seen_fields.add(k)
-                fieldnames.append(k)
+                # Do not add phantom course head columns if catalog is defined
+                if meta and meta.catalog and meta.catalog.courses and "_" in k:
+                    prefix, suffix = k.split("_", 1)
+                    c_match = meta.catalog.get_by_code(prefix)
+                    if c_match and suffix in ("TH", "IA", "TW", "PR", "TOT", "OR"):
+                        continue
+                add_field(k)
 
     # 1. Export CSV
     write_csv_file(flat_rows, fieldnames, csv_path)

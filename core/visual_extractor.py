@@ -212,41 +212,63 @@ def align_and_heal_student(
                 cr.grade_point = str(int(deduced_gp))
 
         # 4. Credits & Course CG: Credits * GP == CG
-        cr_credits = safe_float(cr.credits)
-        if cr_credits == 0 and catalog:
-            cat_match = catalog.get_by_code(cr.course_code)
-            if cat_match and cat_match.credits > 0:
+        cat_match = catalog.get_by_code(cr.course_code) if catalog else None
+        if cat_match:
+            # Enforce catalog declared heads only (strip hallucinated heads)
+            if cat_match.heads:
+                cr.marks = {h: v for h, v in cr.marks.items() if h in set(cat_match.heads)}
+            # Enforce catalog credits
+            if cat_match.credits > 0:
                 cr_credits = cat_match.credits
                 cr.credits = str(int(cr_credits) if cr_credits.is_integer() else cr_credits)
+            else:
+                cr_credits = safe_float(cr.credits)
+        else:
+            cr_credits = safe_float(cr.credits)
 
-        gp_val = safe_float(cr.grade_point)
-        if cr_credits > 0 and gp_val >= 0:
-            expected_cg = round(cr_credits * gp_val, 1)
-            cur_cg = safe_float(cr.credit_points)
-            if cur_cg == 0 or abs(cur_cg - expected_cg) > 0.5:
-                cr.credit_points = str(int(expected_cg) if expected_cg.is_integer() else expected_cg)
+        # Handle Grade F: GP = 0, CG = 0.0
+        if cr.grade == "F":
+            cr.grade_point = "0"
+            cr.credit_points = "0.0"
+        else:
+            gp_val = safe_float(cr.grade_point)
+            if cr_credits > 0 and gp_val >= 0:
+                expected_cg = round(cr_credits * gp_val, 1)
+                cur_cg = safe_float(cr.credit_points)
+                if cur_cg == 0 or abs(cur_cg - expected_cg) > 0.5:
+                    cr.credit_points = str(int(expected_cg) if expected_cg.is_integer() else expected_cg)
 
     # 5. Semester CG & Credits Invariants
+    has_failed_course = any(c.grade == "F" for c in student.course_results)
+    is_failed_student = has_failed_course or student.result_status in ("FAIL", "FAILED", "F")
+    if is_failed_student:
+        student.result_status = "FAIL"
+
     total_course_cg = sum(safe_float(c.credit_points) for c in student.course_results)
-    total_course_credits = sum(safe_float(c.credits) for c in student.course_results)
+    total_registered_credits = sum(safe_float(c.credits) for c in student.course_results)
+    passed_credits = sum(safe_float(c.credits) for c in student.course_results if c.grade != "F")
     total_course_marks = sum(safe_float(c.marks.get("TOT")) for c in student.course_results)
 
     cur_sem_cg = safe_float(student.total_cg)
     if total_course_cg > 0 and (cur_sem_cg == 0 or abs(cur_sem_cg - total_course_cg) > 1.0):
         student.total_cg = str(int(total_course_cg) if total_course_cg.is_integer() else total_course_cg)
 
+    # Credits earned: passed courses credits, or registered credits if all passed
     cur_sem_credits = safe_float(student.credits_earned)
-    if total_course_credits > 0 and cur_sem_credits == 0:
-        student.credits_earned = str(int(total_course_credits) if total_course_credits.is_integer() else total_course_credits)
+    if cur_sem_credits == 0 or cur_sem_credits > total_registered_credits or (has_failed_course and cur_sem_credits == total_registered_credits):
+        student.credits_earned = str(int(passed_credits) if passed_credits.is_integer() else passed_credits)
 
-    # 6. SGPI Invariant: Total CG / Total Credits == SGPI
-    earned_cr = safe_float(student.credits_earned) or total_course_credits
-    final_cg = safe_float(student.total_cg) or total_course_cg
-    if earned_cr > 0 and final_cg > 0:
-        expected_sgpi = round(final_cg / earned_cr, 2)
-        cur_sgpi = safe_float(student.sgpi)
-        if cur_sgpi == 0 or abs(cur_sgpi - expected_sgpi) > 0.05:
-            student.sgpi = f"{expected_sgpi:.2f}"
+    # 6. SGPI Invariant: Total CG / Total Registered Credits == SGPI (CEILING 10.00; 0.00 if FAIL)
+    if is_failed_student:
+        student.sgpi = "0.00"
+    else:
+        divisor = total_registered_credits if total_registered_credits > 0 else (safe_float(student.credits_earned) or 1.0)
+        final_cg = safe_float(student.total_cg) or total_course_cg
+        if divisor > 0 and final_cg > 0:
+            expected_sgpi = min(10.0, round(final_cg / divisor, 2))
+            cur_sgpi = safe_float(student.sgpi)
+            if cur_sgpi == 0 or cur_sgpi > 10.0 or abs(cur_sgpi - expected_sgpi) > 0.05:
+                student.sgpi = f"{expected_sgpi:.2f}"
 
     # 7. Total Marks Invariant
     cur_tot_marks = safe_float(student.total_marks)

@@ -186,7 +186,10 @@ def verify_student(student: StudentRecord, catalog: Optional[CourseCatalog] = No
     credits_to_use = sem_credits if sem_credits > 0 else total_course_credits
     cg_to_use = sem_cg if sem_cg > 0 else total_course_cg
 
-    if credits_to_use > 0 and cg_to_use > 0 and sgpi > 0:
+    if sgpi > 10.0:
+        result.sgpi_ok = False
+        result.failures.append(f"SGPI ({sgpi}) exceeds maximum possible 10.0 scale")
+    elif credits_to_use > 0 and cg_to_use > 0 and sgpi > 0:
         expected_sgpi = cg_to_use / credits_to_use
         if abs(expected_sgpi - sgpi) > 0.05:
             result.sgpi_ok = False
