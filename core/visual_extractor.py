@@ -31,6 +31,7 @@ try:
     from .page_ingester import ingest_pdf
     from .possibility_classifier import classify_document
     from .possibility_extractor import extract_with_possibility_engine
+    from .slot_sequence_parser import SequentialSlotMachine
 except Exception:
     try:
         from data_extractor_AI.models import Course, CourseCatalog, CourseResult, ExamMeta, StudentRecord
@@ -40,6 +41,7 @@ except Exception:
         from data_extractor_AI.core.page_ingester import ingest_pdf
         from data_extractor_AI.core.possibility_classifier import classify_document
         from data_extractor_AI.core.possibility_extractor import extract_with_possibility_engine
+        from data_extractor_AI.core.slot_sequence_parser import SequentialSlotMachine
     except Exception:
         from models import Course, CourseCatalog, CourseResult, ExamMeta, StudentRecord
         from core.checksum_verifier import safe_float, verify_student
@@ -48,6 +50,7 @@ except Exception:
         from core.page_ingester import ingest_pdf
         from core.possibility_classifier import classify_document
         from core.possibility_extractor import extract_with_possibility_engine
+        from core.slot_sequence_parser import SequentialSlotMachine
 
 logger = logging.getLogger(__name__)
 
@@ -56,13 +59,18 @@ AuditCallback = Optional[Callable[[Dict[str, Any]], None]]
 
 GRADE_SCALE: Dict[str, float] = {
     "O": 10.0,
-    "A": 9.0,
-    "B": 8.0,
-    "C": 7.0,
-    "D": 6.0,
+    "A+": 9.0,
+    "A": 8.0,
+    "B+": 7.0,
+    "B": 6.0,
+    "C": 5.0,
+    "D": 4.0,
     "E": 5.0,
     "P": 4.0,
-    "F": 0.0
+    "F": 0.0,
+    "AB": 0.0,
+    "AA": 0.0,
+    "ABS": 0.0
 }
 
 
@@ -220,11 +228,12 @@ def align_and_heal_student(
             cr.grade_point = str(int(GRADE_SCALE[cur_gp_str]))
 
         raw_g = (cr.grade or "").strip().upper()
-        if raw_g in GRADE_SCALE:
+        gp_num = safe_float(cr.grade_point)
+        if gp_num is not None and 0.0 < gp_num <= 10.0:
+            pass
+        elif raw_g in GRADE_SCALE:
             expected_gp = GRADE_SCALE[raw_g]
-            gp_num = safe_float(cr.grade_point)
-            if gp_num == 0 or abs(gp_num - expected_gp) > 0.1:
-                cr.grade_point = str(int(expected_gp))
+            cr.grade_point = str(int(expected_gp))
         elif tot_val > 0:
             # Map by percentage based on course max marks if available
             max_m = 100.0
@@ -516,6 +525,49 @@ def extract_visual_blueprint(
     }
 
 
+def extract_page_header_band(pdf_path: str, dpi: int = 150) -> Optional[bytes]:
+    """Crops the header band containing subject titles from Page 0."""
+    try:
+        from PIL import Image
+        import io
+        p0_bytes = render_page_as_jpeg(pdf_path, page_index=0, dpi=dpi)
+        img = Image.open(io.BytesIO(p0_bytes))
+        header_height = int(img.height * 0.22)
+        header_crop = img.crop((0, 0, img.width, header_height))
+        buf = io.BytesIO()
+        header_crop.save(buf, format="JPEG", quality=85)
+        return buf.getvalue()
+    except Exception as e:
+        logger.debug("Could not crop header band: %s", e)
+        return None
+
+
+def splice_header_to_page_image(header_bytes: bytes, page_bytes: bytes) -> bytes:
+    """Vertically splices header band on top of any candidate page image."""
+    try:
+        from PIL import Image
+        import io
+        header_img = Image.open(io.BytesIO(header_bytes))
+        page_img = Image.open(io.BytesIO(page_bytes))
+
+        if header_img.width != page_img.width:
+            h_ratio = page_img.width / header_img.width
+            new_h = int(header_img.height * h_ratio)
+            header_img = header_img.resize((page_img.width, new_h), Image.Resampling.LANCZOS)
+
+        total_height = header_img.height + page_img.height
+        combined = Image.new("RGB", (page_img.width, total_height), (255, 255, 255))
+        combined.paste(header_img, (0, 0))
+        combined.paste(page_img, (0, header_img.height))
+
+        buf = io.BytesIO()
+        combined.save(buf, format="JPEG", quality=85)
+        return buf.getvalue()
+    except Exception as e:
+        logger.debug("Failed to splice header band: %s", e)
+        return page_bytes
+
+
 def extract_sliced_page(
     pdf_path: str,
     page_index: int,
@@ -528,6 +580,23 @@ def extract_sliced_page(
     and extracts all student records residing on this specific page.
     """
     page_jpeg = render_page_as_jpeg(pdf_path, page_index=page_index, dpi=150)
+
+    # For subsequent pages without table headers, splice Page 0 header band on top
+    if page_index > 0:
+        header_band = extract_page_header_band(pdf_path, dpi=150)
+        if header_band:
+            page_jpeg = splice_header_to_page_image(header_band, page_jpeg)
+            if audit_cb:
+                try:
+                    audit_cb({
+                        "timestamp": time.strftime("%H:%M:%S"),
+                        "type": "visual_header_spliced",
+                        "badge": "HEADER SPLICED",
+                        "title": f"Spliced Page 1 header anchor onto Page {page_index + 1} to prevent column drift",
+                        "details": {"page_index": page_index}
+                    })
+                except Exception:
+                    pass
 
     doc = fitz.open(pdf_path)
     page_text = doc[page_index].get_text("text") if page_index < len(doc) else ""
@@ -712,6 +781,14 @@ def extract_sliced_page(
             cgpi=str(raw.get("cgpi", "")).strip(),
             history=hist_dict
         )
+
+        # 1. Positional Slot Stream Parsing (Highest Accuracy, Zero Column Drift)
+        raw_tokens = raw.get("tokens") or raw.get("cell_tokens") or raw.get("sequence")
+        if isinstance(raw_tokens, list) and len(raw_tokens) >= 5:
+            slot_machine = SequentialSlotMachine(catalog=catalog_temp)
+            st = slot_machine.parse_student_tokens(raw_tokens, meta=raw)
+            students.append(st)
+            continue
 
         courses_raw = raw.get("courses", [])
         cr_list: List[Dict[str, Any]] = []
