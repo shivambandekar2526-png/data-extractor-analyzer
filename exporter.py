@@ -154,7 +154,7 @@ def export_ai_extracted_data(
 
     # Flatten students to dicts if not provided
     if flat_rows is None:
-        flat_rows = [s.to_flat_dict(meta.catalog, meta=meta) for s in students]
+        flat_rows = [s.to_flat_dict(meta.catalog) for s in students]
 
     # Construct canonical field names
     fieldnames: List[str] = []
@@ -171,14 +171,6 @@ def export_ai_extracted_data(
         "Semester", "Result_Status", "Remark", "Total_Marks",
         "Credits_Earned", "Total_CG", "SGPI"
     ]
-    # Dynamic primary / secondary identifier headers (e.g. USN, Roll_No, Enrollment_No)
-    if meta and meta.primary_id_name and meta.primary_id_name != "Seat_No":
-        if any(meta.primary_id_name in r for r in flat_rows):
-            base_headers.insert(1, meta.primary_id_name)
-    if meta and meta.secondary_id_name and meta.secondary_id_name != "PRN":
-        if any(meta.secondary_id_name in r for r in flat_rows):
-            base_headers.insert(5, meta.secondary_id_name)
-
     # Check if ERN, Mother_Name, ABC_ID exist in data
     if any("Mother_Name" in r and r["Mother_Name"] for r in flat_rows):
         base_headers.insert(5, "Mother_Name")
