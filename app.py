@@ -113,7 +113,33 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosschec
                             jobs[job_id]["token_usage"]["total"] += tot_tok
 
         t0 = time.time()
-        if pipeline_mode == "visual_blueprint":
+        if pipeline_mode == "block_extraction":
+            from core.block_extractor import run_block_extraction_pipeline
+            from core.cloud_client import CloudClient, ORCHESTRATION_CANDIDATES
+            cc_probe = CloudClient()
+            active_cand = cc_probe.get_best_working_model(requires_vision=True)
+
+            log_audit({
+                "timestamp": time.strftime("%H:%M:%S"),
+                "type": "cloud_ai_active",
+                "badge": "BLOCK EXTRACTION",
+                "title": f"Universal Block Extraction Initialized with {active_cand['provider'].upper()} ({active_cand['model']})",
+                "details": {
+                    "provider": active_cand["provider"],
+                    "model": active_cand["model"],
+                    "pipeline": "block_extraction",
+                    "auto_failover": True,
+                    "failover_candidates": [c["label"] for c in ORCHESTRATION_CANDIDATES[:5]]
+                }
+            })
+
+            meta, students, archetype = run_block_extraction_pipeline(
+                pdf_path=target_pdf_path,
+                progress_cb=on_progress,
+                audit_cb=log_audit,
+                client=cc_probe
+            )
+        elif pipeline_mode == "visual_blueprint":
             from core.visual_extractor import run_visual_blueprint_pipeline
             from core.cloud_client import CloudClient, ORCHESTRATION_CANDIDATES
             cc_probe = CloudClient()

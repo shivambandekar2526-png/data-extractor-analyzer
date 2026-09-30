@@ -223,14 +223,17 @@ function initUpload() {
   const pipeLocal = document.getElementById("pipelineLocal");
   const pipeCloud = document.getElementById("pipelineCloud");
   const pipeVisual = document.getElementById("pipelineVisual");
+  const pipeBlock = document.getElementById("pipelineBlock");
   const pipeLocalLabel = document.getElementById("pipelineLocalLabel");
   const pipeCloudLabel = document.getElementById("pipelineCloudLabel");
   const pipeVisualLabel = document.getElementById("pipelineVisualLabel");
+  const pipeBlockLabel = document.getElementById("pipelineBlockLabel");
 
   function setPipelineActive(activeType) {
     if (pipeLocalLabel) pipeLocalLabel.classList.toggle("active", activeType === "local");
     if (pipeCloudLabel) pipeCloudLabel.classList.toggle("active", activeType === "cloud");
     if (pipeVisualLabel) pipeVisualLabel.classList.toggle("active", activeType === "visual_blueprint");
+    if (pipeBlockLabel) pipeBlockLabel.classList.toggle("active", activeType === "block_extraction");
 
     const telemEngine = document.getElementById("telemEngine");
     const auditGpuText = document.getElementById("auditGpuText");
@@ -243,12 +246,16 @@ function initUpload() {
     } else if (activeType === "visual_blueprint") {
       if (telemEngine) telemEngine.textContent = "Visual Blueprint & Sliced Stream (Multimodal Vision AI)";
       if (auditGpuText) auditGpuText.textContent = "Vision AI Ready";
+    } else if (activeType === "block_extraction") {
+      if (telemEngine) telemEngine.textContent = "Universal Block Extraction (Slice & Stitch — Any College)";
+      if (auditGpuText) auditGpuText.textContent = "Block AI Ready";
     }
   }
 
   if (pipeLocal) pipeLocal.addEventListener("change", () => setPipelineActive("local"));
   if (pipeCloud) pipeCloud.addEventListener("change", () => setPipelineActive("cloud"));
   if (pipeVisual) pipeVisual.addEventListener("change", () => setPipelineActive("visual_blueprint"));
+  if (pipeBlock) pipeBlock.addEventListener("change", () => setPipelineActive("block_extraction"));
 
   extractBtn.addEventListener("click", startExtraction);
 }
