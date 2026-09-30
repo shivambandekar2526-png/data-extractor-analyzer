@@ -21,6 +21,12 @@ class Course:
     credits: float = 0.0
 
 
+def normalize_course_code(code: str) -> str:
+    """Strip leading serial numbers: '01.CSC801' -> 'CSC801', '17.CSL801' -> 'CSL801'."""
+    clean = str(code or "").strip().upper()
+    return re.sub(r"^\d{1,2}\.\s*", "", clean)
+
+
 @dataclass
 class CourseCatalog:
     """Registry of all courses discovered from a document."""
@@ -135,27 +141,28 @@ class StudentRecord:
             d["Mother_Name"] = self.mother_name
 
         for cr in self.course_results:
+            c_code = normalize_course_code(cr.course_code)
             c_name = cr.course_name
             if not c_name and catalog:
-                c_obj = catalog.get_by_code(cr.course_code)
+                c_obj = catalog.get_by_code(c_code)
                 if c_obj:
                     c_name = c_obj.name
             allowed_heads = None
             if catalog:
-                c_obj = catalog.get_by_code(cr.course_code)
+                c_obj = catalog.get_by_code(c_code)
                 if c_obj and c_obj.heads:
                     allowed_heads = set(c_obj.heads)
 
             for head, val in cr.marks.items():
                 if allowed_heads is not None and head not in allowed_heads:
                     continue
-                d[f"{cr.course_code}_{head}"] = val
-            d[f"{cr.course_code}_Grade"] = cr.grade
-            d[f"{cr.course_code}_GP"] = cr.grade_point
-            d[f"{cr.course_code}_Credits"] = cr.credits
-            d[f"{cr.course_code}_CG"] = cr.credit_points
+                d[f"{c_code}_{head}"] = val
+            d[f"{c_code}_Grade"] = cr.grade
+            d[f"{c_code}_GP"] = cr.grade_point
+            d[f"{c_code}_Credits"] = cr.credits
+            d[f"{c_code}_CG"] = cr.credit_points
             if c_name:
-                d[f"{cr.course_code}_Subject"] = c_name
+                d[f"{c_code}_Subject"] = c_name
 
         # Historical semester data
         for sem_label, sem_data in self.history.items():

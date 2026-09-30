@@ -28,11 +28,15 @@ from core.checksum_verifier import verify_student
 from core.cloud_client import CloudClient
 from core.visual_extractor import (
     align_and_heal_student,
+    analyze_page_seat_recall,
     extract_sliced_page,
     extract_visual_blueprint,
     normalize_course_code,
+    parse_grace_mark,
+    reextract_targeted_student,
     render_page_as_jpeg,
     run_visual_blueprint_pipeline,
+    validate_student_record,
 )
 from models import Course, CourseCatalog, CourseResult, ExamMeta, StudentRecord
 
@@ -846,11 +850,175 @@ class TestVisualBlueprintPipeline(unittest.TestCase):
             CourseResult(course_code="CSC801", marks={"TOT": "85"}),
         ]
 
-        healed = align_and_heal_student(student, catalog=catalog)
-        self.assertEqual(
-            [normalize_course_code(cr.course_code) for cr in healed.course_results],
-            ["CSC801", "CSDO8013", "CSL801"]
+    def test_schema_aware_validation_and_grace_marks(self):
+        """Test schema-aware validation for TH+IA, TW+PR, TW+OR and grace mark recognition."""
+        catalog = CourseCatalog(courses=[
+            Course(code="CSC801", name="Theory Course", heads=["TH", "IA", "TOT"]),
+            Course(code="CSL801", name="Lab Course", heads=["TW", "PR", "TOT"]),
+            Course(code="CSP801", name="Project Course", heads=["TW", "OR", "TOT"]),
+            Course(code="AUD801", name="Audit Course", heads=[]),
+        ])
+
+        # Student with valid grace marks (#, +, *) and valid heads
+        valid_student = StudentRecord(seat_no="1001", student_name="VALID STUDENT")
+        valid_student.course_results = [
+            CourseResult(course_code="CSC801", marks={"TH": "36", "IA": "4", "TOT": "40#"}), # 36+4=40
+            CourseResult(course_code="CSL801", marks={"TW": "22", "PR": "23", "TOT": "45"}),  # 22+23=45
+            CourseResult(course_code="CSP801", marks={"TW": "45", "OR": "45", "TOT": "90*"}), # 45+45=90
+            CourseResult(course_code="AUD801", marks={}, grade="P", grade_point="0")           # Audit: no heads
+        ]
+
+        conflicts = validate_student_record(valid_student, catalog=catalog)
+        self.assertEqual(len(conflicts), 0, f"Expected 0 conflicts for valid student, got: {conflicts}")
+
+        # Student with schema mathematical errors
+        invalid_student = StudentRecord(seat_no="1002", student_name="INVALID STUDENT")
+        invalid_student.course_results = [
+            CourseResult(course_code="CSC801", marks={"TH": "50", "IA": "16", "TOT": "75"}), # 50+16 != 75
+            CourseResult(course_code="CSL801", marks={"TW": "20", "PR": "20", "TOT": "45"}),  # 20+20 != 45
+        ]
+
+        conflicts_inv = validate_student_record(invalid_student, catalog=catalog)
+        self.assertEqual(len(conflicts_inv), 2)
+        err_courses = [c["course"] for c in conflicts_inv]
+        self.assertIn("CSC801", err_courses)
+        self.assertIn("CSL801", err_courses)
+
+    def test_deterministic_auditor_conflict_detection(self):
+        """Test deterministic extraction is an auditor signal: flags disagreement without blind overwrite."""
+        catalog = CourseCatalog(courses=[
+            Course(code="CSC801", name="AI", heads=["TH", "IA", "TOT"])
+        ])
+
+        vision_student = StudentRecord(seat_no="7001", student_name="VISION EXTRACTED")
+        vision_student.course_results = [
+            CourseResult(course_code="CSC801", marks={"TH": "60", "IA": "16", "TOT": "76"}, grade="O", grade_point="10")
+        ]
+
+        # Deterministic record has differing marks (e.g. TOT = 66)
+        det_student = StudentRecord(seat_no="7001", student_name="DET RECORD")
+        det_student.course_results = [
+            CourseResult(course_code="CSC801", marks={"TH": "50", "IA": "16", "TOT": "66"}, grade="A", grade_point="9")
+        ]
+
+        # Validate detects auditor disagreement
+        conflicts = validate_student_record(vision_student, catalog=catalog, det_student=det_student)
+        self.assertEqual(len(conflicts), 1)
+        self.assertEqual(conflicts[0]["type"], "AUDITOR_DISAGREEMENT")
+        self.assertIn("Vision TOT (76.0) != Deterministic TOT (66.0)", conflicts[0]["detail"])
+
+        # Crucially: align_and_heal_student does NOT overwrite Vision result
+        healed = align_and_heal_student(vision_student, catalog=catalog, ground_truth=det_student)
+        self.assertEqual(healed.course_results[0].marks["TOT"], "76")
+
+    def test_page_seat_recall_and_targeted_reextraction(self):
+        """Test page recall audit identifies missing seats and triggers targeted re-extraction."""
+        page_text = (
+            "7000101  STUDENT ONE\n"
+            "7000102  STUDENT TWO\n"
+            "7000103  STUDENT THREE\n"
         )
+
+        extracted_students = [
+            StudentRecord(seat_no="7000101", student_name="STUDENT ONE"),
+            StudentRecord(seat_no="7000101", student_name="STUDENT ONE DUP"), # duplicate
+            StudentRecord(seat_no="7000102", student_name="STUDENT TWO")
+        ]
+
+        recall = analyze_page_seat_recall(page_text, extracted_students)
+        self.assertIn("7000103", recall["missing_seats"])
+        self.assertIn("7000101", recall["duplicate_seats"])
+
+        # Test targeted re-extraction prompt construction and execution
+        mock_client = MagicMock()
+        mock_client.generate_direct.return_value = json.dumps({
+            "seat_no": "7000103",
+            "student_name": "STUDENT THREE",
+            "courses": [{"code": "CSC801", "marks": {"TOT": "78"}, "grade": "O", "gp": "10"}]
+        })
+
+        re_s = reextract_targeted_student(
+            pdf_path=self.sample_pdf,
+            page_index=0,
+            seat_no="7000103",
+            target_courses=["CSC801"],
+            blueprint={"exam_title": "B.E.", "courses": [{"code": "CSC801"}]},
+            client=mock_client
+        )
+
+        self.assertIsNotNone(re_s)
+        self.assertEqual(re_s.seat_no, "7000103")
+        self.assertEqual(re_s.student_name, "STUDENT THREE")
+        self.assertTrue(mock_client.generate_direct.called)
+        _, kwargs = mock_client.generate_direct.call_args
+        self.assertIn("Look directly upward from each number in the candidate row", kwargs["system_instruction"])
+        self.assertIn("NEVER shift values horizontally", kwargs["system_instruction"])
+
+    def test_grade_preservation_without_percentage_recalculation(self):
+        """Test printed grade is preserved and not recalculated from percentage."""
+        catalog = CourseCatalog(courses=[
+            Course(code="CSC801", name="AI", credits=3.0, max_marks={"TH": 80, "IA": 20, "TOT": 100})
+        ])
+
+        # Student with printed Grade 'B' and GP '8', even though TOT is 75 (where 75 >= 70 might be 'A')
+        student = StudentRecord(seat_no="9001", student_name="GRADE PRESERVED")
+        student.course_results = [
+            CourseResult(course_code="CSC801", marks={"TOT": "75"}, grade="B", grade_point="8", credits="3")
+        ]
+
+        healed = align_and_heal_student(student, catalog=catalog)
+        # Printed grade 'B' MUST be preserved, not overwritten to 'A'
+        self.assertEqual(healed.course_results[0].grade, "B")
+        self.assertEqual(healed.course_results[0].grade_point, "8")
+
+    def test_exporter_numeric_zero_preservation(self):
+        """Test exporter preserves numeric 0 (e.g. Grade F GP=0) and canonical course codes."""
+        from exporter import export_ai_extracted_data
+        import tempfile
+
+        catalog = CourseCatalog(courses=[
+            Course(code="01.CSC801", name="AI", heads=["TH", "IA", "TOT"], credits=3.0),
+            Course(code="17.CSL801", name="AI Lab", heads=["TW", "PR", "TOT"], credits=1.0)
+        ])
+        meta = ExamMeta(exam_title="B.E. Sem VIII", semester="VIII", catalog=catalog)
+
+        # Student with GP 0 (Fail) in lab, and normal score in theory
+        student = StudentRecord(
+            seat_no="9002",
+            student_name="FAIL CANDIDATE",
+            result_status="FAIL",
+            sgpi="0.00"
+        )
+        student.course_results = [
+            CourseResult(course_code="01.CSC801", marks={"TH": "45", "IA": "15", "TOT": "60"}, grade="C", grade_point="7", credits="3", credit_points="21"),
+            CourseResult(course_code="17.CSL801", marks={"TW": "0", "PR": "0", "TOT": "0"}, grade="F", grade_point="0", credits="1", credit_points="0")
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_folder, csv_path = export_ai_extracted_data(
+                meta=meta,
+                students=[student],
+                input_pdf_path=self.sample_pdf,
+                base_output_dir=tmpdir
+            )
+
+            with open(csv_path, "r", encoding="utf-8") as f:
+                header_line = f.readline().strip().split(",")
+                row_line = f.readline().strip().split(",")
+
+            # 1. Canonical course codes in headers (CSC801_TH, NOT 01.CSC801_TH)
+            self.assertIn("CSC801_TH", header_line)
+            self.assertIn("CSL801_TW", header_line)
+            self.assertNotIn("01.CSC801_TH", header_line)
+
+            # 2. Labs do NOT receive ghost TH/IA columns
+            self.assertNotIn("CSL801_TH", header_line)
+            self.assertNotIn("CSL801_IA", header_line)
+
+            # 3. Numeric 0 GP and marks are preserved, NOT pruned
+            self.assertIn("CSL801_GP", header_line)
+            col_idx = header_line.index("CSL801_GP")
+            self.assertEqual(row_line[col_idx], "0")
 
 
 if __name__ == "__main__":

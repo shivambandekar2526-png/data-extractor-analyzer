@@ -129,55 +129,313 @@ def segment_page_into_student_blocks(page_text: str) -> List[Dict[str, Any]]:
     return blocks
 
 
+def parse_grace_mark(val: Any) -> Optional[float]:
+    """Extract numeric total from mark string with grace markers (e.g. '36+4#', '40#', '50*')."""
+    if val is None:
+        return None
+    s = str(val).strip()
+    if not s or s.upper() in ("--", "AB", "ABS", "AA", "NULL", "NONE"):
+        return None
+    m_add = re.match(r"^(\d+(?:\.\d+)?)\s*\+\s*(\d+(?:\.\d+)?)\s*([#*+@]?)$", s)
+    if m_add:
+        return float(m_add.group(1)) + float(m_add.group(2))
+    m_sym = re.match(r"^(\d+(?:\.\d+)?)\s*([#*+@]?)$", s)
+    if m_sym:
+        return float(m_sym.group(1))
+    try:
+        return float(s)
+    except Exception:
+        return None
+
+
+def validate_student_record(
+    student: StudentRecord,
+    catalog: Optional[CourseCatalog] = None,
+    det_student: Optional[StudentRecord] = None
+) -> List[Dict[str, Any]]:
+    """
+    Schema-Aware Mathematical & Auditor Validator.
+    Flags mathematical errors, Grade <-> GP conflicts, and auditor disagreements.
+    Does NOT silently mutate student data.
+    """
+    conflicts: List[Dict[str, Any]] = []
+
+    for cr in student.course_results:
+        c_code = normalize_course_code(cr.course_code)
+        c_meta = catalog.get_by_code(c_code) if catalog else None
+        declared_heads = set(c_meta.heads) if c_meta and c_meta.heads else set(cr.marks.keys())
+
+        tot = parse_grace_mark(cr.marks.get("TOT"))
+        th = parse_grace_mark(cr.marks.get("TH") or cr.marks.get("ESE"))
+        ia = parse_grace_mark(cr.marks.get("IA"))
+        tw = parse_grace_mark(cr.marks.get("TW"))
+        pr = parse_grace_mark(cr.marks.get("PR") or cr.marks.get("PRA"))
+        oral = parse_grace_mark(cr.marks.get("OR"))
+
+        # Rule 1: TH + IA + TOT
+        if "TOT" in declared_heads and ("TH" in declared_heads or "ESE" in declared_heads) and "IA" in declared_heads:
+            if th is not None and ia is not None and tot is not None:
+                if abs((th + ia) - tot) > 0.5:
+                    conflicts.append({
+                        "course": c_code,
+                        "type": "SCHEMA_MATH_ERROR",
+                        "detail": f"TH ({th}) + IA ({ia}) != TOT ({tot})"
+                    })
+
+        # Rule 2: TW + PR + TOT
+        elif "TOT" in declared_heads and "TW" in declared_heads and ("PR" in declared_heads or "PRA" in declared_heads):
+            if tw is not None and pr is not None and tot is not None:
+                if abs((tw + pr) - tot) > 0.5:
+                    conflicts.append({
+                        "course": c_code,
+                        "type": "SCHEMA_MATH_ERROR",
+                        "detail": f"TW ({tw}) + PR ({pr}) != TOT ({tot})"
+                    })
+
+        # Rule 3: TW + OR + TOT
+        elif "TOT" in declared_heads and "TW" in declared_heads and "OR" in declared_heads:
+            if tw is not None and oral is not None and tot is not None:
+                if abs((tw + oral) - tot) > 0.5:
+                    conflicts.append({
+                        "course": c_code,
+                        "type": "SCHEMA_MATH_ERROR",
+                        "detail": f"TW ({tw}) + OR ({oral}) != TOT ({tot})"
+                    })
+
+        # Grade <-> GP Consistency
+        raw_g = (cr.grade or "").strip().upper()
+        if raw_g in SYNTHETIC_GRADE_MAP:
+            raw_g = SYNTHETIC_GRADE_MAP[raw_g]
+        raw_gp = safe_float(cr.grade_point)
+        if raw_g in GRADE_SCALE and raw_gp is not None and raw_gp > 0:
+            expected_gp = GRADE_SCALE[raw_g]
+            if abs(expected_gp - raw_gp) > 0.1:
+                conflicts.append({
+                    "course": c_code,
+                    "type": "GRADE_GP_CONFLICT",
+                    "detail": f"Grade '{raw_g}' (expected GP {int(expected_gp)}) conflicts with GP '{raw_gp}'"
+                })
+
+        # Deterministic Auditor Comparison (Independent Validation Signal)
+        if det_student:
+            det_courses = {normalize_course_code(c.course_code): c for c in det_student.course_results if c.course_code}
+            det_cr = det_courses.get(c_code)
+            if det_cr:
+                det_tot = parse_grace_mark(det_cr.marks.get("TOT"))
+                if tot is not None and det_tot is not None and abs(tot - det_tot) > 0.5:
+                    conflicts.append({
+                        "course": c_code,
+                        "type": "AUDITOR_DISAGREEMENT",
+                        "detail": f"Vision TOT ({tot}) != Deterministic TOT ({det_tot})"
+                    })
+
+    return conflicts
+
+
+def run_deterministic_auditor(pdf_path: str) -> Dict[str, StudentRecord]:
+    """
+    Runs deterministic extraction as an independent validation signal (auditor).
+    Guarantees zero GPU/cloud overhead and NEVER blindly overwrites vision results.
+    """
+    try:
+        archetype, _ = classify_document(pdf_path)
+        _, det_students = extract_with_possibility_engine(pdf_path, archetype=archetype)
+        return {s.seat_no: s for s in det_students if s.seat_no}
+    except Exception as e:
+        logger.debug("Deterministic auditor omitted: %s", e)
+        return {}
+
+
+def analyze_page_seat_recall(page_text: str, extracted_students: List[StudentRecord]) -> Dict[str, Any]:
+    """
+    Audits page-level recall by comparing detected seat numbers against extracted students.
+    Identifies missing, unexpected, and duplicate seat numbers.
+    """
+    seat_candidates = re.findall(r"\b([0-9]{7,8})\b", page_text)
+    seen_sc = set()
+    detected_seats = [s for s in seat_candidates if not (s in seen_sc or seen_sc.add(s))]
+
+    extracted_seats = [s.seat_no for s in extracted_students if s.seat_no]
+    extracted_set = set(extracted_seats)
+
+    missing_seats = [s for s in detected_seats if s not in extracted_set]
+    unexpected_seats = [s for s in extracted_seats if s not in set(detected_seats)]
+
+    seen_ext = set()
+    duplicate_seats = [s for s in extracted_seats if s in seen_ext or seen_ext.add(s)]
+
+    return {
+        "detected_seats": detected_seats,
+        "extracted_seats": extracted_seats,
+        "missing_seats": missing_seats,
+        "unexpected_seats": unexpected_seats,
+        "duplicate_seats": duplicate_seats
+    }
+
+
+def reextract_targeted_student(
+    pdf_path: str,
+    page_index: int,
+    seat_no: str,
+    target_courses: List[str],
+    blueprint: Dict[str, Any],
+    client: CloudClient,
+    catalog: Optional[CourseCatalog] = None,
+    audit_cb: Optional[AuditCallback] = None
+) -> Optional[StudentRecord]:
+    """
+    Targeted Conflict Resolution Engine:
+    Re-extracts exclusively the affected candidate row / assessment region.
+    Directives mandate using the physical course header, strictly forbidding horizontal value shifting.
+    """
+    targeted_jpeg = render_page_as_jpeg(pdf_path, page_index=page_index, dpi=160)
+    try:
+        from PIL import Image
+        import io
+        doc = fitz.open(pdf_path)
+        if page_index < len(doc):
+            page = doc[page_index]
+            rects = page.search_for(seat_no)
+            if rects:
+                scale = 160.0 / 72.0
+                page_pix = page.get_pixmap(dpi=160)
+                page_img = Image.open(io.BytesIO(page_pix.tobytes("jpeg")))
+                r = rects[0]
+                top_y = max(0, int((r.y0 - 25) * scale))
+                bottom_y = min(page_img.height, int((r.y1 + 100) * scale))
+                student_crop = page_img.crop((0, top_y, page_img.width, bottom_y))
+                
+                header_bytes = extract_page_header_band(pdf_path, dpi=160)
+                if header_bytes:
+                    header_img = Image.open(io.BytesIO(header_bytes))
+                    if header_img.width != student_crop.width:
+                        new_h = int(header_img.height * student_crop.width / header_img.width)
+                        header_img = header_img.resize((student_crop.width, new_h))
+                    total_h = header_img.height + student_crop.height
+                    combined = Image.new("RGB", (student_crop.width, total_h), (255, 255, 255))
+                    combined.paste(header_img, (0, 0))
+                    combined.paste(student_crop, (0, header_img.height))
+                    buf = io.BytesIO()
+                    combined.save(buf, format="JPEG", quality=85)
+                    targeted_jpeg = buf.getvalue()
+                else:
+                    buf = io.BytesIO()
+                    student_crop.save(buf, format="JPEG", quality=85)
+                    targeted_jpeg = buf.getvalue()
+        doc.close()
+    except Exception as e:
+        logger.debug("Crop for targeted resolution fell back to full page: %s", e)
+
+    courses_target_str = ", ".join(target_courses) if target_courses else "ALL DECLARED COURSES"
+    
+    system_instruction = (
+        "You are an expert academic ledger auditor performing targeted conflict resolution on an individual candidate row.\n"
+        "A validation conflict or missing record was detected. Your task is to resolve the exact values for this specific candidate.\n"
+        "STRICT EXTRACTION DIRECTIVES:\n"
+        "1. PHYSICAL HEADER ASSOCIATION (ZERO HORIZONTAL SHIFTING):\n"
+        "   - Look directly upward from each number in the candidate row to the physical table header above it.\n"
+        "   - Associate each number strictly with the Course Code and Assessment Header (TH, IA, TOT, TW, PR, OR) directly above it.\n"
+        "   - NEVER shift values horizontally. Do NOT use numbers from neighboring columns or neighboring candidate rows.\n"
+        "2. ACCURATE GRADES & NO SYNTHETIC GRADES:\n"
+        "   - Use official Mumbai University CBCS C-Scheme: O=10, A=9, B=8, C=7, D=6, E=5, P=4, F=0, AB=Absent.\n"
+        "   - NEVER output 'A+' or 'B+'. GP 9 is ALWAYS 'A', GP 8 is ALWAYS 'B', GP 7 is 'C'.\n"
+        "3. PRESERVE PRINTED MARKS & GRACE SYMBOLS:\n"
+        "   - If a mark has a grace symbol (e.g. '36+4#' or '40#'), record '40' and remark='PASS_WITH_GRACE_#'.\n"
+        "Return ONLY pure JSON."
+    )
+
+    user_prompt = (
+        f"Extract exclusively the student record for Seat No: {seat_no} from this cropped candidate image.\n"
+        f"Focus specifically on resolving the values for courses: {courses_target_str}.\n\n"
+        "Return pure JSON with this exact structure:\n"
+        "{\n"
+        f'  "seat_no": "{seat_no}",\n'
+        '  "student_name": "Full candidate name",\n'
+        '  "gender": "M or F",\n'
+        '  "result_status": "PASS or FAIL or KT",\n'
+        '  "total_marks": "Total semester marks",\n'
+        '  "sgpi": "SGPI",\n'
+        '  "cgpi": "CGPI",\n'
+        '  "courses": [\n'
+        "    {\n"
+        '      "code": "Course Code matching header",\n'
+        '      "marks": {"HEAD": "marks"},\n'
+        '      "grade": "Letter grade (O, A, B, C, D, E, P, F)",\n'
+        '      "gp": "Grade point (10, 9, 8, 7, 6, 5, 4, 0)",\n'
+        '      "credits": "Course credits",\n'
+        '      "cg": "Credit points"\n'
+        "    }\n"
+        "  ]\n"
+        "}"
+    )
+
+    if audit_cb:
+        try:
+            audit_cb({
+                "timestamp": time.strftime("%H:%M:%S"),
+                "type": "targeted_reextraction_start",
+                "badge": "TARGETED RESOLUTION",
+                "title": f"Dispatching targeted re-extraction for Seat {seat_no} (target: {courses_target_str})",
+                "details": {"seat_no": seat_no, "target_courses": target_courses}
+            })
+        except Exception:
+            pass
+
+    t0 = time.time()
+    try:
+        resp_text = client.generate_direct(
+            user_prompt=user_prompt,
+            system_instruction=system_instruction,
+            format_json=True,
+            timeout=60,
+            temperature=0.0,
+            audit_cb=audit_cb,
+            image_bytes=targeted_jpeg,
+            image_mime="image/jpeg"
+        )
+        data = json.loads(resp_text)
+        if isinstance(data, list) and data:
+            data = data[0]
+        if not isinstance(data, dict):
+            return None
+        
+        cat = catalog or CourseCatalog()
+        parsed_list = _parse_student_dict_list([data], catalog=cat, page_text="")
+        if parsed_list:
+            re_student = parsed_list[0]
+            if audit_cb:
+                try:
+                    audit_cb({
+                        "timestamp": time.strftime("%H:%M:%S"),
+                        "type": "targeted_reextraction_success",
+                        "badge": "TARGETED RESOLUTION",
+                        "title": f"Targeted Vision resolution for Seat {seat_no} completed in {time.time() - t0:.2f}s",
+                        "details": {
+                            "seat_no": seat_no,
+                            "courses_count": len(re_student.course_results),
+                            "sgpi": re_student.sgpi
+                        }
+                    })
+                except Exception:
+                    pass
+            return re_student
+    except Exception as e:
+        logger.warning("Targeted re-extraction failed for Seat %s: %s", seat_no, e)
+    return None
+
+
 def align_and_heal_student(
     student: StudentRecord,
     catalog: Optional[CourseCatalog] = None,
     ground_truth: Optional[StudentRecord] = None
 ) -> StudentRecord:
     """
-    Automated Deterministic Mathematical Proof & Auto-Healing Engine for Vision AI.
-    Guarantees:
-    1. Courses are strictly aligned and sorted according to the Master Course Catalog order.
-    2. Component Sums: TH + IA == TOT (or TW + PR == TOT).
-    3. Grade -> GP lookup matching University regulations.
-    4. Credits * GP == CG.
-    5. Sum(Course CG) == Total CG.
-    6. Total CG / Credits == SGPI.
-    7. Sum(Course TOT) == Total Marks.
-    8. If a deterministic ground truth record is available, patches any unresolved mark discrepancies.
+    Standardizes course alignment, ensures canonical code matching,
+    reconciles Grade/GP invariants, and verifies component marks.
+    Never silently shifts marks across subjects or overwrites vision results.
     """
-    # 1. If ground truth student is available, cross-reference marks
-    if ground_truth:
-        gt_courses_by_code = {normalize_course_code(cr.course_code): cr for cr in ground_truth.course_results if cr.course_code}
-        for cr in student.course_results:
-            gt_cr = gt_courses_by_code.get(normalize_course_code(cr.course_code))
-            if gt_cr:
-                tot_v = safe_float(cr.marks.get("TOT"))
-                th_v = safe_float(cr.marks.get("TH"))
-                ia_v = safe_float(cr.marks.get("IA"))
-                tw_v = safe_float(cr.marks.get("TW"))
-                pr_v = safe_float(cr.marks.get("PR"))
-
-                has_math_error = False
-                if th_v > 0 and ia_v > 0 and tot_v > 0 and abs((th_v + ia_v) - tot_v) > 0.5:
-                    has_math_error = True
-                elif tw_v > 0 and pr_v > 0 and tot_v > 0 and abs((tw_v + pr_v) - tot_v) > 0.5:
-                    has_math_error = True
-                elif tot_v == 0 and gt_cr.marks.get("TOT"):
-                    has_math_error = True
-
-                if has_math_error or not cr.marks:
-                    cr.marks = dict(gt_cr.marks)
-                    cr.grade = gt_cr.grade or cr.grade
-                    cr.grade_point = gt_cr.grade_point or cr.grade_point
-                    cr.credits = gt_cr.credits or cr.credits
-                    cr.credit_points = gt_cr.credit_points or cr.credit_points
-
-        # Recover any courses that ground truth has but vision missed
-        existing_codes = {normalize_course_code(cr.course_code) for cr in student.course_results}
-        for gt_code, gt_cr in gt_courses_by_code.items():
-            if gt_code not in existing_codes:
-                student.course_results.append(copy.deepcopy(gt_cr))
+    # 1. Deterministic validation signal (Auditor mode: Never blindly overwrites vision results)
+    # Validation against deterministic auditor occurs through validate_student_record().
 
     # 2. Component Mathematical Auto-Healing
     for cr in student.course_results:
@@ -1061,6 +1319,9 @@ def run_visual_blueprint_pipeline(
     if total_pages == 0:
         raise ValueError(f"No pages in PDF: {pdf_path}")
 
+    # 0. Deterministic Auditor Pass (Independent Validation Signal - Never overwrites)
+    det_students_by_seat = run_deterministic_auditor(pdf_path)
+
     # Stage 1: Visual Blueprint Discovery & Page 1 Extraction
     if progress_cb:
         progress_cb(5.0, "Stage 1: Discovering visual blueprint & course catalog from Page 1...")
@@ -1069,14 +1330,41 @@ def run_visual_blueprint_pipeline(
     blueprint = blueprint_res["blueprint"]
     p1_students = blueprint_res.get("page_1_students", [])
 
+    # Page 1 Recall & Conflict Audit
+    doc = fitz.open(pdf_path)
+    p1_text = doc[0].get_text("text") if len(doc) > 0 else ""
+    doc.close()
+    p1_recall = analyze_page_seat_recall(p1_text, p1_students)
+
+    # Targeted re-extraction for missing seats on Page 1 (if students present)
+    if p1_recall["missing_seats"] and len(p1_students) > 0:
+        for m_seat in p1_recall["missing_seats"][:3]:
+            re_s = reextract_targeted_student(pdf_path, 0, m_seat, [], blueprint, client, meta.catalog, audit_cb=audit_cb)
+            if re_s and re_s.seat_no not in {st.seat_no for st in p1_students}:
+                p1_students.append(re_s)
+
     all_students: List[StudentRecord] = []
     seen_seats = set()
 
-    # Ingest Page 1 candidates if captured
+    # Ingest and validate Page 1 candidates
     for s in p1_students:
         if s.seat_no and s.seat_no not in seen_seats:
             seen_seats.add(s.seat_no)
             s.semester = s.semester or meta.semester
+
+            # Validate against schema and deterministic auditor
+            conflicts = validate_student_record(s, meta.catalog, det_student=det_students_by_seat.get(s.seat_no))
+            if conflicts:
+                conf_courses = list({c["course"] for c in conflicts if "course" in c and c["course"]})
+                if conf_courses:
+                    re_s = reextract_targeted_student(pdf_path, 0, s.seat_no, conf_courses, blueprint, client, meta.catalog, audit_cb=audit_cb)
+                    if re_s:
+                        re_map = {normalize_course_code(c.course_code): c for c in re_s.course_results}
+                        for idx_cr, cr in enumerate(s.course_results):
+                            norm_code = normalize_course_code(cr.course_code)
+                            if norm_code in re_map:
+                                s.course_results[idx_cr] = re_map[norm_code]
+
             all_students.append(s)
 
     start_page = 1 if len(p1_students) > 0 else 0
@@ -1098,10 +1386,37 @@ def run_visual_blueprint_pipeline(
             time.sleep(4.0)
 
         page_students = extract_sliced_page(pdf_path, p_idx, blueprint, client, audit_cb=audit_cb, total_pages=total_pages)
+
+        # Audit page seat recall
+        doc = fitz.open(pdf_path)
+        p_text = doc[p_idx].get_text("text") if p_idx < len(doc) else ""
+        doc.close()
+
+        recall = analyze_page_seat_recall(p_text, page_students)
+        # Attempt targeted re-extraction for any missing seats (up to 3 per page)
+        for m_seat in recall["missing_seats"][:3]:
+            re_s = reextract_targeted_student(pdf_path, p_idx, m_seat, [], blueprint, client, meta.catalog, audit_cb=audit_cb)
+            if re_s and re_s.seat_no not in {st.seat_no for st in page_students}:
+                page_students.append(re_s)
+
         for s in page_students:
             if s.seat_no and s.seat_no not in seen_seats:
                 seen_seats.add(s.seat_no)
                 s.semester = s.semester or meta.semester
+
+                # Validate against schema and deterministic auditor
+                conflicts = validate_student_record(s, meta.catalog, det_student=det_students_by_seat.get(s.seat_no))
+                if conflicts:
+                    conf_courses = list({c["course"] for c in conflicts if "course" in c and c["course"]})
+                    if conf_courses:
+                        re_s = reextract_targeted_student(pdf_path, p_idx, s.seat_no, conf_courses, blueprint, client, meta.catalog, audit_cb=audit_cb)
+                        if re_s:
+                            re_map = {normalize_course_code(c.course_code): c for c in re_s.course_results}
+                            for idx_cr, cr in enumerate(s.course_results):
+                                norm_code = normalize_course_code(cr.course_code)
+                                if norm_code in re_map:
+                                    s.course_results[idx_cr] = re_map[norm_code]
+
                 all_students.append(s)
 
                 # Dynamic Course Catalog Auto-Expansion (for electives discovered on later pages)
@@ -1112,7 +1427,7 @@ def run_visual_blueprint_pipeline(
                         except Exception:
                             cr_val = 0.0
                         new_course = Course(
-                            code=cr.course_code,
+                            code=normalize_course_code(cr.course_code),
                             name=cr.course_name or cr.course_code,
                             heads=list(cr.marks.keys()),
                             credits=cr_val
@@ -1125,15 +1440,12 @@ def run_visual_blueprint_pipeline(
     # Stage 3: Adaptive Verification & Standardization (No Regex Overwrite)
     verified_count = 0
     for idx, s in enumerate(all_students):
-        snapshot = copy.deepcopy(s)
-        # Standardize formatting without buggy regex baseline
         standardized_s = align_and_heal_student(s, meta.catalog, ground_truth=None)
         res = verify_student(standardized_s, meta.catalog)
         if res.all_passed:
             verified_count += 1
             all_students[idx] = standardized_s
         else:
-            # If rigid verification fails on diploma / grace edge cases, retain standardized version
             all_students[idx] = standardized_s
 
     if audit_cb:
