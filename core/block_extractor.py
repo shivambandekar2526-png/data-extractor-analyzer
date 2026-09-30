@@ -834,6 +834,11 @@ def extract_single_block(
 
     student = parse_block_response(resp_text, contract)
 
+    call_tokens = getattr(client, "last_call_tokens", {})
+    in_tok = call_tokens.get("input_tokens", 0) or max(1, len(user_prompt) // 4 + 400)
+    out_tok = call_tokens.get("output_tokens", 0) or max(1, len(resp_text) // 4)
+    tot_tok = call_tokens.get("total_tokens", in_tok + out_tok)
+
     if student and audit_cb:
         try:
             audit_cb({
@@ -847,7 +852,12 @@ def extract_single_block(
                     "name": student.student_name[:40],
                     "courses": len(student.course_results),
                     "sgpi": student.sgpi,
-                    "duration_sec": round(dur, 2)
+                    "duration_sec": round(dur, 2),
+                    "tokens": {
+                        "input": in_tok,
+                        "output": out_tok,
+                        "total": tot_tok
+                    }
                 }
             })
         except Exception:
@@ -1095,6 +1105,28 @@ def reextract_conflicting_block(
             image_bytes=conflict.block.image_bytes,
             image_mime="image/jpeg"
         )
+        call_tokens = getattr(client, "last_call_tokens", {})
+        in_tok = call_tokens.get("input_tokens", 0) or max(1, len(user_prompt) // 4 + 400)
+        out_tok = call_tokens.get("output_tokens", 0) or max(1, len(resp) // 4)
+        tot_tok = call_tokens.get("total_tokens", in_tok + out_tok)
+        if audit_cb:
+            try:
+                audit_cb({
+                    "timestamp": time.strftime("%H:%M:%S"),
+                    "type": "block_reextracted_success",
+                    "badge": "RE-EXTRACTED",
+                    "title": f"Seat {conflict.seat_no} re-extracted [Tokens: {tot_tok:,}]",
+                    "details": {
+                        "seat_no": conflict.seat_no,
+                        "tokens": {
+                            "input": in_tok,
+                            "output": out_tok,
+                            "total": tot_tok
+                        }
+                    }
+                })
+            except Exception:
+                pass
         return parse_block_response(resp, contract)
     except Exception as e:
         logger.warning("Re-extraction failed for Seat %s: %s", conflict.seat_no, e)
