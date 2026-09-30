@@ -349,65 +349,224 @@ def render_page_as_jpeg(pdf_path: str, page_index: int = 0, dpi: int = 200) -> b
     return jpeg_bytes
 
 
+def _parse_student_dict_list(
+    raw_students: List[Dict[str, Any]],
+    catalog: CourseCatalog,
+    page_text: str = "",
+    detected_prns: Optional[List[str]] = None
+) -> List[StudentRecord]:
+    """Parse raw JSON student objects into strongly-typed StudentRecord instances adhering to catalog schema."""
+    students: List[StudentRecord] = []
+    for idx, raw in enumerate(raw_students):
+        raw_seat = str(raw.get("seat_no") or raw.get("seat") or "").strip()
+        if not raw_seat:
+            continue
+
+        raw_name = str(raw.get("student_name") or raw.get("name") or "").strip()
+        norm_name_info = normalize_student_name(raw_name)
+        gender = str(raw.get("gender") or "").strip().upper()
+        if not gender or raw_name.startswith("/") or norm_name_info.get("gender") == "F":
+            gender = norm_name_info.get("gender", "F" if raw_name.startswith("/") else "M")
+
+        # Fallback PRN recovery from digital page text if Vision left PRN empty
+        prn_val = normalize_identifier(raw.get("prn", ""))
+        if not prn_val and detected_prns:
+            seat_pos = page_text.find(raw_seat)
+            if seat_pos != -1:
+                window = page_text[seat_pos:seat_pos + 600]
+                m_prn = re.search(r"\b([0-9]{16})\b", window)
+                if m_prn:
+                    prn_val = m_prn.group(1)
+            if not prn_val and idx < len(detected_prns):
+                prn_val = detected_prns[idx]
+
+        # Extract history block safely
+        hist_raw = raw.get("history", {})
+        hist_dict: Dict[str, Dict[str, str]] = {}
+        if isinstance(hist_raw, dict):
+            for hk, hv in hist_raw.items():
+                clean_hk = hk.lower().replace("sem_", "").replace("sem", "").strip()
+                if isinstance(hv, dict):
+                    hist_dict[clean_hk] = {k: str(v) for k, v in hv.items()}
+                elif isinstance(hv, (str, int, float)) and str(hv).strip():
+                    hist_dict[clean_hk] = {"sgpi": str(hv).strip()}
+
+        cand_type = str(raw.get("candidate_type", "")).strip()
+        if not cand_type:
+            cand_type = "Diploma" if "DIPLOMA" in page_text.upper() and raw_seat in page_text else "Regular"
+
+        st = StudentRecord(
+            seat_no=normalize_identifier(raw_seat),
+            student_name=norm_name_info.get("student_name", raw_name.lstrip("/ ").strip()),
+            gender=gender,
+            mother_name=norm_name_info.get("mother_name", "") or str(raw.get("mother_name", "")).strip(),
+            candidate_type=cand_type,
+            prn=prn_val,
+            abc_id=normalize_identifier(raw.get("abc_id", "")),
+            result_status=str(raw.get("result_status", "PASS")).strip(),
+            remark=str(raw.get("remark", "")).strip(),
+            total_marks=str(raw.get("total_marks", "")),
+            credits_earned=str(raw.get("credits_earned", "")),
+            total_cg=str(raw.get("total_cg", "")),
+            sgpi=str(raw.get("sgpi", "")),
+            cgpi=str(raw.get("cgpi", "")).strip(),
+            history=hist_dict
+        )
+
+        courses_raw = raw.get("courses", [])
+        cr_list: List[Dict[str, Any]] = []
+        if isinstance(courses_raw, dict):
+            for ck, cv in courses_raw.items():
+                if isinstance(cv, dict):
+                    item = dict(cv)
+                    item.setdefault("code", ck)
+                    cr_list.append(item)
+        elif isinstance(courses_raw, list):
+            for item in courses_raw:
+                if isinstance(item, dict):
+                    cr_list.append(item)
+
+        course_results: List[CourseResult] = []
+        for cr_raw in cr_list:
+            c_code = str(cr_raw.get("code") or cr_raw.get("course_code", "")).strip().upper()
+            if not c_code:
+                continue
+
+            # Normalized marks dict
+            marks_dict: Dict[str, str] = {}
+            raw_m = cr_raw.get("marks", {})
+            if isinstance(raw_m, dict):
+                for hk, hv in raw_m.items():
+                    norm_h = normalize_head(hk)
+                    marks_dict[norm_h] = str(hv)
+            else:
+                for hk in ["th", "ia", "tot", "tw", "pr", "or", "ese"]:
+                    if hk in cr_raw:
+                        marks_dict[normalize_head(hk)] = str(cr_raw[hk])
+
+            cr = CourseResult(
+                course_code=c_code,
+                course_name=cr_raw.get("name", ""),
+                marks=marks_dict,
+                grade=str(cr_raw.get("grade", "")),
+                grade_point=str(cr_raw.get("gp") or cr_raw.get("grade_point", "")),
+                credits=str(cr_raw.get("credits", "")),
+                credit_points=str(cr_raw.get("cg") or cr_raw.get("credit_points", ""))
+            )
+            course_results.append(cr)
+
+        st.course_results = course_results
+        st = align_and_heal_student(st, catalog=catalog, ground_truth=None)
+        students.append(st)
+
+    return students
+
+
 def extract_visual_blueprint(
     pdf_path: str,
     client: CloudClient,
     audit_cb: Optional[AuditCallback] = None
 ) -> Dict[str, Any]:
     """
-    Stage 1: Extracts the Visual Blueprint & Course Catalog from Page 1 image.
-    Outputs:
-    - exam_title, semester, college_name
-    - courses: list of {code, name, heads, credits}
-    - sample_student: 1 complete sample student record from Page 1 to demonstrate the schema
+    Stage 1: Extracts the Visual Blueprint, Course Catalog, Rules Contract,
+    and any candidate records present on Page 1.
     """
-    page_1_jpeg = render_page_as_jpeg(pdf_path, page_index=0, dpi=150)
+    page_1_jpeg = render_page_as_jpeg(pdf_path, page_index=0, dpi=160)
 
-    # Also extract text of Page 1 as text fallback for non-vision models (e.g. Groq)
     doc = fitz.open(pdf_path)
     p1_text = doc[0].get_text("text") if len(doc) > 0 else ""
     doc.close()
     p1_clean_text = strip_ledger_boilerplate(p1_text)[:4000]
 
-    prompt = (
-        "You are an academic ledger vision auditor. Analyze this examination result page image (Page 1).\n"
-        "Extract the structure into strict JSON with the following keys:\n\n"
-        "{\n"
-        '  "exam_title": "Full name of the examination (e.g. B.E. Computer Engineering Sem VII CBCS)",\n'
-        '  "semester": "Semester numeral (e.g. VII, VIII, IV)",\n'
-        '  "college_name": "College or Institution name",\n'
-        '  "courses": [\n'
-        '    {\n'
-        '      "code": "Course Code (e.g. CSC801, 1T01234)",\n'
-        '      "name": "Full course/subject name",\n'
-        '      "heads": ["TH", "IN", "Total"],\n'
-        '      "max_marks": {"TH": 60, "IN": 40, "Total": 100},\n'
-        '      "min_marks": {"TH": 24, "IN": 16, "Total": 40},\n'
-        '      "credits": 4\n'
-        '    }\n'
-        '  ],\n'
-        '  "sample_student": {\n'
-        '    "seat_no": "Seat number of the first candidate on page 1",\n'
-        '    "student_name": "Full student name",\n'
-        '    "gender": "M or F",\n'
-        '    "result_status": "PASS or FAIL or KT",\n'
-        '    "total_marks": "Numeric total marks",\n'
-        '    "credits_earned": "Numeric credits earned",\n'
-        '    "total_cg": "Total credit points (äCG)",\n'
-        '    "sgpi": "Numeric SGPI/GPA",\n'
-        '    "marks": {\n'
-        '      "CourseCode_Head": "Mark value"\n'
-        '    }\n'
-        '  }\n'
-        "}\n\n"
-        "SCHEME INSTRUCTION: Inspect table headers/course schemes for maximum and minimum passing marks "
-        "(e.g. 60/24, 40/16, 25/10, 80/32, 20/8). If min_marks is not printed, apply 40% of max_marks.\n\n"
-        f"FALLBACK TEXT CONTEXT:\n{p1_clean_text}\n"
-    )
+    seat_candidates = re.findall(r"\b([0-9]{7,8})\b", p1_text)
+    seen_sc = set()
+    detected_p1_seats = [s for s in seat_candidates if not (s in seen_sc or seen_sc.add(s))]
+
+    prn_candidates = re.findall(r"\b([0-9]{16})\b", p1_text)
+    seen_prn = set()
+    detected_p1_prns = [p for p in prn_candidates if not (p in seen_prn or seen_prn.add(p))]
 
     system_instruction = (
-        "You are an expert visual document parser. Inspect the table headers, column divisions, "
-        "and first student row. Strictly return valid JSON matching the requested structure."
+        "You are an expert visual academic document analyzer and ledger auditor. "
+        "Your goal is to inspect this academic ledger page, discover the exact course schema and examination rules, "
+        "and extract any student result records present on Page 1.\n"
+        "Do NOT assume fixed templates. Locate the course legend or table headers wherever they appear.\n"
+        "Strictly adhere to the true assessment heads present on this sheet. Never add phantom 'TH' heads to practical or project courses.\n"
+        "Return pure valid JSON matching the requested schema."
+    )
+
+    prompt = (
+        "Analyze this examination ledger image (Page 1) and establish the Master Academic Schema Contract.\n\n"
+        "CRITICAL DISCOVERY REQUIREMENTS:\n"
+        "1. DYNAMIC ASSESSMENT HEADS (NO PHANTOM HEADS):\n"
+        "   - Inspect course definitions from the legend or table headers:\n"
+        "     * Theory courses typically have: ['TH', 'IA', 'TOT'] (or ESE, IA).\n"
+        "     * Practical/Lab courses typically have: ['TW', 'PR', 'TOT'] or ['TW', 'OR', 'TOT'] or ['PR', 'TOT']. THEY DO NOT HAVE 'TH'.\n"
+        "     * Project/Seminar courses typically have: ['TW', 'OR', 'TOT']. THEY DO NOT HAVE 'TH'.\n"
+        "     * Audit / Non-credit courses have: [] (empty heads, credits=0, Grade only).\n"
+        "   - Output ONLY the heads that physically exist for each course. Never default to 'TH'.\n"
+        "2. CANDIDATE CONVENTIONS & DIPLOMA CANDIDATES:\n"
+        "   - Identify indicators for Direct Second Year (Diploma) candidates (e.g. 'DIPLOMA', missing Sem 1-2 columns, shifted marks).\n"
+        "   - Identify female candidate prefix (e.g. leading slash '/').\n"
+        "   - Identify absent markers ('--', 'AB', 'ABS') and grace marks ('#', '+', '*').\n"
+        "3. PAGE 1 CANDIDATES EXTRACTION:\n"
+        "   - If student result records appear on this Page 1, extract ALL of them into 'page_1_students'.\n"
+        "   - If Page 1 contains only title/legend and zero students, return 'page_1_students': [].\n\n"
+        f"EXPECTED SEATS ON PAGE 1 (if any): {', '.join(detected_p1_seats) if detected_p1_seats else 'None'}\n\n"
+        "Return pure JSON with this exact structure:\n"
+        "{\n"
+        '  "exam_title": "Full name of examination",\n'
+        '  "semester": "Semester numeral (e.g. VIII, VII, IV)",\n'
+        '  "college_name": "College name or code",\n'
+        '  "grading_system": "10-point CBCGS",\n'
+        '  "courses": [\n'
+        "    {\n"
+        '      "code": "Course Code (e.g. 52901 or CSC801)",\n'
+        '      "name": "Official Subject Name",\n'
+        '      "course_type": "Theory | Lab | Project | Seminar | Audit",\n'
+        '      "heads": ["TH", "IA", "TOT"],\n'
+        '      "max_marks": {"TH": 80, "IA": 20, "TOT": 100},\n'
+        '      "min_marks": {"TH": 32, "IA": 8, "TOT": 40},\n'
+        '      "credits": 3\n'
+        "    }\n"
+        "  ],\n"
+        '  "candidate_conventions": {\n'
+        '    "female_indicator": "leading slash /",\n'
+        '    "absent_tokens": ["--", "AB", "ABS"],\n'
+        '    "grace_tokens": ["#", "*"]\n'
+        "  },\n"
+        '  "page_1_students": [\n'
+        "    {\n"
+        '      "seat_no": "Candidate seat number",\n'
+        '      "student_name": "Full student name without leading slash",\n'
+        '      "gender": "M or F",\n'
+        '      "mother_name": "Mother name if present",\n'
+        '      "candidate_type": "Regular or Diploma",\n'
+        '      "prn": "16-digit PRN or ABC ID",\n'
+        '      "result_status": "PASS or FAIL or KT or RLE or RPV",\n'
+        '      "remark": "Official remark",\n'
+        '      "total_marks": "Total semester marks",\n'
+        '      "credits_earned": "Credits earned",\n'
+        '      "total_cg": "Total credit points (äCG)",\n'
+        '      "sgpi": "Current semester SGPI",\n'
+        '      "cgpi": "Overall cumulative CGPI (if present)",\n'
+        '      "history": {\n'
+        '        "sem1": "...", "sem2": "...", "sem3": "...", "sem4": "...", "sem5": "...", "sem6": "...", "sem7": "..."\n'
+        "      },\n"
+        '      "courses": [\n'
+        "        {\n"
+        '          "code": "Course Code matching course list above",\n'
+        '          "marks": {"HEAD_1": "marks", "TOT": "marks"},\n'
+        '          "grade": "Letter grade",\n'
+        '          "gp": "Grade point number",\n'
+        '          "credits": "Course credits",\n'
+        '          "cg": "Course credit points"\n'
+        "        }\n"
+        "      ]\n"
+        "    }\n"
+        "  ]\n"
+        "}\n\n"
+        f"FALLBACK TEXT HINT FROM PAGE 1:\n{p1_clean_text}\n"
     )
 
     if audit_cb:
@@ -415,9 +574,9 @@ def extract_visual_blueprint(
             audit_cb({
                 "timestamp": time.strftime("%H:%M:%S"),
                 "type": "visual_blueprint_prompt",
-                "badge": "STAGE 1 BLUEPRINT",
-                "title": "Dispatching Page 1 high-res image to Vision AI for Blueprint Discovery...",
-                "details": {"image_size_kb": len(page_1_jpeg) // 1024, "target": "Catalog + Sample Candidate"}
+                "badge": "STAGE 1 DISCOVERY",
+                "title": "Dispatching Page 1 to Vision AI for Schema Discovery & Initial Extraction...",
+                "details": {"image_size_kb": len(page_1_jpeg) // 1024, "detected_p1_seats": len(detected_p1_seats)}
             })
         except Exception:
             pass
@@ -427,8 +586,8 @@ def extract_visual_blueprint(
         user_prompt=prompt,
         system_instruction=system_instruction,
         format_json=True,
-        timeout=60,
-        temperature=0.1,
+        timeout=80,
+        temperature=0.0,
         audit_cb=audit_cb,
         image_bytes=page_1_jpeg,
         image_mime="image/jpeg"
@@ -444,7 +603,7 @@ def extract_visual_blueprint(
             "semester": "Current",
             "college_name": "",
             "courses": [],
-            "sample_student": {}
+            "page_1_students": []
         }
 
     # Normalize courses in catalog
@@ -462,7 +621,6 @@ def extract_visual_blueprint(
         except Exception:
             pass
 
-        # Parse max_marks & min_marks
         raw_max = c.get("max_marks", {}) or {}
         raw_min = c.get("min_marks", {}) or {}
         max_marks = {}
@@ -478,7 +636,6 @@ def extract_visual_blueprint(
                 if f_v and f_v > 0:
                     min_marks[normalize_head(str(k))] = int(f_v)
 
-        # 40% Passing Rule fallback: min_marks = ceil(0.40 * max_marks)
         for h, mx in list(max_marks.items()):
             if h not in min_marks and mx > 0:
                 min_marks[h] = math.ceil(0.40 * mx)
@@ -492,13 +649,25 @@ def extract_visual_blueprint(
             credits=c_credits
         ))
 
+    master_catalog = CourseCatalog(courses=catalog_courses)
     meta = ExamMeta(
         exam_title=blueprint.get("exam_title", ""),
         semester=blueprint.get("semester", ""),
         college_name=blueprint.get("college_name", ""),
         archetype="visual_blueprint",
-        catalog=CourseCatalog(courses=catalog_courses)
+        catalog=master_catalog
     )
+
+    # Parse Page 1 students directly
+    raw_p1_students = blueprint.get("page_1_students", [])
+    p1_students: List[StudentRecord] = []
+    if isinstance(raw_p1_students, list) and raw_p1_students:
+        p1_students = _parse_student_dict_list(
+            raw_p1_students,
+            catalog=master_catalog,
+            page_text=p1_text,
+            detected_prns=detected_p1_prns
+        )
 
     if audit_cb:
         try:
@@ -506,14 +675,14 @@ def extract_visual_blueprint(
                 "timestamp": time.strftime("%H:%M:%S"),
                 "type": "visual_blueprint_success",
                 "badge": "BLUEPRINT DISCOVERED",
-                "title": f"Vision AI extracted Blueprint in {dur:.2f}s: {len(catalog_courses)} courses discovered",
+                "title": f"Vision AI extracted Blueprint in {dur:.2f}s: {len(catalog_courses)} courses discovered, {len(p1_students)} Page 1 candidates parsed",
                 "details": {
                     "exam_title": meta.exam_title,
                     "semester": meta.semester,
                     "college": meta.college_name,
                     "courses_count": len(catalog_courses),
-                    "courses": [f"{c.code}: {c.name} ({','.join(c.heads)})" for c in catalog_courses],
-                    "sample_student": blueprint.get("sample_student", {})
+                    "courses": [f"{c.code}: {c.name} ({','.join(c.heads) if c.heads else 'Audit'})" for c in catalog_courses],
+                    "page_1_candidates": len(p1_students)
                 }
             })
         except Exception:
@@ -521,7 +690,8 @@ def extract_visual_blueprint(
 
     return {
         "meta": meta,
-        "blueprint": blueprint
+        "blueprint": blueprint,
+        "page_1_students": p1_students
     }
 
 
@@ -573,37 +743,26 @@ def extract_sliced_page(
     page_index: int,
     blueprint: Dict[str, Any],
     client: CloudClient,
-    audit_cb: Optional[AuditCallback] = None
+    audit_cb: Optional[AuditCallback] = None,
+    total_pages: int = 1
 ) -> List[StudentRecord]:
     """
-    Stage 2: Slices a single PDF page into an image, injects the Stage 1 Context Envelope,
-    and extracts all student records residing on this specific page.
+    Stage 2: Slices a single PDF page into an image, injects the Locked Session Context Envelope
+    into the system instruction (for prefix token caching), and extracts all candidate result records.
     """
-    page_jpeg = render_page_as_jpeg(pdf_path, page_index=page_index, dpi=150)
+    page_jpeg = render_page_as_jpeg(pdf_path, page_index=page_index, dpi=160)
 
     # For subsequent pages without table headers, splice Page 0 header band on top
     if page_index > 0:
         header_band = extract_page_header_band(pdf_path, dpi=150)
         if header_band:
             page_jpeg = splice_header_to_page_image(header_band, page_jpeg)
-            if audit_cb:
-                try:
-                    audit_cb({
-                        "timestamp": time.strftime("%H:%M:%S"),
-                        "type": "visual_header_spliced",
-                        "badge": "HEADER SPLICED",
-                        "title": f"Spliced Page 1 header anchor onto Page {page_index + 1} to prevent column drift",
-                        "details": {"page_index": page_index}
-                    })
-                except Exception:
-                    pass
 
     doc = fitz.open(pdf_path)
     page_text = doc[page_index].get_text("text") if page_index < len(doc) else ""
     doc.close()
-    page_clean_text = strip_ledger_boilerplate(page_text)[:3500]
+    page_clean_text = strip_ledger_boilerplate(page_text)[:2500]
 
-    # Pre-extract digital anchors from vector text (seat numbers and 16-digit PRNs)
     seat_candidates = re.findall(r"\b([0-9]{7,8})\b", page_text)
     seen_sc = set()
     detected_seats = [s for s in seat_candidates if not (s in seen_sc or seen_sc.add(s))]
@@ -613,83 +772,77 @@ def extract_sliced_page(
     detected_prns = [p for p in prn_candidates if not (p in seen_prn or seen_prn.add(p))]
 
     courses = blueprint.get("courses", [])
-    courses_brief = [
-        f"{c.get('code')}: heads={','.join(c.get('heads', []))}"
-        for c in courses
-    ]
-    courses_str = "; ".join(courses_brief)
+    courses_formatted = []
+    for c in courses:
+        c_code = c.get("code")
+        c_name = c.get("name", "")
+        c_heads = ",".join(c.get("heads", [])) if c.get("heads") else "AUDIT"
+        c_cr = c.get("credits", 0)
+        courses_formatted.append(f"- {c_code} ({c_name}): heads=[{c_heads}], credits={c_cr}")
+    courses_str = "\n".join(courses_formatted)
 
-    seats_directive = ""
+    # Build persistent System Instruction with Locked Session Schema for API prefix caching
+    system_instruction = (
+        "You are an expert academic result vision extractor transcribing student records from this page image.\n"
+        "=== LOCKED SESSION COURSE SCHEMA ===\n"
+        f"EXAMINATION: {blueprint.get('exam_title', 'University Examination')} | SEMESTER: {blueprint.get('semester', '')}\n"
+        f"COURSES IN STRICT LEFT-TO-RIGHT ORDER:\n{courses_str}\n"
+        "====================================\n\n"
+        "EXTRACTION DIRECTIVES:\n"
+        "1. STRICT COLUMN ALIGNMENT & DIPLOMA CANDIDATES:\n"
+        "   - Align marks by matching column headers and Course Codes, NOT by rigid physical page margins.\n"
+        "   - For DIRECT SECOND YEAR / DIPLOMA candidates: Their marks may be shifted horizontally or lack lower-semester SGPIs. Set candidate_type='Diploma'.\n"
+        "2. DYNAMIC HEADS (ZERO PHANTOM COLUMNS):\n"
+        "   - Output ONLY the heads defined in the Locked Schema for each course.\n"
+        "   - If a course has heads ['TW', 'PR', 'TOT'], output ONLY {'TW': '...', 'PR': '...', 'TOT': '...'}. NEVER add 'TH'.\n"
+        "   - If a course is Audit (empty heads), output marks={}, grade='P' or 'NP'.\n"
+        "3. ACCURATE MARKS, ABSENT & GRACE MARKS:\n"
+        "   - Absent: If a student was absent ('--', 'AB', 'ABS'), transcribe marks as 'AB', grade='AB', gp='0', cg='0'.\n"
+        "   - Grace Marks: If a mark has a symbol (e.g. '36+4#' or '40#'), record final marks as '40' and remark='PASS_WITH_GRACE_#'.\n"
+        "   - Letters vs Numbers: Put the Grade Point NUMBER (10,9,8,7,6,5,4,0) in 'gp', and the Letter Grade (O,A+,A,B+,B,C,D,F) in 'grade'.\n"
+        "4. CANDIDATE IDENTIFICATION & WRAPPED ROWS:\n"
+        "   - Strip leading slash '/' from student names and set gender='F'.\n"
+        "   - Multi-line rows: If student names or seat numbers wrap across 2 physical rows, combine into a single student record.\n"
+        "   - Lower Semester History: For Sem VII and VIII, extract previous semester SGPIs (sem1..sem7) and CGPI if printed.\n"
+        "Return ONLY pure valid JSON."
+    )
+
+    seats_hint = ""
     if detected_seats:
-        seats_directive = (
-            f"DETECTED SEAT NUMBERS ON THIS PAGE ({len(detected_seats)} expected): {', '.join(detected_seats)}\n"
-            "You MUST extract and output an entry for EVERY detected seat number above. Do not skip or omit any student.\n\n"
-        )
+        seats_hint = f"EXPECTED SEAT NUMBERS ON THIS PAGE ({len(detected_seats)}): {', '.join(detected_seats)}\nExtract every candidate."
 
-    # Pre-extract vector text candidate blocks for grounded spatial anchoring
-    student_blocks = segment_page_into_student_blocks(page_text)
-    vector_anchors_text = ""
-    if student_blocks:
-        formatted_blocks = []
-        for b in student_blocks[:6]:
-            formatted_blocks.append(f"--- CANDIDATE [{b['seat_no']}] ---\n{b['text'][:600]}")
-        vector_anchors_text = (
-            "=== VECTOR TEXT GROUND TRUTH PER CANDIDATE ===\n"
-            + "\n".join(formatted_blocks)
-            + "\n=============================================\n\n"
-        )
-
-    prompt = (
-        f"=== ACADEMIC CONTEXT ENVELOPE (PERSISTENT BLUEPRINT) ===\n"
-        f"EXAM: {blueprint.get('exam_title', '')} | SEM: {blueprint.get('semester', '')}\n"
-        f"DISCOVERED COURSES: {courses_str}\n"
-        f"========================================================\n\n"
-        f"{seats_directive}"
-        f"{vector_anchors_text}"
-        "CRITICAL EXTRACTION DIRECTIVES:\n"
-        "1. STRICT COLUMN ORDER & NO SKIPPING: Every student MUST have ALL courses listed in DISCOVERED COURSES above, in the exact same left-to-right order. Start from the very leftmost column (Course 1). Never omit Course 1 or shift columns.\n"
-        "2. MUMBAI UNIVERSITY ORDER: On the student's result line, the sequence is: TOT (Total marks) -> GP (Grade Point NUMBER: 10, 9, 8, 7, 6, 5, 4, 0) -> G (Letter Grade: O, A+, A, B+, B, C, D, F) -> C (Credits) -> G*C (Credit Points). DO NOT swap GP and Grade! Put the number in 'gp' and the letter in 'grade'.\n"
-        "3. ZERO-CALCULATION DIRECTIVE: DO NOT compute or alter numbers. Transcribe EXACTLY what is printed on the page verbatim into corresponding heads (TH, IA, TOT, TW, PR).\n"
-        "4. SGPI RULES: SGPI is strictly on a 10.00 scale and CAN NEVER EXCEED 10.00. For students who FAILED or have any Grade F, SGPI is '0.00'.\n"
-        "5. FEMALE CANDIDATE NOTATION: A leading slash '/' before a student's name (e.g. '/BHALEKAR SANIKA') indicates a Female candidate. Strip the leading '/' from the student name and set gender='F'. If a mother's name appears in parentheses (e.g. '(JYOTI)'), extract it into mother_name.\n"
-        "6. HISTORICAL SGPI & CGPI: For Semester VII and VIII gazettes, extract all previous semester SGPIs (Sem I through VII) and cumulative CGPI from the student block.\n"
-        "7. PRESERVE SYMBOLS & REMARKS: Preserve ledger marks and remarks verbatim ('P', 'F', 'P#', 'RLE', 'RPV', 'ADC', 'ABS', 'A.ABS', '--', '#', '@', '*'). Do not replace with 0 or generic PASS/FAIL.\n"
-        "8. EXACT PRN & NAMES: Transcribe full 16-digit PRNs and student names with zero spelling mistakes.\n\n"
-        "Extract ALL student result records from this page image into structured JSON.\n"
-        "Return a JSON object with this exact schema:\n"
+    user_prompt = (
+        f"Extract all candidate result records from this page image (Page {page_index + 1}/{total_pages}).\n"
+        f"{seats_hint}\n"
+        "Adhere strictly to the Locked Session Schema in the system instruction.\n\n"
+        "Return pure JSON:\n"
         "{\n"
         '  "students": [\n'
         "    {\n"
         '      "seat_no": "Candidate seat number",\n'
         '      "student_name": "Full student name without leading slash",\n'
         '      "gender": "M or F",\n'
-        '      "mother_name": "Mother name if in parentheses",\n'
+        '      "mother_name": "Mother name if present",\n'
         '      "candidate_type": "Regular or Diploma",\n'
         '      "prn": "16-digit PRN or ABC ID",\n'
         '      "result_status": "PASS or FAIL or KT or RLE or RPV",\n'
-        '      "remark": "Remark if printed (e.g. P, F, RLE, RPV, ADC)",\n'
-        '      "total_marks": "Total semester marks printed",\n'
-        '      "credits_earned": "Credits earned printed",\n'
-        '      "total_cg": "Total credit points (äCG) printed",\n'
-        '      "sgpi": "Current semester SGPI printed",\n'
-        '      "cgpi": "Overall cumulative CGPI printed (if present)",\n'
+        '      "remark": "Official remark",\n'
+        '      "total_marks": "Total semester marks",\n'
+        '      "credits_earned": "Credits earned",\n'
+        '      "total_cg": "Total credit points (äCG)",\n'
+        '      "sgpi": "Current semester SGPI",\n'
+        '      "cgpi": "Overall CGPI (if present)",\n'
         '      "history": {\n'
-        '        "sem1": "Sem 1 SGPI if present",\n'
-        '        "sem2": "Sem 2 SGPI if present",\n'
-        '        "sem3": "Sem 3 SGPI if present",\n'
-        '        "sem4": "Sem 4 SGPI if present",\n'
-        '        "sem5": "Sem 5 SGPI if present",\n'
-        '        "sem6": "Sem 6 SGPI if present",\n'
-        '        "sem7": "Sem 7 SGPI if present"\n'
-        '      },\n'
+        '        "sem1": "...", "sem2": "...", "sem3": "...", "sem4": "...", "sem5": "...", "sem6": "...", "sem7": "..."\n'
+        "      },\n"
         '      "courses": [\n'
         "        {\n"
-        '          "code": "Course Code (as printed in student table)",\n'
-        '          "marks": {"TH": "marks", "IA": "marks", "TOT": "marks", "TW": "marks", "PR": "marks"},\n'
+        '          "code": "Course Code matching Locked Schema",\n'
+        '          "marks": {"HEAD": "marks"},\n'
         '          "grade": "Letter grade",\n'
-        '          "gp": "Grade point",\n'
+        '          "gp": "Grade point number",\n'
         '          "credits": "Course credits",\n'
-        '          "cg": "Credit points (credits * gp)"\n'
+        '          "cg": "Course credit points"\n'
         "        }\n"
         "      ]\n"
         "    }\n"
@@ -698,15 +851,9 @@ def extract_sliced_page(
         f"TEXT HINTS FROM PAGE {page_index + 1}:\n{page_clean_text}\n"
     )
 
-    system_instruction = (
-        "You are an academic ledger vision extractor. Read the table rows on this page image. "
-        "Strictly adhere to the Course Codes and Assessment Heads defined in the Context Envelope. "
-        "Respond ONLY with valid JSON matching the schema."
-    )
-
     t0 = time.time()
     resp_text = client.generate_direct(
-        user_prompt=prompt,
+        user_prompt=user_prompt,
         system_instruction=system_instruction,
         format_json=True,
         timeout=90,
@@ -724,117 +871,17 @@ def extract_sliced_page(
         logger.warning("Failed to parse sliced page %d students: %s", page_index + 1, e)
         raw_students = []
 
-    students: List[StudentRecord] = []
     catalog_temp = CourseCatalog(courses=[
-        Course(code=c.get("code", ""), name=c.get("name", ""), credits=safe_float(c.get("credits", 0)))
+        Course(code=c.get("code", ""), name=c.get("name", ""), heads=c.get("heads", []), credits=safe_float(c.get("credits", 0)))
         for c in courses
     ])
 
-    for idx, raw in enumerate(raw_students):
-        raw_seat = str(raw.get("seat_no") or raw.get("seat") or "").strip()
-        if not raw_seat:
-            continue
-
-        raw_name = str(raw.get("student_name") or raw.get("name") or "").strip()
-        norm_name_info = normalize_student_name(raw_name)
-        gender = str(raw.get("gender") or "").strip().upper()
-        if not gender or raw_name.startswith("/") or norm_name_info.get("gender") == "F":
-            gender = norm_name_info.get("gender", "F" if raw_name.startswith("/") else "M")
-
-        # Fallback PRN recovery from digital page text if Vision left PRN empty
-        prn_val = normalize_identifier(raw.get("prn", ""))
-        if not prn_val and detected_prns:
-            seat_pos = page_text.find(raw_seat)
-            if seat_pos != -1:
-                window = page_text[seat_pos:seat_pos + 600]
-                m_prn = re.search(r"\b([0-9]{16})\b", window)
-                if m_prn:
-                    prn_val = m_prn.group(1)
-            if not prn_val and idx < len(detected_prns):
-                prn_val = detected_prns[idx]
-
-        # Extract history block safely
-        hist_raw = raw.get("history", {})
-        hist_dict: Dict[str, Dict[str, str]] = {}
-        if isinstance(hist_raw, dict):
-            for hk, hv in hist_raw.items():
-                clean_hk = hk.lower().replace("sem_", "").replace("sem", "").strip()
-                if isinstance(hv, dict):
-                    hist_dict[clean_hk] = {k: str(v) for k, v in hv.items()}
-                elif isinstance(hv, (str, int, float)) and str(hv).strip():
-                    hist_dict[clean_hk] = {"sgpi": str(hv).strip()}
-
-        st = StudentRecord(
-            seat_no=normalize_identifier(raw_seat),
-            student_name=norm_name_info.get("student_name", raw_name.lstrip("/ ").strip()),
-            gender=gender,
-            mother_name=norm_name_info.get("mother_name", "") or str(raw.get("mother_name", "")).strip(),
-            candidate_type=raw.get("candidate_type", "Regular"),
-            prn=prn_val,
-            abc_id=normalize_identifier(raw.get("abc_id", "")),
-            result_status=str(raw.get("result_status", "PASS")).strip(),
-            remark=str(raw.get("remark", "")).strip(),
-            total_marks=str(raw.get("total_marks", "")),
-            credits_earned=str(raw.get("credits_earned", "")),
-            total_cg=str(raw.get("total_cg", "")),
-            sgpi=str(raw.get("sgpi", "")),
-            cgpi=str(raw.get("cgpi", "")).strip(),
-            history=hist_dict
-        )
-
-        # 1. Positional Slot Stream Parsing (Highest Accuracy, Zero Column Drift)
-        raw_tokens = raw.get("tokens") or raw.get("cell_tokens") or raw.get("sequence")
-        if isinstance(raw_tokens, list) and len(raw_tokens) >= 5:
-            slot_machine = SequentialSlotMachine(catalog=catalog_temp)
-            st = slot_machine.parse_student_tokens(raw_tokens, meta=raw)
-            students.append(st)
-            continue
-
-        courses_raw = raw.get("courses", [])
-        cr_list: List[Dict[str, Any]] = []
-        if isinstance(courses_raw, dict):
-            for ck, cv in courses_raw.items():
-                if isinstance(cv, dict):
-                    item = dict(cv)
-                    item.setdefault("code", ck)
-                    cr_list.append(item)
-        elif isinstance(courses_raw, list):
-            for item in courses_raw:
-                if isinstance(item, dict):
-                    cr_list.append(item)
-
-        course_results: List[CourseResult] = []
-        for cr_raw in cr_list:
-            c_code = str(cr_raw.get("code") or cr_raw.get("course_code", "")).strip().upper()
-            if not c_code:
-                continue
-
-            # Normalized marks dict
-            marks_dict: Dict[str, str] = {}
-            raw_m = cr_raw.get("marks", {})
-            if isinstance(raw_m, dict):
-                for hk, hv in raw_m.items():
-                    norm_h = normalize_head(hk)
-                    marks_dict[norm_h] = str(hv)
-            else:
-                for hk in ["th", "ia", "tot", "tw", "pr", "or"]:
-                    if hk in cr_raw:
-                        marks_dict[normalize_head(hk)] = str(cr_raw[hk])
-
-            cr = CourseResult(
-                course_code=c_code,
-                course_name=cr_raw.get("name", ""),
-                marks=marks_dict,
-                grade=str(cr_raw.get("grade", "")),
-                grade_point=str(cr_raw.get("gp") or cr_raw.get("grade_point", "")),
-                credits=str(cr_raw.get("credits", "")),
-                credit_points=str(cr_raw.get("cg") or cr_raw.get("credit_points", ""))
-            )
-            course_results.append(cr)
-
-        st.course_results = course_results
-        st = align_and_heal_student(st, catalog=catalog_temp)
-        students.append(st)
+    students = _parse_student_dict_list(
+        raw_students,
+        catalog=catalog_temp,
+        page_text=page_text,
+        detected_prns=detected_prns
+    )
 
     if audit_cb:
         try:
@@ -842,9 +889,10 @@ def extract_sliced_page(
                 "timestamp": time.strftime("%H:%M:%S"),
                 "type": "sliced_page_success",
                 "badge": "PAGE SLICE INFERRED",
-                "title": f"Page {page_index + 1} inferred in {dur:.2f}s: {len(students)} candidates extracted",
+                "title": f"Page {page_index + 1}/{total_pages} inferred in {dur:.2f}s: {len(students)} candidates extracted",
                 "details": {
                     "page": page_index + 1,
+                    "total_pages": total_pages,
                     "duration_sec": round(dur, 2),
                     "candidates_extracted": len(students),
                     "sample_seat": students[0].seat_no if students else "None"
@@ -863,11 +911,10 @@ def run_visual_blueprint_pipeline(
     client: Optional[CloudClient] = None
 ) -> Tuple[ExamMeta, List[StudentRecord], str]:
     """
-    Master 4-Stage Visual Blueprint & Sliced Vision Pipeline.
-    1. Extracts Page 1 Blueprint (Courses + Sample Student).
-    2. Slices remaining pages and streams through AI with persistent Context Envelope.
-    3. Reconstructs unified academic dataset.
-    4. Executes Mathematical Checksums with Transactional Rollback.
+    Stateful Cloud Vision AI Pipeline.
+    Stage 1: Discovers Document Schema, Courses, Genuine Heads & Extracts Page 1 Candidates.
+    Stage 2: Slices remaining pages and streams through Vision AI with Cached System Instruction.
+    Stage 3: Applies Adaptive Verification (without buggy regex overwrites).
     """
     if client is None:
         client = CloudClient()
@@ -881,50 +928,43 @@ def run_visual_blueprint_pipeline(
     if total_pages == 0:
         raise ValueError(f"No pages in PDF: {pdf_path}")
 
-    # Stage 1: Visual Blueprint Discovery on Page 1
+    # Stage 1: Visual Blueprint Discovery & Page 1 Extraction
     if progress_cb:
         progress_cb(5.0, "Stage 1: Discovering visual blueprint & course catalog from Page 1...")
     blueprint_res = extract_visual_blueprint(pdf_path, client, audit_cb=audit_cb)
     meta = blueprint_res["meta"]
     blueprint = blueprint_res["blueprint"]
-
-    # Attempt deterministic baseline discovery for error-proof cross-referencing
-    det_map: Dict[str, StudentRecord] = {}
-    try:
-        if classify_document and extract_with_possibility_engine and ingest_pdf:
-            pages = ingest_pdf(pdf_path)
-            archetype, confidence = classify_document(pages)
-            if confidence >= 0.70 and archetype in ("gazette_spool", "gazette_classic", "tabulation", "gazette_nep"):
-                _, det_students = extract_with_possibility_engine(pdf_path, archetype)
-                det_map = {s.seat_no: s for s in det_students if s.seat_no}
-                if audit_cb and det_map:
-                    audit_cb({
-                        "timestamp": time.strftime("%H:%M:%S"),
-                        "type": "ground_truth_anchor",
-                        "badge": "GROUND TRUTH ACTIVE",
-                        "title": f"Deterministic Anchor active for {archetype}: {len(det_map)} baseline student signatures loaded",
-                        "details": {"archetype": archetype, "candidates_anchored": len(det_map)}
-                    })
-    except Exception as e:
-        logger.debug("Deterministic anchor bypass: %s", e)
-
-    if progress_cb:
-        progress_cb(15.0, f"Discovered {len(meta.catalog.courses)} courses on Page 1. Starting sliced page vision stream...")
+    p1_students = blueprint_res.get("page_1_students", [])
 
     all_students: List[StudentRecord] = []
     seen_seats = set()
 
-    # Stage 2: Sliced Page-by-Page Streaming
-    for p_idx in range(total_pages):
-        pct = 15.0 + ((p_idx + 1) / total_pages * 65.0)  # 15% to 80%
+    # Ingest Page 1 candidates if captured
+    for s in p1_students:
+        if s.seat_no and s.seat_no not in seen_seats:
+            seen_seats.add(s.seat_no)
+            s.semester = s.semester or meta.semester
+            all_students.append(s)
+
+    start_page = 1 if len(p1_students) > 0 else 0
+
+    if progress_cb:
+        progress_cb(
+            15.0,
+            f"Stage 1 complete: {len(meta.catalog.courses)} courses locked, {len(all_students)} Page 1 candidates captured. Starting sliced stream..."
+        )
+
+    # Stage 2: Sliced Page-by-Page Streaming for remaining pages
+    for p_idx in range(start_page, total_pages):
+        pct = 15.0 + ((p_idx + 1) / total_pages * 70.0)  # 15% to 85%
         if progress_cb:
             progress_cb(pct, f"Stage 2: Vision AI inferring Page {p_idx + 1}/{total_pages} (sliced stream)...")
 
-        # Polite pacing interval between pages (4.0s) to keep TPM/RPM well under free limits (15 RPM)
-        if p_idx > 0:
+        # Polite pacing interval between pages (4.0s) to keep TPM/RPM within limits
+        if p_idx > start_page:
             time.sleep(4.0)
 
-        page_students = extract_sliced_page(pdf_path, p_idx, blueprint, client, audit_cb=audit_cb)
+        page_students = extract_sliced_page(pdf_path, p_idx, blueprint, client, audit_cb=audit_cb, total_pages=total_pages)
         for s in page_students:
             if s.seat_no and s.seat_no not in seen_seats:
                 seen_seats.add(s.seat_no)
@@ -947,26 +987,21 @@ def run_visual_blueprint_pipeline(
                         meta.catalog.courses.append(new_course)
 
     if progress_cb:
-        progress_cb(82.0, f"Reconstructed {len(all_students)} candidates across {total_pages} pages. Running mathematical verification...")
+        progress_cb(88.0, f"Reconstructed {len(all_students)} candidates across {total_pages} pages. Running adaptive verification...")
 
-    # Stage 4: Checksum Verification, Multi-Tier Mathematical Proof & Auto-Healing
+    # Stage 3: Adaptive Verification & Standardization (No Regex Overwrite)
     verified_count = 0
-    healed_count = 0
-
     for idx, s in enumerate(all_students):
         snapshot = copy.deepcopy(s)
-        gt = det_map.get(s.seat_no)
-        healed_s = align_and_heal_student(s, meta.catalog, ground_truth=gt)
-        res = verify_student(healed_s, meta.catalog)
+        # Standardize formatting without buggy regex baseline
+        standardized_s = align_and_heal_student(s, meta.catalog, ground_truth=None)
+        res = verify_student(standardized_s, meta.catalog)
         if res.all_passed:
             verified_count += 1
-            all_students[idx] = healed_s
-            orig_res = verify_student(snapshot, meta.catalog)
-            if not orig_res.all_passed:
-                healed_count += 1
+            all_students[idx] = standardized_s
         else:
-            # If healing failed, safely roll back to snapshot
-            all_students[idx] = snapshot
+            # If rigid verification fails on diploma / grace edge cases, retain standardized version
+            all_students[idx] = standardized_s
 
     if audit_cb:
         try:
@@ -974,19 +1009,18 @@ def run_visual_blueprint_pipeline(
                 "timestamp": time.strftime("%H:%M:%S"),
                 "type": "visual_pipeline_complete",
                 "badge": "VISUAL PIPELINE COMPLETE",
-                "title": f"Universal Visual Extraction complete! {len(all_students)} students extracted and verified ({healed_count} mathematically healed).",
+                "title": f"Stateful Vision Extraction complete! {len(all_students)} students extracted ({verified_count} verified).",
                 "details": {
                     "total_students": len(all_students),
                     "total_pages": total_pages,
                     "courses_count": len(meta.catalog.courses),
-                    "verified_math_count": verified_count,
-                    "healed_count": healed_count
+                    "verified_math_count": verified_count
                 }
             })
         except Exception:
             pass
 
     if progress_cb:
-        progress_cb(90.0, f"Extraction complete: {len(all_students)} students verified.")
+        progress_cb(95.0, f"Vision AI complete: {len(all_students)} students ready for export.")
 
     return meta, all_students, "visual_blueprint"

@@ -187,13 +187,23 @@ def export_ai_extracted_data(
     # 2. Courses in exact catalog order with only authorized heads
     if meta and meta.catalog and meta.catalog.courses:
         for c in meta.catalog.courses:
-            heads = c.heads if c.heads else ["TH", "IA", "TOT"]
-            for h in heads:
+            # Only add heads that physically exist for this course (no default to TH, IA, TOT)
+            actual_heads = [h for h in c.heads if h and str(h).strip()] if c.heads else []
+            for h in actual_heads:
                 add_field(f"{c.code}_{h}")
+            
             add_field(f"{c.code}_Grade")
-            add_field(f"{c.code}_GP")
-            add_field(f"{c.code}_Credits")
-            add_field(f"{c.code}_CG")
+            # Only add GP, Credits, CG if credits > 0 or if present in candidate records
+            has_credits = getattr(c, "credits", 0) and float(c.credits) > 0
+            has_gp_data = any(str(r.get(f"{c.code}_GP", "")).strip() not in ("", "None", "0") for r in flat_rows)
+            has_cg_data = any(str(r.get(f"{c.code}_CG", "")).strip() not in ("", "None", "0", "0.0") for r in flat_rows)
+            
+            if has_credits or has_gp_data:
+                add_field(f"{c.code}_GP")
+            if has_credits or any(str(r.get(f"{c.code}_Credits", "")).strip() not in ("", "None", "0") for r in flat_rows):
+                add_field(f"{c.code}_Credits")
+            if has_credits or has_cg_data:
+                add_field(f"{c.code}_CG")
             add_field(f"{c.code}_Subject")
 
     # 3. Add any historical or remaining custom fields from flat rows (excluding hallucinated heads)
@@ -204,9 +214,30 @@ def export_ai_extracted_data(
                 if meta and meta.catalog and meta.catalog.courses and "_" in k:
                     prefix, suffix = k.split("_", 1)
                     c_match = meta.catalog.get_by_code(prefix)
-                    if c_match and suffix in ("TH", "IA", "TW", "PR", "TOT", "OR"):
-                        continue
+                    if c_match:
+                        valid_heads = set(c_match.heads) if c_match.heads else set()
+                        if suffix in ("TH", "IA", "TW", "PR", "TOT", "OR", "ESE", "PO", "PRA") and suffix not in valid_heads:
+                            continue
                 add_field(k)
+
+    # 4. Global Empty-Column Pruner:
+    # Completely drop any column that is 100% empty across all student rows
+    # (keeps essential identification columns: Seat_No, Student_Name, Result_Status, Semester)
+    protected_core = {"Seat_No", "Student_Name", "Result_Status", "Semester"}
+    pruned_fieldnames: List[str] = []
+    for f in fieldnames:
+        if f in protected_core:
+            pruned_fieldnames.append(f)
+        else:
+            has_data = any(
+                r.get(f) is not None
+                and str(r.get(f)).strip() != ""
+                and str(r.get(f)).strip() != "None"
+                for r in flat_rows
+            )
+            if has_data:
+                pruned_fieldnames.append(f)
+    fieldnames = pruned_fieldnames
 
     # 1. Export CSV
     write_csv_file(flat_rows, fieldnames, csv_path)

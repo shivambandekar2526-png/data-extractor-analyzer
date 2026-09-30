@@ -628,7 +628,122 @@ class TestVisualBlueprintPipeline(unittest.TestCase):
         self.assertEqual(healed.sgpi, "7.43")
         self.assertEqual(healed.total_marks, "181")
 
+    @patch.object(CloudClient, "generate_direct")
+    def test_stage1_discovery_and_p1_student_capture(self, mock_generate):
+        """Test Stage 1 discovers true heads (no ghost TH) and extracts Page 1 students directly."""
+        mock_response = json.dumps({
+            "exam_title": "B.E. (AI & DS) Sem VIII C-Scheme May 2024",
+            "semester": "VIII",
+            "college_name": "Engineering College",
+            "grading_system": "10-point CBCGS",
+            "courses": [
+                {
+                    "code": "52901",
+                    "name": "Distributed Computing",
+                    "course_type": "Theory",
+                    "heads": ["TH", "IA", "TOT"],
+                    "max_marks": {"TH": 80, "IA": 20, "TOT": 100},
+                    "credits": 3
+                },
+                {
+                    "code": "52906",
+                    "name": "Cloud & Edge Lab",
+                    "course_type": "Lab",
+                    "heads": ["TW", "PR", "TOT"],
+                    "max_marks": {"TW": 25, "PR": 25, "TOT": 50},
+                    "credits": 1
+                }
+            ],
+            "page_1_students": [
+                {
+                    "seat_no": "5291001",
+                    "student_name": "/PATIL ANANYA",
+                    "gender": "F",
+                    "candidate_type": "Regular",
+                    "result_status": "PASS",
+                    "courses": [
+                        {
+                            "code": "52901",
+                            "marks": {"TH": "55", "IA": "17", "TOT": "72"},
+                            "grade": "A",
+                            "gp": "8",
+                            "credits": "3",
+                            "cg": "24"
+                        },
+                        {
+                            "code": "52906",
+                            "marks": {"TW": "22", "PR": "23", "TOT": "45"},
+                            "grade": "O",
+                            "gp": "10",
+                            "credits": "1",
+                            "cg": "10"
+                        }
+                    ]
+                }
+            ]
+        })
+        mock_generate.return_value = mock_response
+
+        client = CloudClient()
+        if not os.path.isfile(self.sample_pdf):
+            self.skipTest("Sample PDF not available for blueprint test")
+
+        res = extract_visual_blueprint(self.sample_pdf, client=client)
+        meta = res["meta"]
+        p1_students = res["page_1_students"]
+
+        # 1. Verify discovered courses
+        self.assertEqual(len(meta.catalog.courses), 2)
+        c_th = meta.catalog.get_by_code("52901")
+        c_lab = meta.catalog.get_by_code("52906")
+        self.assertIn("TH", c_th.heads)
+        self.assertNotIn("TH", c_lab.heads)
+        self.assertIn("TW", c_lab.heads)
+        self.assertIn("PR", c_lab.heads)
+
+        # 2. Verify Page 1 student captured directly
+        self.assertEqual(len(p1_students), 1)
+        st = p1_students[0]
+        self.assertEqual(st.seat_no, "5291001")
+        self.assertEqual(st.gender, "F")
+        self.assertFalse(st.student_name.startswith("/"))
+
+    @patch.object(CloudClient, "generate_direct")
+    def test_stage2_sliced_page_uses_cached_system_instruction(self, mock_generate):
+        """Test Stage 2 injects locked schema into system_instruction and keeps user_prompt lean."""
+        mock_generate.return_value = json.dumps({"students": []})
+        client = CloudClient()
+
+        blueprint = {
+            "exam_title": "B.E. Sem VIII",
+            "semester": "VIII",
+            "courses": [
+                {"code": "52901", "name": "Distributed Computing", "heads": ["TH", "IA", "TOT"], "credits": 3},
+                {"code": "52906", "name": "Cloud Lab", "heads": ["TW", "PR", "TOT"], "credits": 1}
+            ]
+        }
+
+        if not os.path.isfile(self.sample_pdf):
+            self.skipTest("Sample PDF not available")
+
+        extract_sliced_page(self.sample_pdf, page_index=1, blueprint=blueprint, client=client)
+
+        self.assertTrue(mock_generate.called)
+        _, kwargs = mock_generate.call_args
+        sys_inst = kwargs.get("system_instruction", "")
+        usr_prompt = kwargs.get("user_prompt", "")
+
+        # System instruction has locked schema for caching
+        self.assertIn("52901", sys_inst)
+        self.assertIn("52906", sys_inst)
+        self.assertIn("LOCKED SESSION COURSE SCHEMA", sys_inst)
+
+        # User prompt is lean and does not repeat courses
+        self.assertIn("Extract all candidate result records", usr_prompt)
+        self.assertNotIn("LOCKED SESSION COURSE SCHEMA", usr_prompt)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
