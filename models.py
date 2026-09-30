@@ -22,9 +22,14 @@ class Course:
 
 
 def normalize_course_code(code: str) -> str:
-    """Strip leading serial numbers: '01.CSC801' -> 'CSC801', '17.CSL801' -> 'CSL801'."""
+    """
+    Clean course/subject code across diverse university conventions:
+    - Strips leading serial numbers: '01.CSC801' -> 'CSC801', '17.CSL801' -> 'CSL801', '01 - CSC801' -> 'CSC801'
+    - Preserves department alphanumeric codes: '21CS801', 'CS-801', '42211', 'AIDSCSL701'
+    """
     clean = str(code or "").strip().upper()
-    return re.sub(r"^\d{1,2}\.\s*", "", clean)
+    clean = re.sub(r"^(?:COURSE\s*\d{1,2}[:\-.]\s*|\d{1,2}\s*[\.\:\-]\s*)", "", clean, flags=re.I)
+    return clean.strip()
 
 
 @dataclass
@@ -70,11 +75,19 @@ class ExamMeta:
     result_date: str = ""
     semester: str = ""          # "III", "IV", "V", "VI", "VII", "VIII"
     semester_num: int = 0
-    scheme: str = ""            # "CBCGS", "C-Scheme", "NEP 2020"
+    scheme: str = ""            # "CBCGS", "C-Scheme", "NEP 2020", "Autonomous"
     academic_year: str = ""
     max_total_marks: int = 0
     archetype: str = ""
     catalog: CourseCatalog = field(default_factory=CourseCatalog)
+    # Universal Dynamic Schema Additions
+    grading_scheme: Dict[str, float] = field(default_factory=dict)  # e.g. {"O": 10.0, "A+": 9.0, "A": 8.0, ...}
+    max_gpa: float = 10.0                                          # 10.0 or 4.0
+    seat_pattern: str = ""                                         # Dynamic regex pattern for candidate IDs
+    primary_id_name: str = "Seat_No"                               # "Seat_No", "Roll_No", "USN", "Registration_No"
+    secondary_id_name: str = "PRN"                                 # "PRN", "ABC_ID", "Enrollment_No"
+    has_history: bool = False                                      # Whether document tracks prior semesters
+    history_labels: List[str] = field(default_factory=list)        # Discovered history labels e.g. ["SEM-I", ...]
 
 
 @dataclass
@@ -112,12 +125,15 @@ class StudentRecord:
     course_results: List[CourseResult] = field(default_factory=list)
     history: Dict[str, Dict[str, str]] = field(default_factory=dict)
 
-    def to_flat_dict(self, catalog: Optional[CourseCatalog] = None) -> Dict[str, Any]:
+    def to_flat_dict(self, catalog: Optional[CourseCatalog] = None, meta: Optional[ExamMeta] = None) -> Dict[str, Any]:
         """
         Flatten to dict with DUAL IDENTIFIERS matching existing extractor output.
         Produces columns like: CSC301_SE, CSC301_IA, CSC301_TOT, CSC301_Grade,
         CSC301_GP, CSC301_Credits, CSC301_CG, CSC301_Subject
         """
+        if catalog is None and meta is not None:
+            catalog = meta.catalog
+
         d: Dict[str, Any] = {
             "Seat_No": self.seat_no,
             "Student_Name": self.student_name,
@@ -134,6 +150,13 @@ class StudentRecord:
             "Total_CG": self.total_cg,
             "SGPI": self.sgpi,
         }
+
+        # Dynamic primary / secondary identifier aliases
+        if meta:
+            if meta.primary_id_name and meta.primary_id_name != "Seat_No":
+                d[meta.primary_id_name] = self.seat_no
+            if meta.secondary_id_name and meta.secondary_id_name != "PRN":
+                d[meta.secondary_id_name] = self.prn
 
         if self.ern:
             d["ERN"] = self.ern

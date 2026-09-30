@@ -15,6 +15,7 @@ import io
 import json
 import os
 import sys
+import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -1019,6 +1020,129 @@ class TestVisualBlueprintPipeline(unittest.TestCase):
             self.assertIn("CSL801_GP", header_line)
             col_idx = header_line.index("CSL801_GP")
             self.assertEqual(row_line[col_idx], "0")
+
+    def test_dynamic_grading_scheme_validation_and_healing(self):
+        """Test that autonomous/UGC grading scales with A+=9 and A=8 are preserved without mutation."""
+        catalog = CourseCatalog(courses=[
+            Course(code="CS801", name="Cloud Computing", heads=["TH", "IA", "TOT"], credits=3.0)
+        ])
+        # Autonomous / UGC scale
+        ugc_scale = {
+            "O": 10.0,
+            "A+": 9.0,
+            "A": 8.0,
+            "B+": 7.0,
+            "B": 6.0,
+            "C": 5.0,
+            "P": 4.0,
+            "F": 0.0
+        }
+        meta = ExamMeta(
+            exam_title="Autonomous Engineering Examination",
+            semester="VII",
+            catalog=catalog,
+            grading_scheme=ugc_scale,
+            max_gpa=10.0
+        )
+
+        student = StudentRecord(
+            seat_no="USN2021CS001",
+            student_name="AUTONOMOUS TOPPER",
+            result_status="PASS"
+        )
+        # Grade A+ with GP 9.0
+        student.course_results = [
+            CourseResult(
+                course_code="CS801",
+                marks={"TH": "60", "IA": "18", "TOT": "78"},
+                grade="A+",
+                grade_point="9",
+                credits="3",
+                credit_points="27"
+            )
+        ]
+
+        # 1. Validation with dynamic scale: NO conflict
+        conflicts = validate_student_record(student, catalog, grading_scheme=meta.grading_scheme)
+        self.assertEqual(len(conflicts), 0)
+
+        # 2. Healing with dynamic scale: Grade A+ remains A+ (NOT downgraded to A)
+        healed = align_and_heal_student(student, catalog, meta=meta)
+        self.assertEqual(healed.course_results[0].grade, "A+")
+        self.assertEqual(healed.course_results[0].grade_point, "9")
+        self.assertEqual(healed.sgpi, "9.00")
+
+    def test_dynamic_candidate_identifiers_and_recall(self):
+        """Test dynamic alphanumeric candidate ID (USN) recall auditing."""
+        page_text = """
+        SRI JAYACHAMARAJENDRA COLLEGE OF ENGINEERING
+        USN: 1MS21CS045  STUDENT NAME: ADITI SHARMA  TOTAL: 650  SGPA: 8.75
+        USN: 1MS21CS089  STUDENT NAME: BHARATH K     TOTAL: 590  SGPA: 7.90
+        USN: 1MS21CS110  STUDENT NAME: CHETAN KUMAR  TOTAL: 620  SGPA: 8.30
+        """
+        extracted = [
+            StudentRecord(seat_no="1MS21CS045", student_name="ADITI SHARMA"),
+            StudentRecord(seat_no="1MS21CS089", student_name="BHARATH K")
+        ]
+
+        # Audit with dynamic USN pattern
+        recall = analyze_page_seat_recall(page_text, extracted, seat_pattern=r"\b(1MS21CS\d{3})\b")
+        self.assertEqual(recall["detected_seats"], ["1MS21CS045", "1MS21CS089", "1MS21CS110"])
+        self.assertEqual(recall["missing_seats"], ["1MS21CS110"])
+        self.assertEqual(recall["duplicate_seats"], [])
+
+    def test_dynamic_exporter_with_custom_primary_secondary_ids(self):
+        """Test exporter output with custom primary (USN) and secondary (Enrollment_No) headers."""
+        from exporter import export_ai_extracted_data
+        catalog = CourseCatalog(courses=[
+            Course(code="21CS801", name="Distributed Systems", heads=["TH", "IA", "TOT"], credits=3.0)
+        ])
+        meta = ExamMeta(
+            exam_title="VTU Autonomous",
+            semester="VIII",
+            catalog=catalog,
+            primary_id_name="USN",
+            secondary_id_name="Enrollment_No"
+        )
+        student = StudentRecord(
+            seat_no="1MS21CS045",
+            student_name="ADITI SHARMA",
+            prn="ENROLL-2021-998",
+            result_status="PASS"
+        )
+        student.course_results = [
+            CourseResult(course_code="21CS801", marks={"TH": "50", "IA": "20", "TOT": "70"}, grade="A", grade_point="8", credits="3", credit_points="24")
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_folder, csv_path = export_ai_extracted_data(
+                meta=meta,
+                students=[student],
+                input_pdf_path=self.sample_pdf,
+                base_output_dir=tmpdir
+            )
+
+            with open(csv_path, "r", encoding="utf-8") as f:
+                header_line = f.readline().strip().split(",")
+                row_line = f.readline().strip().split(",")
+
+            # Dynamic alias headers are present
+            self.assertIn("USN", header_line)
+            self.assertIn("Enrollment_No", header_line)
+            usn_idx = header_line.index("USN")
+            enroll_idx = header_line.index("Enrollment_No")
+            self.assertEqual(row_line[usn_idx], "1MS21CS045")
+            self.assertEqual(row_line[enroll_idx], "ENROLL-2021-998")
+
+    def test_universal_course_code_normalizer(self):
+        """Test course code normalization across diverse university conventions."""
+        self.assertEqual(normalize_course_code("01.CSC801"), "CSC801")
+        self.assertEqual(normalize_course_code("1.CSL801"), "CSL801")
+        self.assertEqual(normalize_course_code("01 - CSC801"), "CSC801")
+        self.assertEqual(normalize_course_code("02: CSC802"), "CSC802")
+        self.assertEqual(normalize_course_code("COURSE 1: CS801"), "CS801")
+        self.assertEqual(normalize_course_code("21CS801"), "21CS801")
+        self.assertEqual(normalize_course_code("42211"), "42211")
 
 
 if __name__ == "__main__":

@@ -72,6 +72,21 @@ GRADE_SCALE: Dict[str, float] = {
     "ABS": 0.0
 }
 
+# Standard UGC/AICTE 10-point scale (used by autonomous institutions and national universities):
+DEFAULT_UGC_GRADE_SCALE: Dict[str, float] = {
+    "O": 10.0,
+    "A+": 9.0,
+    "A": 8.0,
+    "B+": 7.0,
+    "B": 6.0,
+    "C": 5.0,
+    "P": 4.0,
+    "F": 0.0,
+    "AB": 0.0,
+    "AA": 0.0,
+    "ABS": 0.0
+}
+
 INV_GRADE: Dict[int, str] = {
     10: "O",
     9: "A",
@@ -92,11 +107,25 @@ SYNTHETIC_GRADE_MAP: Dict[str, str] = {
 }
 
 
+def get_effective_grade_scale(grading_scheme: Optional[Dict[str, float]] = None) -> Dict[str, float]:
+    """Returns effective grade scale mapping letter grades to grade points."""
+    if grading_scheme:
+        scale = {str(k).strip().upper(): safe_float(v) or 0.0 for k, v in grading_scheme.items()}
+        for abs_tok in ("AB", "AA", "ABS", "--"):
+            scale.setdefault(abs_tok, 0.0)
+        return scale
+    return GRADE_SCALE
+
+
 def normalize_course_code(code: str) -> str:
-    """Strip leading serial numbers: '01.CSC801' -> 'CSC801', '17.CSL801' -> 'CSL801'."""
+    """
+    Clean course/subject code across diverse university conventions:
+    - Strips leading serial numbers: '01.CSC801' -> 'CSC801', '17.CSL801' -> 'CSL801', '01 - CSC801' -> 'CSC801'
+    - Preserves department alphanumeric codes: '21CS801', 'CS-801', '42211', 'AIDSCSL701'
+    """
     clean = str(code or "").strip().upper()
-    clean = re.sub(r"^\d{1,2}\.\s*", "", clean)
-    return clean
+    clean = re.sub(r"^(?:COURSE\s*\d{1,2}[:\-.]\s*|\d{1,2}\s*[\.\:\-]\s*)", "", clean, flags=re.I)
+    return clean.strip()
 
 
 def segment_page_into_student_blocks(page_text: str) -> List[Dict[str, Any]]:
@@ -151,7 +180,8 @@ def parse_grace_mark(val: Any) -> Optional[float]:
 def validate_student_record(
     student: StudentRecord,
     catalog: Optional[CourseCatalog] = None,
-    det_student: Optional[StudentRecord] = None
+    det_student: Optional[StudentRecord] = None,
+    grading_scheme: Optional[Dict[str, float]] = None
 ) -> List[Dict[str, Any]]:
     """
     Schema-Aware Mathematical & Auditor Validator.
@@ -159,6 +189,7 @@ def validate_student_record(
     Does NOT silently mutate student data.
     """
     conflicts: List[Dict[str, Any]] = []
+    active_scale = get_effective_grade_scale(grading_scheme)
 
     for cr in student.course_results:
         c_code = normalize_course_code(cr.course_code)
@@ -204,11 +235,13 @@ def validate_student_record(
 
         # Grade <-> GP Consistency
         raw_g = (cr.grade or "").strip().upper()
-        if raw_g in SYNTHETIC_GRADE_MAP:
+        # If institution scheme does not support synthetic mapping (e.g. A+ is genuinely in active_scale), don't map
+        if raw_g not in active_scale and raw_g in SYNTHETIC_GRADE_MAP and SYNTHETIC_GRADE_MAP[raw_g] in active_scale:
             raw_g = SYNTHETIC_GRADE_MAP[raw_g]
+
         raw_gp = safe_float(cr.grade_point)
-        if raw_g in GRADE_SCALE and raw_gp is not None and raw_gp > 0:
-            expected_gp = GRADE_SCALE[raw_g]
+        if raw_g in active_scale and raw_gp is not None and raw_gp > 0:
+            expected_gp = active_scale[raw_g]
             if abs(expected_gp - raw_gp) > 0.1:
                 conflicts.append({
                     "course": c_code,
@@ -246,12 +279,30 @@ def run_deterministic_auditor(pdf_path: str) -> Dict[str, StudentRecord]:
         return {}
 
 
-def analyze_page_seat_recall(page_text: str, extracted_students: List[StudentRecord]) -> Dict[str, Any]:
+def analyze_page_seat_recall(
+    page_text: str,
+    extracted_students: List[StudentRecord],
+    seat_pattern: Optional[str] = None
+) -> Dict[str, Any]:
     """
     Audits page-level recall by comparing detected seat numbers against extracted students.
     Identifies missing, unexpected, and duplicate seat numbers.
+    Supports dynamic seat_pattern (regex) discovered from Stage 1.
     """
-    seat_candidates = re.findall(r"\b([0-9]{7,8})\b", page_text)
+    if seat_pattern:
+        try:
+            seat_candidates = re.findall(seat_pattern, page_text)
+        except Exception:
+            seat_candidates = re.findall(r"\b([0-9]{7,8})\b", page_text)
+    else:
+        # Fallback heuristic: check if extracted students have alphanumeric seats or standard 7-8 digits
+        extracted_seats_sample = [s.seat_no for s in extracted_students if s.seat_no]
+        if any(any(c.isalpha() for c in s) for s in extracted_seats_sample):
+            # Alphanumeric candidate IDs (e.g. USN, Roll No)
+            seat_candidates = re.findall(r"\b([A-Z0-9]{7,14})\b", page_text)
+        else:
+            seat_candidates = re.findall(r"\b([0-9]{7,8})\b", page_text)
+
     seen_sc = set()
     detected_seats = [s for s in seat_candidates if not (s in seen_sc or seen_sc.add(s))]
 
@@ -328,6 +379,18 @@ def reextract_targeted_student(
 
     courses_target_str = ", ".join(target_courses) if target_courses else "ALL DECLARED COURSES"
     
+    bp_gs = blueprint.get("grading_scheme", {})
+    if isinstance(bp_gs, dict) and bp_gs.get("grade_points"):
+        pts_str = ", ".join(f"{g}={int(pts) if isinstance(pts, (int, float)) and float(pts).is_integer() else pts}" for g, pts in bp_gs["grade_points"].items())
+        re_grade_rule = f"   - Follow discovered grading scale: {pts_str}, AB=Absent.\n"
+    elif "MUMBAI" in blueprint.get("exam_title", "").upper() or "C-SCHEME" in blueprint.get("exam_title", "").upper():
+        re_grade_rule = (
+            "   - Use official Mumbai University CBCS C-Scheme: O=10, A=9, B=8, C=7, D=6, E=5, P=4, F=0, AB=Absent.\n"
+            "   - NEVER output 'A+' or 'B+'. GP 9 is ALWAYS 'A', GP 8 is ALWAYS 'B', GP 7 is 'C'.\n"
+        )
+    else:
+        re_grade_rule = "   - Use official institution grading scale. Transcribe exact printed grades without inventing synthetic grades.\n"
+
     system_instruction = (
         "You are an expert academic ledger auditor performing targeted conflict resolution on an individual candidate row.\n"
         "A validation conflict or missing record was detected. Your task is to resolve the exact values for this specific candidate.\n"
@@ -336,9 +399,8 @@ def reextract_targeted_student(
         "   - Look directly upward from each number in the candidate row to the physical table header above it.\n"
         "   - Associate each number strictly with the Course Code and Assessment Header (TH, IA, TOT, TW, PR, OR) directly above it.\n"
         "   - NEVER shift values horizontally. Do NOT use numbers from neighboring columns or neighboring candidate rows.\n"
-        "2. ACCURATE GRADES & NO SYNTHETIC GRADES:\n"
-        "   - Use official Mumbai University CBCS C-Scheme: O=10, A=9, B=8, C=7, D=6, E=5, P=4, F=0, AB=Absent.\n"
-        "   - NEVER output 'A+' or 'B+'. GP 9 is ALWAYS 'A', GP 8 is ALWAYS 'B', GP 7 is 'C'.\n"
+        "2. ACCURATE GRADES & NO HALLUCINATION:\n"
+        f"{re_grade_rule}"
         "3. PRESERVE PRINTED MARKS & GRACE SYMBOLS:\n"
         "   - If a mark has a grace symbol (e.g. '36+4#' or '40#'), record '40' and remark='PASS_WITH_GRACE_#'.\n"
         "Return ONLY pure JSON."
@@ -427,15 +489,23 @@ def reextract_targeted_student(
 def align_and_heal_student(
     student: StudentRecord,
     catalog: Optional[CourseCatalog] = None,
-    ground_truth: Optional[StudentRecord] = None
+    ground_truth: Optional[StudentRecord] = None,
+    meta: Optional[ExamMeta] = None,
+    grading_scheme: Optional[Dict[str, float]] = None,
+    max_gpa: float = 10.0
 ) -> StudentRecord:
     """
     Standardizes course alignment, ensures canonical code matching,
     reconciles Grade/GP invariants, and verifies component marks.
     Never silently shifts marks across subjects or overwrites vision results.
+    Supports dynamic institutional grading scales and max_gpa limits.
     """
     # 1. Deterministic validation signal (Auditor mode: Never blindly overwrites vision results)
     # Validation against deterministic auditor occurs through validate_student_record().
+
+    active_scale = grading_scheme or (meta.grading_scheme if meta and meta.grading_scheme else GRADE_SCALE)
+    active_max_gpa = max_gpa if max_gpa != 10.0 else (meta.max_gpa if meta and meta.max_gpa else 10.0)
+    active_inv = {int(v): k for k, v in active_scale.items() if isinstance(v, (int, float)) and float(v).is_integer()}
 
     # 2. Component Mathematical Auto-Healing
     for cr in student.course_results:
@@ -484,25 +554,25 @@ def align_and_heal_student(
         raw_g = (cr.grade or "").strip().upper()
         raw_gp = (cr.grade_point or "").strip().upper()
 
-        if raw_g in SYNTHETIC_GRADE_MAP:
+        if raw_g not in active_scale and raw_g in SYNTHETIC_GRADE_MAP and SYNTHETIC_GRADE_MAP[raw_g] in active_scale:
             raw_g = SYNTHETIC_GRADE_MAP[raw_g]
             cr.grade = raw_g
-        if raw_gp in SYNTHETIC_GRADE_MAP:
+        if raw_gp not in active_scale and raw_gp in SYNTHETIC_GRADE_MAP and SYNTHETIC_GRADE_MAP[raw_gp] in active_scale:
             raw_gp = SYNTHETIC_GRADE_MAP[raw_gp]
 
         # Case A: If raw_g is numeric, it is either a GP or TOT marks
         if raw_g.isdigit() or re.match(r"^\d+(\.\d+)?$", raw_g):
             num_g = int(float(raw_g))
-            if num_g <= 10:
-                if raw_gp in GRADE_SCALE:
+            if num_g <= active_max_gpa:
+                if raw_gp in active_scale:
                     # Swapped! raw_gp is the letter grade, raw_g is the GP number
                     cr.grade = raw_gp
                     cr.grade_point = str(num_g)
                 else:
                     cr.grade_point = str(num_g)
-                    cr.grade = INV_GRADE.get(num_g, "P")
+                    cr.grade = active_inv.get(num_g, "P")
             else:
-                # num_g > 10, e.g. "63" which was actually the TOT marks
+                # num_g > active_max_gpa, e.g. "63" which was actually the TOT marks
                 if tot_val == 0:
                     cr.marks["TOT"] = str(num_g)
                     tot_val = float(num_g)
@@ -510,25 +580,26 @@ def align_and_heal_student(
 
         # Case B: If raw_gp is a letter grade, swap it to grade
         cur_gp_str = (cr.grade_point or "").strip().upper()
-        if cur_gp_str in SYNTHETIC_GRADE_MAP:
+        if cur_gp_str not in active_scale and cur_gp_str in SYNTHETIC_GRADE_MAP and SYNTHETIC_GRADE_MAP[cur_gp_str] in active_scale:
             cur_gp_str = SYNTHETIC_GRADE_MAP[cur_gp_str]
-        if cur_gp_str in GRADE_SCALE and not (cr.grade or "").strip().upper() in GRADE_SCALE:
+        if cur_gp_str in active_scale and not (cr.grade or "").strip().upper() in active_scale:
             cr.grade = cur_gp_str
-            cr.grade_point = str(int(GRADE_SCALE[cur_gp_str]))
+            gp_val_rec = active_scale[cur_gp_str]
+            cr.grade_point = str(int(gp_val_rec) if gp_val_rec.is_integer() else gp_val_rec)
 
         raw_g = (cr.grade or "").strip().upper()
-        if raw_g in SYNTHETIC_GRADE_MAP:
+        if raw_g not in active_scale and raw_g in SYNTHETIC_GRADE_MAP and SYNTHETIC_GRADE_MAP[raw_g] in active_scale:
             raw_g = SYNTHETIC_GRADE_MAP[raw_g]
             cr.grade = raw_g
 
         gp_num = safe_float(cr.grade_point)
-        # If genuine GP is present (1 to 10), verify letter grade matches INV_GRADE or reconcile
-        if gp_num is not None and 0.0 < gp_num <= 10.0:
-            if not cr.grade or cr.grade not in GRADE_SCALE or cr.grade in SYNTHETIC_GRADE_MAP:
-                cr.grade = INV_GRADE.get(int(gp_num), cr.grade)
-        elif raw_g in GRADE_SCALE:
-            expected_gp = GRADE_SCALE[raw_g]
-            cr.grade_point = str(int(expected_gp))
+        # If genuine GP is present (1 to active_max_gpa), verify letter grade matches INV_GRADE or reconcile
+        if gp_num is not None and 0.0 < gp_num <= active_max_gpa:
+            if not cr.grade or cr.grade not in active_scale:
+                cr.grade = active_inv.get(int(gp_num), cr.grade)
+        elif raw_g in active_scale:
+            expected_gp = active_scale[raw_g]
+            cr.grade_point = str(int(expected_gp) if expected_gp.is_integer() else expected_gp)
         elif tot_val > 0:
             # Map by percentage based on course max marks if available
             max_m = 100.0
@@ -545,19 +616,19 @@ def align_and_heal_student(
                         max_m = 75.0
 
             pct = (tot_val / max_m) * 100.0 if max_m > 0 else tot_val
-            # Mumbai University C-Scheme grading (No A+ or B+)
-            if pct >= 80: deduced_g, deduced_gp = "O", 10.0
-            elif pct >= 70: deduced_g, deduced_gp = "A", 9.0
-            elif pct >= 60: deduced_g, deduced_gp = "B", 8.0
-            elif pct >= 50: deduced_g, deduced_gp = "C", 7.0
-            elif pct >= 45: deduced_g, deduced_gp = "D", 6.0
-            elif pct >= 40: deduced_g, deduced_gp = "P", 4.0
-            else: deduced_g, deduced_gp = "F", 0.0
+            if pct >= 80: deduced_g = "O"
+            elif pct >= 70: deduced_g = "A+" if "A+" in active_scale else "A"
+            elif pct >= 60: deduced_g = "A" if "A+" in active_scale else "B"
+            elif pct >= 50: deduced_g = "B" if "A+" in active_scale else "C"
+            elif pct >= 45: deduced_g = "C" if "A+" in active_scale else "D"
+            elif pct >= 40: deduced_g = "P"
+            else: deduced_g = "F"
 
-            if not cr.grade or cr.grade.isdigit() or cr.grade in SYNTHETIC_GRADE_MAP:
+            deduced_gp = active_scale.get(deduced_g, 0.0)
+            if not cr.grade:
                 cr.grade = deduced_g
             if safe_float(cr.grade_point) == 0:
-                cr.grade_point = str(int(deduced_gp))
+                cr.grade_point = str(int(deduced_gp) if deduced_gp.is_integer() else deduced_gp)
 
         # 4. Credits & Course CG: Credits * GP == CG
         cat_match = catalog.get_by_code(cr.course_code) if catalog else None
@@ -606,16 +677,16 @@ def align_and_heal_student(
     if cur_sem_credits == 0 or cur_sem_credits > total_registered_credits or (has_failed_course and cur_sem_credits == total_registered_credits):
         student.credits_earned = str(int(passed_credits) if passed_credits.is_integer() else passed_credits)
 
-    # 6. SGPI Invariant: Total CG / Total Registered Credits == SGPI (CEILING 10.00; 0.00 if FAIL)
+    # 6. SGPI Invariant: Total CG / Total Registered Credits == SGPI (CEILING active_max_gpa; 0.00 if FAIL)
     if is_failed_student:
         student.sgpi = "0.00"
     else:
         divisor = total_registered_credits if total_registered_credits > 0 else (safe_float(student.credits_earned) or 1.0)
         final_cg = safe_float(student.total_cg) or total_course_cg
         if divisor > 0 and final_cg > 0:
-            expected_sgpi = min(10.0, round(final_cg / divisor, 2))
+            expected_sgpi = min(active_max_gpa, round(final_cg / divisor, 2))
             cur_sgpi = safe_float(student.sgpi)
-            if cur_sgpi == 0 or cur_sgpi > 10.0 or abs(cur_sgpi - expected_sgpi) > 0.05:
+            if cur_sgpi == 0 or cur_sgpi > active_max_gpa or abs(cur_sgpi - expected_sgpi) > 0.05:
                 student.sgpi = f"{expected_sgpi:.2f}"
 
     # 7. Total Marks Invariant
@@ -648,7 +719,9 @@ def _parse_student_dict_list(
     raw_students: List[Dict[str, Any]],
     catalog: CourseCatalog,
     page_text: str = "",
-    detected_prns: Optional[List[str]] = None
+    detected_prns: Optional[List[str]] = None,
+    meta: Optional[ExamMeta] = None,
+    grading_scheme: Optional[Dict[str, float]] = None
 ) -> List[StudentRecord]:
     """Parse raw JSON student objects into strongly-typed StudentRecord instances adhering to catalog schema."""
     students: List[StudentRecord] = []
@@ -819,7 +892,7 @@ def _parse_student_dict_list(
             course_results.append(cr)
 
         st.course_results = course_results
-        st = align_and_heal_student(st, catalog=catalog, ground_truth=None)
+        st = align_and_heal_student(st, catalog=catalog, ground_truth=None, meta=meta, grading_scheme=grading_scheme)
         students.append(st)
 
     return students
@@ -849,14 +922,18 @@ def extract_visual_blueprint(
     seen_prn = set()
     detected_p1_prns = [p for p in prn_candidates if not (p in seen_prn or seen_prn.add(p))]
 
+    is_mumbai_univ = any(k in p1_text.upper() for k in ("MUMBAI", "C-SCHEME", "REV-2019", "REV-2016", "UNIVERSITY OF MUMBAI"))
+
     system_instruction = (
-        "You are an expert visual academic document analyzer and ledger auditor. "
-        "Your goal is to inspect this academic ledger page, discover the exact course schema and examination rules, "
-        "and extract any student result records present on Page 1.\n"
-        "Do NOT assume fixed templates. Locate the course legend or table headers wherever they appear.\n"
+        "You are an expert visual academic document analyzer and ledger auditor for university and college gazettes. "
+        "Your goal is to inspect this academic ledger page, discover the institution's exact course schema, grading rules, "
+        "candidate identifier conventions, and extract any student result records present on Page 1.\n"
+        "Do NOT assume fixed templates or institutional bias. Locate the course legend, grade scheme, and table headers wherever they appear.\n"
         "Strictly adhere to the true assessment heads present on this sheet. Never add phantom 'TH' heads to practical or project courses.\n"
         "Course codes must omit serial numbers (e.g. use 'CSC801' instead of '01.CSC801').\n"
-        "Use official Mumbai University CBCS C-Scheme grades (10->O, 9->A, 8->B, 7->C, 6->D, 5->E, 4->P, 0->F, AB->Absent). NEVER use A+ or B+.\n"
+        "Discover the institution's official grading scale from the printed legend/table:\n"
+        "  - If this is University of Mumbai (CBCS C-Scheme): 10->O, 9->A, 8->B, 7->C, 6->D, 5->E, 4->P, 0->F, AB->Absent. NEVER use A+ or B+.\n"
+        "  - If this is an autonomous college or other university with a printed grade table (e.g. 10->O, 9->A+, 8->A, 7->B+, etc.), use their EXACT printed grade points.\n"
         "Return pure valid JSON matching the requested schema."
     )
 
@@ -871,13 +948,15 @@ def extract_visual_blueprint(
         "     * Audit / Non-credit courses have: [] (empty heads, credits=0, Grade only).\n"
         "   - Output ONLY the heads that physically exist for each course. Never default to 'TH'.\n"
         "   - Course Code: Clean code without serial numbers (e.g. 'CSC801', not '01.CSC801').\n"
-        "2. CANDIDATE CONVENTIONS & DIPLOMA CANDIDATES:\n"
+        "2. CANDIDATE CONVENTIONS & IDENTIFIERS:\n"
+        "   - Identify primary candidate ID type and pattern (Seat No, Roll No, USN, Registration No).\n"
+        "   - Identify secondary candidate ID (PRN, Enrollment No, ABC ID).\n"
         "   - Identify indicators for Direct Second Year (Diploma) candidates (e.g. 'DIPLOMA', missing Sem 1-2 columns, shifted marks).\n"
         "   - Identify female candidate prefix (e.g. leading slash '/').\n"
         "   - Identify absent markers ('--', 'AB', 'ABS') and grace marks ('#', '+', '*').\n"
-        "3. OFFICIAL MUMBAI UNIVERSITY GRADING (NO A+ OR B+):\n"
-        "   - CBCS C-Scheme scale: 10->O, 9->A, 8->B, 7->C, 6->D, 5->E, 4->P, 0->F, AB->Absent.\n"
-        "   - NEVER output 'A+' or 'B+'. GP 9 is ALWAYS 'A', GP 8 is ALWAYS 'B', GP 7 is 'C'.\n"
+        "3. INSTITUTION GRADING SCALE & SYSTEM:\n"
+        "   - Read the printed grade table or legend (e.g. 10-point scale, 4-point scale).\n"
+        "   - Map each valid letter grade to its official grade point in 'grading_scheme'.\n"
         "4. PAGE 1 CANDIDATES EXTRACTION:\n"
         "   - If student result records appear on this Page 1, extract ALL of them into 'page_1_students'.\n"
         "   - Student marks appear in columns matching the course list in order from left to right.\n"
@@ -889,7 +968,11 @@ def extract_visual_blueprint(
         '  "exam_title": "Full name of examination",\n'
         '  "semester": "Semester numeral (e.g. VIII, VII, IV)",\n'
         '  "college_name": "College name or code",\n'
-        '  "grading_system": "10-point CBCGS",\n'
+        '  "grading_scheme": {\n'
+        '    "scale_type": "10-point | 4-point | percentage",\n'
+        '    "max_gpa": 10.0,\n'
+        '    "grade_points": {"O": 10.0, "A+": 9.0, "A": 8.0, "B+": 7.0, "B": 6.0, "C": 5.0, "P": 4.0, "F": 0.0}\n'
+        '  },\n'
         '  "courses": [\n'
         "    {\n"
         '      "code": "Course Code without serial number (e.g. CSC801)",\n'
@@ -902,10 +985,13 @@ def extract_visual_blueprint(
         "    }\n"
         "  ],\n"
         '  "candidate_conventions": {\n'
+        '    "primary_id_label": "Seat_No | Roll_No | USN | Registration_No",\n'
+        '    "primary_id_regex": "Regex matching student ID",\n'
+        '    "secondary_id_label": "PRN | ABC_ID | Enrollment_No",\n'
         '    "female_indicator": "leading slash /",\n'
         '    "absent_tokens": ["--", "AB", "ABS"],\n'
         '    "grace_tokens": ["#", "*"]\n'
-        "  },\n"
+        '  },\n'
         '  "page_1_students": [\n'
         "    {\n"
         '      "seat_no": "Candidate seat number",\n'
@@ -923,7 +1009,7 @@ def extract_visual_blueprint(
         '      "cgpi": "Overall cumulative CGPI (if present)",\n'
         '      "history": {\n'
         '        "sem1": "...", "sem2": "...", "sem3": "...", "sem4": "...", "sem5": "...", "sem6": "...", "sem7": "..."\n'
-        "      },\n"
+        '      },\n'
         '      "courses": [\n'
         "        {\n"
         '          "code": "Course Code matching course list above",\n'
@@ -1028,12 +1114,55 @@ def extract_visual_blueprint(
         ))
 
     master_catalog = CourseCatalog(courses=catalog_courses)
+
+    # Universal Dynamic Schema Extraction
+    discovered_gs: Dict[str, float] = {}
+    raw_gs = blueprint.get("grading_scheme", {})
+    if isinstance(raw_gs, dict):
+        raw_pts = raw_gs.get("grade_points", {})
+        if isinstance(raw_pts, dict) and raw_pts:
+            for gk, gv in raw_pts.items():
+                f_val = safe_float(gv)
+                if f_val is not None:
+                    discovered_gs[str(gk).strip().upper()] = f_val
+        elif not raw_pts:
+            for gk, gv in raw_gs.items():
+                if gk not in ("scale_type", "max_gpa"):
+                    f_val = safe_float(gv)
+                    if f_val is not None:
+                        discovered_gs[str(gk).strip().upper()] = f_val
+
+    if not discovered_gs:
+        is_mu = is_mumbai_univ or any(k in str(blueprint.get("exam_title", "")).upper() for k in ("MUMBAI", "C-SCHEME", "REV-", "CBCS", "CBCGS", "B.E."))
+        if is_mu:
+            discovered_gs = dict(GRADE_SCALE)
+        else:
+            discovered_gs = dict(DEFAULT_UGC_GRADE_SCALE)
+
+    max_gpa = safe_float(blueprint.get("grading_scheme", {}).get("max_gpa")) if isinstance(blueprint.get("grading_scheme"), dict) else 10.0
+    if not max_gpa:
+        max_gpa = 4.0 if "4-POINT" in str(blueprint.get("grading_scheme", "")).upper() else 10.0
+
+    candidate_conv = blueprint.get("candidate_conventions", {})
+    discovered_seat_pat = ""
+    primary_id_label = "Seat_No"
+    secondary_id_label = "PRN"
+    if isinstance(candidate_conv, dict):
+        discovered_seat_pat = str(candidate_conv.get("primary_id_regex", "")).strip()
+        primary_id_label = str(candidate_conv.get("primary_id_label", "Seat_No")).strip() or "Seat_No"
+        secondary_id_label = str(candidate_conv.get("secondary_id_label", "PRN")).strip() or "PRN"
+
     meta = ExamMeta(
         exam_title=blueprint.get("exam_title", ""),
         semester=blueprint.get("semester", ""),
         college_name=blueprint.get("college_name", ""),
         archetype="visual_blueprint",
-        catalog=master_catalog
+        catalog=master_catalog,
+        grading_scheme=discovered_gs,
+        max_gpa=max_gpa,
+        seat_pattern=discovered_seat_pat,
+        primary_id_name=primary_id_label,
+        secondary_id_name=secondary_id_label
     )
 
     # Parse Page 1 students directly
@@ -1046,6 +1175,20 @@ def extract_visual_blueprint(
             page_text=p1_text,
             detected_prns=detected_p1_prns
         )
+
+    # Derive seat pattern from Page 1 students if not provided by Vision AI
+    extracted_seat_sample = [s.seat_no for s in p1_students if s.seat_no]
+    if not meta.seat_pattern and extracted_seat_sample:
+        if any(any(c.isalpha() for c in s) for s in extracted_seat_sample):
+            min_l = min(len(s) for s in extracted_seat_sample)
+            max_l = max(len(s) for s in extracted_seat_sample)
+            meta.seat_pattern = rf"\b([A-Z0-9]{{{min_l},{max_l}}})\b"
+        elif all(s.isdigit() for s in extracted_seat_sample):
+            min_l = min(len(s) for s in extracted_seat_sample)
+            max_l = max(len(s) for s in extracted_seat_sample)
+            meta.seat_pattern = rf"\b([0-9]{{{min_l},{max_l}}})\b"
+
+    meta.has_history = any(bool(s.history) for s in p1_students) or bool(blueprint.get("has_history", False))
 
     if audit_cb:
         try:
@@ -1141,7 +1284,15 @@ def extract_sliced_page(
     doc.close()
     page_clean_text = strip_ledger_boilerplate(page_text)[:2500]
 
-    seat_candidates = re.findall(r"\b([0-9]{7,8})\b", page_text)
+    bp_cand = blueprint.get("candidate_conventions", {})
+    seat_pat = bp_cand.get("primary_id_regex", "") if isinstance(bp_cand, dict) else ""
+    if seat_pat:
+        try:
+            seat_candidates = re.findall(seat_pat, page_text)
+        except Exception:
+            seat_candidates = re.findall(r"\b([0-9]{7,8})\b", page_text)
+    else:
+        seat_candidates = re.findall(r"\b([0-9]{7,8})\b", page_text)
     seen_sc = set()
     detected_seats = [s for s in seat_candidates if not (s in seen_sc or seen_sc.add(s))]
 
@@ -1159,6 +1310,28 @@ def extract_sliced_page(
         courses_formatted.append(f"COLUMN {idx}: [{c_code}] - {c_name} (heads=[{c_heads}], credits={c_cr})")
     courses_str = "\n".join(courses_formatted)
 
+    bp_gs = blueprint.get("grading_scheme", {})
+    if isinstance(bp_gs, dict) and bp_gs.get("grade_points"):
+        pts_str = ", ".join(f"{g}->{int(pts) if isinstance(pts, (int, float)) and float(pts).is_integer() else pts}" for g, pts in bp_gs["grade_points"].items())
+        grading_rule = (
+            f"3. INSTITUTION GRADING SCALE & SYSTEM:\n"
+            f"   - Scale: {pts_str}, AB->Absent.\n"
+            f"   - Put Grade Point NUMBER in 'gp', and Letter Grade in 'grade'.\n"
+        )
+    elif "MUMBAI" in blueprint.get("exam_title", "").upper() or "C-SCHEME" in blueprint.get("exam_title", "").upper():
+        grading_rule = (
+            "3. OFFICIAL MUMBAI UNIVERSITY GRADING SCALE (NO A+ OR B+):\n"
+            "   - Scale: 10->O, 9->A, 8->B, 7->C, 6->D, 5->E, 4->P, 0->F, AB->Absent.\n"
+            "   - DO NOT INVENT 'A+' or 'B+' grades under any circumstances. Grade Point 9 is ALWAYS 'A', Grade Point 8 is ALWAYS 'B', Grade Point 7 is 'C'.\n"
+            "   - Put Grade Point NUMBER (10,9,8,7,6,5,4,0) in 'gp', and Letter Grade (O,A,B,C,D,E,P,F,AB) in 'grade'.\n"
+        )
+    else:
+        grading_rule = (
+            "3. GRADING SCALE & SYSTEM:\n"
+            "   - Follow the printed grade table: 10->O, 9->A+, 8->A, 7->B+, 6->B, 5->C, 4->P, 0->F, AB->Absent.\n"
+            "   - Put Grade Point NUMBER in 'gp', and Letter Grade in 'grade'.\n"
+        )
+
     # Build persistent System Instruction with Locked Session Schema for API prefix caching
     system_instruction = (
         "You are an expert academic result vision extractor transcribing student records from this page image.\n"
@@ -1175,10 +1348,7 @@ def extract_sliced_page(
         "   - Output ONLY the heads defined in the Locked Schema for each course.\n"
         "   - If a course has heads ['TW', 'PR', 'TOT'], output ONLY {'TW': '...', 'PR': '...', 'TOT': '...'}. NEVER add 'TH'.\n"
         "   - If a course is Audit (empty heads), output marks={}, grade='P' or 'NP'.\n"
-        "3. OFFICIAL MUMBAI UNIVERSITY GRADING SCALE (NO A+ OR B+):\n"
-        "   - Scale: 10->O, 9->A, 8->B, 7->C, 6->D, 5->E, 4->P, 0->F, AB->Absent.\n"
-        "   - DO NOT INVENT 'A+' or 'B+' grades under any circumstances. Grade Point 9 is ALWAYS 'A', Grade Point 8 is ALWAYS 'B', Grade Point 7 is 'C'.\n"
-        "   - Put Grade Point NUMBER (10,9,8,7,6,5,4,0) in 'gp', and Letter Grade (O,A,B,C,D,E,P,F,AB) in 'grade'.\n"
+        f"{grading_rule}"
         "4. LOWER SEMESTER HISTORY & DIPLOMA CANDIDATES (NO SEMESTER DISPLACEMENT):\n"
         "   - On Sem VII and Sem VIII gazettes, previous semester SGPIs are printed with explicit labels: SEM-I, SEM-II, ..., SEM-VII.\n"
         "   - Map each SGPI strictly to its labeled semester in the 'history' object:\n"
@@ -1271,7 +1441,8 @@ def extract_sliced_page(
         raw_students,
         catalog=catalog_temp,
         page_text=page_text,
-        detected_prns=detected_prns
+        detected_prns=detected_prns,
+        grading_scheme=blueprint.get("grading_scheme", {}).get("grade_points") if isinstance(blueprint.get("grading_scheme"), dict) else None
     )
 
     if audit_cb:
@@ -1334,7 +1505,7 @@ def run_visual_blueprint_pipeline(
     doc = fitz.open(pdf_path)
     p1_text = doc[0].get_text("text") if len(doc) > 0 else ""
     doc.close()
-    p1_recall = analyze_page_seat_recall(p1_text, p1_students)
+    p1_recall = analyze_page_seat_recall(p1_text, p1_students, seat_pattern=meta.seat_pattern)
 
     # Targeted re-extraction for missing seats on Page 1 (if students present)
     if p1_recall["missing_seats"] and len(p1_students) > 0:
@@ -1353,7 +1524,12 @@ def run_visual_blueprint_pipeline(
             s.semester = s.semester or meta.semester
 
             # Validate against schema and deterministic auditor
-            conflicts = validate_student_record(s, meta.catalog, det_student=det_students_by_seat.get(s.seat_no))
+            conflicts = validate_student_record(
+                s,
+                meta.catalog,
+                det_student=det_students_by_seat.get(s.seat_no),
+                grading_scheme=meta.grading_scheme
+            )
             if conflicts:
                 conf_courses = list({c["course"] for c in conflicts if "course" in c and c["course"]})
                 if conf_courses:
@@ -1392,7 +1568,7 @@ def run_visual_blueprint_pipeline(
         p_text = doc[p_idx].get_text("text") if p_idx < len(doc) else ""
         doc.close()
 
-        recall = analyze_page_seat_recall(p_text, page_students)
+        recall = analyze_page_seat_recall(p_text, page_students, seat_pattern=meta.seat_pattern)
         # Attempt targeted re-extraction for any missing seats (up to 3 per page)
         for m_seat in recall["missing_seats"][:3]:
             re_s = reextract_targeted_student(pdf_path, p_idx, m_seat, [], blueprint, client, meta.catalog, audit_cb=audit_cb)
@@ -1405,7 +1581,12 @@ def run_visual_blueprint_pipeline(
                 s.semester = s.semester or meta.semester
 
                 # Validate against schema and deterministic auditor
-                conflicts = validate_student_record(s, meta.catalog, det_student=det_students_by_seat.get(s.seat_no))
+                conflicts = validate_student_record(
+                    s,
+                    meta.catalog,
+                    det_student=det_students_by_seat.get(s.seat_no),
+                    grading_scheme=meta.grading_scheme
+                )
                 if conflicts:
                     conf_courses = list({c["course"] for c in conflicts if "course" in c and c["course"]})
                     if conf_courses:
@@ -1440,7 +1621,7 @@ def run_visual_blueprint_pipeline(
     # Stage 3: Adaptive Verification & Standardization (No Regex Overwrite)
     verified_count = 0
     for idx, s in enumerate(all_students):
-        standardized_s = align_and_heal_student(s, meta.catalog, ground_truth=None)
+        standardized_s = align_and_heal_student(s, meta.catalog, ground_truth=None, meta=meta)
         res = verify_student(standardized_s, meta.catalog)
         if res.all_passed:
             verified_count += 1
