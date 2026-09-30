@@ -3178,5 +3178,77 @@
     ],
     "tier_used": 1,
     "token_usage": 0
+  },
+  "5818650af6bc2c40": {
+    "mappings": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "sgpi": "SGPI",
+      "total_marks": "Total_Marks",
+      "max_marks": "Max_Marks",
+      "result": "Result_Status",
+      "gender": "Gender",
+      "candidate_type": "Candidate_Type",
+      "prn": "PRN",
+      "semester": "Semester"
+    },
+    "subjects": {
+      "C1": {
+        "IA": "C1_IA",
+        "GRADE": "C1_Grade",
+        "GP": "C1_GP",
+        "CREDITS": "C1_Credits",
+        "CG": "C1_CG",
+        "SUBJECT": "C1_Subject"
+      },
+      "C2": {
+        "IA": "C2_IA",
+        "GRADE": "C2_Grade",
+        "GP": "C2_GP",
+        "CREDITS": "C2_Credits",
+        "CG": "C2_CG",
+        "SUBJECT": "C2_Subject"
+      },
+      "C3": {
+        "IA": "C3_IA",
+        "GRADE": "C3_Grade",
+        "GP": "C3_GP",
+        "CREDITS": "C3_Credits",
+        "CG": "C3_CG",
+        "SUBJECT": "C3_Subject"
+      },
+      "C4": {
+        "IA": "C4_IA",
+        "GRADE": "C4_Grade",
+        "GP": "C4_GP",
+        "CREDITS": "C4_Credits",
+        "CG": "C4_CG",
+        "SUBJECT": "C4_Subject"
+      },
+      "C5": {
+        "IA": "C5_IA",
+        "GRADE": "C5_Grade",
+        "GP": "C5_GP",
+        "CREDITS": "C5_Credits",
+        "CG": "C5_CG",
+        "SUBJECT": "C5_Subject"
+      },
+      "C6": {
+        "IA": "C6_IA",
+        "GRADE": "C6_Grade",
+        "GP": "C6_GP",
+        "CREDITS": "C6_Credits",
+        "CG": "C6_CG",
+        "SUBJECT": "C6_Subject"
+      }
+    },
+    "unmapped": [
+      "ABC_ID",
+      "Remark",
+      "Credits_Earned",
+      "Total_CG"
+    ],
+    "tier_used": 1,
+    "token_usage": 0
   }
 }

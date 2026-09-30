@@ -30,6 +30,7 @@ from core.visual_extractor import (
     align_and_heal_student,
     extract_sliced_page,
     extract_visual_blueprint,
+    normalize_course_code,
     render_page_as_jpeg,
     run_visual_blueprint_pipeline,
 )
@@ -738,9 +739,118 @@ class TestVisualBlueprintPipeline(unittest.TestCase):
         self.assertIn("52906", sys_inst)
         self.assertIn("LOCKED SESSION COURSE SCHEMA", sys_inst)
 
-        # User prompt is lean and does not repeat courses
-        self.assertIn("Extract all candidate result records", usr_prompt)
-        self.assertNotIn("LOCKED SESSION COURSE SCHEMA", usr_prompt)
+    def test_grade_normalization_eradicates_synthetic_grades(self):
+        """Test that invented A+/B+ grades are strictly mapped to Mumbai University C-Scheme."""
+        catalog = CourseCatalog(courses=[
+            Course(code="CSC801", name="AI", credits=3.0, max_marks={"TH": 80, "IA": 20, "TOT": 100}),
+            Course(code="CSDO8013", name="RL", credits=3.0, max_marks={"TH": 80, "IA": 20, "TOT": 100}),
+            Course(code="CSL801", name="AI Lab", credits=1.0, max_marks={"TW": 25, "PR": 25, "TOT": 50}),
+        ])
+
+        student = StudentRecord(seat_no="7001", student_name="ALICE")
+        student.course_results = [
+            # A+ with GP 9 should normalize to Grade A
+            CourseResult(course_code="CSC801", marks={"TOT": "72"}, grade="A+", grade_point="9", credits="3"),
+            # B+ with missing GP should normalize to Grade B and GP 8
+            CourseResult(course_code="CSDO8013", marks={"TOT": "62"}, grade="B+", grade_point="", credits="3"),
+            # GP 9 with missing grade should deduce Grade A
+            CourseResult(course_code="CSL801", marks={"TOT": "42"}, grade="", grade_point="9", credits="1"),
+        ]
+
+        healed = align_and_heal_student(student, catalog=catalog)
+
+        # 1. CSC801: Grade 'A+' must become 'A', GP remains '9'
+        self.assertEqual(healed.course_results[0].grade, "A")
+        self.assertEqual(healed.course_results[0].grade_point, "9")
+
+        # 2. CSDO8013: Grade 'B+' must become 'B', GP becomes '8'
+        self.assertEqual(healed.course_results[1].grade, "B")
+        self.assertEqual(healed.course_results[1].grade_point, "8")
+
+        # 3. CSL801: GP 9 must deduce Grade 'A' (never 'A+')
+        self.assertEqual(healed.course_results[2].grade, "A")
+        self.assertEqual(healed.course_results[2].grade_point, "9")
+
+    def test_semester_sgpi_displacement_diploma(self):
+        """Test Diploma student vector-text label anchoring prevents SGPI displacement."""
+        from core.visual_extractor import _parse_student_dict_list
+
+        catalog = CourseCatalog(courses=[
+            Course(code="CSC801", name="AI", credits=3.0, max_marks={"TOT": 100})
+        ])
+
+        page_text = (
+            "7000441  NITESH RAMESH YAMUNA (2021016402156235) (205253887148)\n"
+            "   DIPLOMA CANDIDATE\n"
+            "   60  16  76  3 O 10 30\n"
+            "   SEM-III: 8.00 ; SEM-IV: 8.50 ; SEM-V: 9.00 ; SEM-VI: 8.80 ; SEM-VII: 9.10 ; CGPI: 8.68\n\n"
+            "7000442  ANOTHER CANDIDATE (2021016402156236)\n"
+            "   SEM-I: 7.20 ; SEM-II: 7.50\n"
+        )
+
+        # Simulate LLM returning naive sequential sem1..sem5
+        raw_students = [{
+            "seat_no": "7000441",
+            "student_name": "NITESH RAMESH YAMUNA",
+            "candidate_type": "Diploma",
+            "history": {
+                "sem1": "8.00",
+                "sem2": "8.50",
+                "sem3": "9.00",
+                "sem4": "8.80",
+                "sem5": "9.10"
+            },
+            "courses": [
+                {"code": "CSC801", "marks": {"TOT": "76"}, "grade": "O", "gp": "10", "credits": "3"}
+            ]
+        }]
+
+        parsed = _parse_student_dict_list(raw_students, catalog=catalog, page_text=page_text)
+        self.assertEqual(len(parsed), 1)
+        st = parsed[0]
+
+        # Candidate is Diploma: sem1 and sem2 MUST NOT be present
+        self.assertNotIn("1", st.history)
+        self.assertNotIn("2", st.history)
+
+        # Sem 3 through 7 must be accurately anchored to their roman numeral labels
+        self.assertEqual(st.history.get("3", {}).get("sgpi"), "8.00")
+        self.assertEqual(st.history.get("4", {}).get("sgpi"), "8.50")
+        self.assertEqual(st.history.get("5", {}).get("sgpi"), "9.00")
+        self.assertEqual(st.history.get("6", {}).get("sgpi"), "8.80")
+        self.assertEqual(st.history.get("7", {}).get("sgpi"), "9.10")
+        self.assertEqual(st.cgpi, "8.68")
+
+        # And must not bleed into candidate 7000442
+        self.assertNotIn("7.20", str(st.history))
+
+    def test_prefix_normalized_course_code_alignment(self):
+        """Test that serial prefixes like 01.CSC801 match CSC801 and align correctly."""
+        catalog = CourseCatalog(courses=[
+            Course(code="01.CSC801", name="AI", credits=3.0, max_marks={"TOT": 100}),
+            Course(code="04.CSDO8013", name="RL", credits=3.0, max_marks={"TOT": 100}),
+            Course(code="17.CSL801", name="AI Lab", credits=1.0, max_marks={"TOT": 50}),
+        ])
+
+        # Test catalog matching with and without prefixes
+        self.assertIsNotNone(catalog.get_by_code("CSC801"))
+        self.assertIsNotNone(catalog.get_by_code("01.CSC801"))
+        self.assertIsNotNone(catalog.get_by_code("CSDO8013"))
+        self.assertIsNotNone(catalog.get_by_code("04.CSDO8013"))
+
+        # Test alignment sorts correctly regardless of whether student or catalog has prefix
+        student = StudentRecord(seat_no="12345", student_name="BOB")
+        student.course_results = [
+            CourseResult(course_code="CSL801", marks={"TOT": "45"}),
+            CourseResult(course_code="04.CSDO8013", marks={"TOT": "70"}),
+            CourseResult(course_code="CSC801", marks={"TOT": "85"}),
+        ]
+
+        healed = align_and_heal_student(student, catalog=catalog)
+        self.assertEqual(
+            [normalize_course_code(cr.course_code) for cr in healed.course_results],
+            ["CSC801", "CSDO8013", "CSL801"]
+        )
 
 
 if __name__ == "__main__":

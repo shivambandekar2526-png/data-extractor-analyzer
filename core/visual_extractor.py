@@ -57,14 +57,13 @@ logger = logging.getLogger(__name__)
 ProgressCallback = Optional[Callable[[float, str], None]]
 AuditCallback = Optional[Callable[[Dict[str, Any]], None]]
 
+# Official Mumbai University CBCS C-Scheme 10-point scale:
 GRADE_SCALE: Dict[str, float] = {
     "O": 10.0,
-    "A+": 9.0,
-    "A": 8.0,
-    "B+": 7.0,
-    "B": 6.0,
-    "C": 5.0,
-    "D": 4.0,
+    "A": 9.0,
+    "B": 8.0,
+    "C": 7.0,
+    "D": 6.0,
     "E": 5.0,
     "P": 4.0,
     "F": 0.0,
@@ -72,6 +71,32 @@ GRADE_SCALE: Dict[str, float] = {
     "AA": 0.0,
     "ABS": 0.0
 }
+
+INV_GRADE: Dict[int, str] = {
+    10: "O",
+    9: "A",
+    8: "B",
+    7: "C",
+    6: "D",
+    5: "E",
+    4: "P",
+    0: "F"
+}
+
+SYNTHETIC_GRADE_MAP: Dict[str, str] = {
+    "A+": "A",
+    "B+": "B",
+    "C+": "C",
+    "D+": "D",
+    "O+": "O",
+}
+
+
+def normalize_course_code(code: str) -> str:
+    """Strip leading serial numbers: '01.CSC801' -> 'CSC801', '17.CSL801' -> 'CSL801'."""
+    clean = str(code or "").strip().upper()
+    clean = re.sub(r"^\d{1,2}\.\s*", "", clean)
+    return clean
 
 
 def segment_page_into_student_blocks(page_text: str) -> List[Dict[str, Any]]:
@@ -123,9 +148,9 @@ def align_and_heal_student(
     """
     # 1. If ground truth student is available, cross-reference marks
     if ground_truth:
-        gt_courses_by_code = {cr.course_code: cr for cr in ground_truth.course_results if cr.course_code}
+        gt_courses_by_code = {normalize_course_code(cr.course_code): cr for cr in ground_truth.course_results if cr.course_code}
         for cr in student.course_results:
-            gt_cr = gt_courses_by_code.get(cr.course_code)
+            gt_cr = gt_courses_by_code.get(normalize_course_code(cr.course_code))
             if gt_cr:
                 tot_v = safe_float(cr.marks.get("TOT"))
                 th_v = safe_float(cr.marks.get("TH"))
@@ -149,7 +174,7 @@ def align_and_heal_student(
                     cr.credit_points = gt_cr.credit_points or cr.credit_points
 
         # Recover any courses that ground truth has but vision missed
-        existing_codes = {cr.course_code for cr in student.course_results}
+        existing_codes = {normalize_course_code(cr.course_code) for cr in student.course_results}
         for gt_code, gt_cr in gt_courses_by_code.items():
             if gt_code not in existing_codes:
                 student.course_results.append(copy.deepcopy(gt_cr))
@@ -201,7 +226,11 @@ def align_and_heal_student(
         raw_g = (cr.grade or "").strip().upper()
         raw_gp = (cr.grade_point or "").strip().upper()
 
-        INV_GRADE = {10: "O", 9: "A+", 8: "A", 7: "B+", 6: "B", 5: "C", 4: "D", 0: "F"}
+        if raw_g in SYNTHETIC_GRADE_MAP:
+            raw_g = SYNTHETIC_GRADE_MAP[raw_g]
+            cr.grade = raw_g
+        if raw_gp in SYNTHETIC_GRADE_MAP:
+            raw_gp = SYNTHETIC_GRADE_MAP[raw_gp]
 
         # Case A: If raw_g is numeric, it is either a GP or TOT marks
         if raw_g.isdigit() or re.match(r"^\d+(\.\d+)?$", raw_g):
@@ -223,14 +252,22 @@ def align_and_heal_student(
 
         # Case B: If raw_gp is a letter grade, swap it to grade
         cur_gp_str = (cr.grade_point or "").strip().upper()
+        if cur_gp_str in SYNTHETIC_GRADE_MAP:
+            cur_gp_str = SYNTHETIC_GRADE_MAP[cur_gp_str]
         if cur_gp_str in GRADE_SCALE and not (cr.grade or "").strip().upper() in GRADE_SCALE:
             cr.grade = cur_gp_str
             cr.grade_point = str(int(GRADE_SCALE[cur_gp_str]))
 
         raw_g = (cr.grade or "").strip().upper()
+        if raw_g in SYNTHETIC_GRADE_MAP:
+            raw_g = SYNTHETIC_GRADE_MAP[raw_g]
+            cr.grade = raw_g
+
         gp_num = safe_float(cr.grade_point)
+        # If genuine GP is present (1 to 10), verify letter grade matches INV_GRADE or reconcile
         if gp_num is not None and 0.0 < gp_num <= 10.0:
-            pass
+            if not cr.grade or cr.grade not in GRADE_SCALE or cr.grade in SYNTHETIC_GRADE_MAP:
+                cr.grade = INV_GRADE.get(int(gp_num), cr.grade)
         elif raw_g in GRADE_SCALE:
             expected_gp = GRADE_SCALE[raw_g]
             cr.grade_point = str(int(expected_gp))
@@ -250,16 +287,16 @@ def align_and_heal_student(
                         max_m = 75.0
 
             pct = (tot_val / max_m) * 100.0 if max_m > 0 else tot_val
+            # Mumbai University C-Scheme grading (No A+ or B+)
             if pct >= 80: deduced_g, deduced_gp = "O", 10.0
-            elif pct >= 75: deduced_g, deduced_gp = "A+", 9.0
-            elif pct >= 70: deduced_g, deduced_gp = "A", 8.0
-            elif pct >= 60: deduced_g, deduced_gp = "B+", 7.0
-            elif pct >= 55: deduced_g, deduced_gp = "B", 6.0
-            elif pct >= 50: deduced_g, deduced_gp = "C", 5.0
-            elif pct >= 40: deduced_g, deduced_gp = "D", 4.0
+            elif pct >= 70: deduced_g, deduced_gp = "A", 9.0
+            elif pct >= 60: deduced_g, deduced_gp = "B", 8.0
+            elif pct >= 50: deduced_g, deduced_gp = "C", 7.0
+            elif pct >= 45: deduced_g, deduced_gp = "D", 6.0
+            elif pct >= 40: deduced_g, deduced_gp = "P", 4.0
             else: deduced_g, deduced_gp = "F", 0.0
 
-            if not cr.grade or cr.grade.isdigit():
+            if not cr.grade or cr.grade.isdigit() or cr.grade in SYNTHETIC_GRADE_MAP:
                 cr.grade = deduced_g
             if safe_float(cr.grade_point) == 0:
                 cr.grade_point = str(int(deduced_gp))
@@ -328,10 +365,10 @@ def align_and_heal_student(
     if total_course_marks > 0 and (cur_tot_marks == 0 or abs(cur_tot_marks - total_course_marks) > 2.0):
         student.total_marks = str(int(total_course_marks))
 
-    # 8. Align Course Ordering to Master Catalog
+    # 8. Align Course Ordering to Master Catalog (Canonical Code Normalized)
     if catalog and catalog.courses:
-        catalog_order = {c.code: i for i, c in enumerate(catalog.courses)}
-        student.course_results.sort(key=lambda c: catalog_order.get(c.course_code, 999))
+        catalog_order = {normalize_course_code(c.code): i for i, c in enumerate(catalog.courses)}
+        student.course_results.sort(key=lambda c: catalog_order.get(normalize_course_code(c.course_code), 999))
 
     return student
 
@@ -368,19 +405,35 @@ def _parse_student_dict_list(
         if not gender or raw_name.startswith("/") or norm_name_info.get("gender") == "F":
             gender = norm_name_info.get("gender", "F" if raw_name.startswith("/") else "M")
 
-        # Fallback PRN recovery from digital page text if Vision left PRN empty
+        # Fallback PRN & ABC_ID recovery from digital page text
         prn_val = normalize_identifier(raw.get("prn", ""))
-        if not prn_val and detected_prns:
+        abc_id_val = normalize_identifier(raw.get("abc_id", ""))
+        cand_window = ""
+        if page_text and raw_seat:
             seat_pos = page_text.find(raw_seat)
             if seat_pos != -1:
-                window = page_text[seat_pos:seat_pos + 600]
-                m_prn = re.search(r"\b([0-9]{16})\b", window)
-                if m_prn:
-                    prn_val = m_prn.group(1)
-            if not prn_val and idx < len(detected_prns):
-                prn_val = detected_prns[idx]
+                after_seat = page_text[seat_pos:]
+                # Truncate before the next seat number to prevent cross-candidate pollution
+                m_next = re.search(r"\n\s*(\d{7,8})\b", after_seat[len(raw_seat):])
+                if m_next:
+                    cand_window = after_seat[:len(raw_seat) + m_next.start()]
+                else:
+                    cand_window = after_seat[:1200]
 
-        # Extract history block safely
+        if not prn_val and cand_window:
+            m_prn = re.search(r"\b([0-9]{16})\b", cand_window)
+            if m_prn:
+                prn_val = m_prn.group(1)
+        if not prn_val and detected_prns and idx < len(detected_prns):
+            prn_val = detected_prns[idx]
+
+        if not abc_id_val and cand_window:
+            m_abc = re.search(r"\(([0-9]{12})\)", cand_window)
+            if m_abc:
+                abc_id_val = m_abc.group(1)
+
+        # Extract history block with label-anchored vector text recovery
+        # Guarantees ZERO displacement for Diploma (Direct Second Year) or ATKT/held candidates
         hist_raw = raw.get("history", {})
         hist_dict: Dict[str, Dict[str, str]] = {}
         if isinstance(hist_raw, dict):
@@ -391,9 +444,41 @@ def _parse_student_dict_list(
                 elif isinstance(hv, (str, int, float)) and str(hv).strip():
                     hist_dict[clean_hk] = {"sgpi": str(hv).strip()}
 
+        cgpi_val = str(raw.get("cgpi", "")).strip()
+
+        # Vector text label-anchored extraction takes precedence to prevent shifts
+        found_any_sem = False
+        if cand_window:
+            SEMESTER_ROMAN_MAP = [
+                ("1", "I"), ("2", "II"), ("3", "III"), ("4", "IV"),
+                ("5", "V"), ("6", "VI"), ("7", "VII")
+            ]
+            for sem_num, roman in SEMESTER_ROMAN_MAP:
+                m_sgpi = re.search(rf"\bSEM[-_\s]*{roman}\s*:\s*([0-9\.]+)", cand_window, re.I)
+                if m_sgpi:
+                    hist_dict[sem_num] = {"sgpi": m_sgpi.group(1).strip()}
+                    found_any_sem = True
+                else:
+                    # If explicitly absent / dash or candidate is Diploma and sem is 1 or 2, remove any displaced value
+                    m_dash = re.search(rf"\bSEM[-_\s]*{roman}\s*:\s*(--|ABS|AB|-|\s*;)", cand_window, re.I)
+                    if m_dash or ("DIPLOMA" in cand_window.upper() and sem_num in ("1", "2")):
+                        hist_dict.pop(sem_num, None)
+
+            m_cgpi = re.search(r"\bCGPI\s*:\s*([0-9\.]+)", cand_window, re.I)
+            if m_cgpi:
+                cgpi_val = m_cgpi.group(1).strip()
+
         cand_type = str(raw.get("candidate_type", "")).strip()
         if not cand_type:
-            cand_type = "Diploma" if "DIPLOMA" in page_text.upper() and raw_seat in page_text else "Regular"
+            cand_type = "Diploma" if "DIPLOMA" in (cand_window or page_text).upper() and raw_seat in page_text else "Regular"
+
+        # Heuristic fix for scanned pages without text layer where cand_window regex did not fire:
+        # If student is Diploma and has sequential sem1..sem5 without sem6 or sem7, shift +2 to Sem 3..7
+        if not found_any_sem and cand_type == "Diploma":
+            if set(hist_dict.keys()) == {"1", "2", "3", "4", "5"}:
+                hist_dict = {str(int(k) + 2): v for k, v in hist_dict.items() if k.isdigit()}
+            elif set(hist_dict.keys()) == {"1", "2", "3", "4"}:
+                hist_dict = {str(int(k) + 2): v for k, v in hist_dict.items() if k.isdigit()}
 
         st = StudentRecord(
             seat_no=normalize_identifier(raw_seat),
@@ -402,14 +487,14 @@ def _parse_student_dict_list(
             mother_name=norm_name_info.get("mother_name", "") or str(raw.get("mother_name", "")).strip(),
             candidate_type=cand_type,
             prn=prn_val,
-            abc_id=normalize_identifier(raw.get("abc_id", "")),
+            abc_id=abc_id_val,
             result_status=str(raw.get("result_status", "PASS")).strip(),
             remark=str(raw.get("remark", "")).strip(),
             total_marks=str(raw.get("total_marks", "")),
             credits_earned=str(raw.get("credits_earned", "")),
             total_cg=str(raw.get("total_cg", "")),
             sgpi=str(raw.get("sgpi", "")),
-            cgpi=str(raw.get("cgpi", "")).strip(),
+            cgpi=cgpi_val,
             history=hist_dict
         )
 
@@ -427,10 +512,26 @@ def _parse_student_dict_list(
                     cr_list.append(item)
 
         course_results: List[CourseResult] = []
-        for cr_raw in cr_list:
-            c_code = str(cr_raw.get("code") or cr_raw.get("course_code", "")).strip().upper()
-            if not c_code:
-                continue
+        for cr_idx, cr_raw in enumerate(cr_list):
+            raw_c_code = str(cr_raw.get("code") or cr_raw.get("course_code", "")).strip().upper()
+            if not raw_c_code:
+                if catalog and catalog.courses and cr_idx < len(catalog.courses):
+                    raw_c_code = catalog.courses[cr_idx].code
+                else:
+                    continue
+            c_code = normalize_course_code(raw_c_code)
+            c_name = cr_raw.get("name", "")
+            is_generic_code = bool(re.match(r"^(C\d+|COURSE[-_\s]*\d+|SUB[-_\s]*\d+|SUBJECT[-_\s]*\d+|COL[-_\s]*\d+|COLUMN[-_\s]*\d+)$", raw_c_code, re.I))
+            if catalog:
+                c_match = catalog.get_by_code(c_code)
+                if c_match:
+                    c_code = normalize_course_code(c_match.code)
+                    if not c_name:
+                        c_name = c_match.name
+                elif is_generic_code and cr_idx < len(catalog.courses) and len(cr_list) == len(catalog.courses):
+                    # Direct positional binding to catalog index for generic placeholders
+                    c_code = normalize_course_code(catalog.courses[cr_idx].code)
+                    c_name = catalog.courses[cr_idx].name
 
             # Normalized marks dict
             marks_dict: Dict[str, str] = {}
@@ -444,11 +545,15 @@ def _parse_student_dict_list(
                     if hk in cr_raw:
                         marks_dict[normalize_head(hk)] = str(cr_raw[hk])
 
+            cr_g = str(cr_raw.get("grade", "")).strip().upper()
+            if cr_g in SYNTHETIC_GRADE_MAP:
+                cr_g = SYNTHETIC_GRADE_MAP[cr_g]
+
             cr = CourseResult(
                 course_code=c_code,
-                course_name=cr_raw.get("name", ""),
+                course_name=c_name,
                 marks=marks_dict,
-                grade=str(cr_raw.get("grade", "")),
+                grade=cr_g,
                 grade_point=str(cr_raw.get("gp") or cr_raw.get("grade_point", "")),
                 credits=str(cr_raw.get("credits", "")),
                 credit_points=str(cr_raw.get("cg") or cr_raw.get("credit_points", ""))
@@ -492,6 +597,8 @@ def extract_visual_blueprint(
         "and extract any student result records present on Page 1.\n"
         "Do NOT assume fixed templates. Locate the course legend or table headers wherever they appear.\n"
         "Strictly adhere to the true assessment heads present on this sheet. Never add phantom 'TH' heads to practical or project courses.\n"
+        "Course codes must omit serial numbers (e.g. use 'CSC801' instead of '01.CSC801').\n"
+        "Use official Mumbai University CBCS C-Scheme grades (10->O, 9->A, 8->B, 7->C, 6->D, 5->E, 4->P, 0->F, AB->Absent). NEVER use A+ or B+.\n"
         "Return pure valid JSON matching the requested schema."
     )
 
@@ -499,18 +606,24 @@ def extract_visual_blueprint(
         "Analyze this examination ledger image (Page 1) and establish the Master Academic Schema Contract.\n\n"
         "CRITICAL DISCOVERY REQUIREMENTS:\n"
         "1. DYNAMIC ASSESSMENT HEADS (NO PHANTOM HEADS):\n"
-        "   - Inspect course definitions from the legend or table headers:\n"
+        "   - Inspect course definitions from the legend or table headers in left-to-right order:\n"
         "     * Theory courses typically have: ['TH', 'IA', 'TOT'] (or ESE, IA).\n"
         "     * Practical/Lab courses typically have: ['TW', 'PR', 'TOT'] or ['TW', 'OR', 'TOT'] or ['PR', 'TOT']. THEY DO NOT HAVE 'TH'.\n"
         "     * Project/Seminar courses typically have: ['TW', 'OR', 'TOT']. THEY DO NOT HAVE 'TH'.\n"
         "     * Audit / Non-credit courses have: [] (empty heads, credits=0, Grade only).\n"
         "   - Output ONLY the heads that physically exist for each course. Never default to 'TH'.\n"
+        "   - Course Code: Clean code without serial numbers (e.g. 'CSC801', not '01.CSC801').\n"
         "2. CANDIDATE CONVENTIONS & DIPLOMA CANDIDATES:\n"
         "   - Identify indicators for Direct Second Year (Diploma) candidates (e.g. 'DIPLOMA', missing Sem 1-2 columns, shifted marks).\n"
         "   - Identify female candidate prefix (e.g. leading slash '/').\n"
         "   - Identify absent markers ('--', 'AB', 'ABS') and grace marks ('#', '+', '*').\n"
-        "3. PAGE 1 CANDIDATES EXTRACTION:\n"
+        "3. OFFICIAL MUMBAI UNIVERSITY GRADING (NO A+ OR B+):\n"
+        "   - CBCS C-Scheme scale: 10->O, 9->A, 8->B, 7->C, 6->D, 5->E, 4->P, 0->F, AB->Absent.\n"
+        "   - NEVER output 'A+' or 'B+'. GP 9 is ALWAYS 'A', GP 8 is ALWAYS 'B', GP 7 is 'C'.\n"
+        "4. PAGE 1 CANDIDATES EXTRACTION:\n"
         "   - If student result records appear on this Page 1, extract ALL of them into 'page_1_students'.\n"
+        "   - Student marks appear in columns matching the course list in order from left to right.\n"
+        "   - For lower semester history: SEM-I -> 'sem1', SEM-II -> 'sem2', ..., SEM-VII -> 'sem7'. If Diploma, leave 'sem1' and 'sem2' omitted.\n"
         "   - If Page 1 contains only title/legend and zero students, return 'page_1_students': [].\n\n"
         f"EXPECTED SEATS ON PAGE 1 (if any): {', '.join(detected_p1_seats) if detected_p1_seats else 'None'}\n\n"
         "Return pure JSON with this exact structure:\n"
@@ -521,7 +634,7 @@ def extract_visual_blueprint(
         '  "grading_system": "10-point CBCGS",\n'
         '  "courses": [\n'
         "    {\n"
-        '      "code": "Course Code (e.g. 52901 or CSC801)",\n'
+        '      "code": "Course Code without serial number (e.g. CSC801)",\n'
         '      "name": "Official Subject Name",\n'
         '      "course_type": "Theory | Lab | Project | Seminar | Audit",\n'
         '      "heads": ["TH", "IA", "TOT"],\n'
@@ -608,11 +721,18 @@ def extract_visual_blueprint(
 
     # Normalize courses in catalog
     import math
+    seen_cc = set()
     catalog_courses: List[Course] = []
     for c in blueprint.get("courses", []):
-        c_code = str(c.get("code", "")).strip().upper()
-        if not c_code:
+        raw_code = str(c.get("code", "")).strip().upper()
+        if not raw_code:
             continue
+        c_code = normalize_course_code(raw_code)
+        if c_code in seen_cc:
+            continue
+        seen_cc.add(c_code)
+        c["code"] = c_code  # canonicalize in blueprint for downstream Stage 2
+
         c_name = str(c.get("name", "")).strip() or c_code
         c_heads = [normalize_head(h) for h in c.get("heads", []) if h]
         c_credits = 0.0
@@ -773,12 +893,12 @@ def extract_sliced_page(
 
     courses = blueprint.get("courses", [])
     courses_formatted = []
-    for c in courses:
-        c_code = c.get("code")
+    for idx, c in enumerate(courses, 1):
+        c_code = normalize_course_code(c.get("code", ""))
         c_name = c.get("name", "")
         c_heads = ",".join(c.get("heads", [])) if c.get("heads") else "AUDIT"
         c_cr = c.get("credits", 0)
-        courses_formatted.append(f"- {c_code} ({c_name}): heads=[{c_heads}], credits={c_cr}")
+        courses_formatted.append(f"COLUMN {idx}: [{c_code}] - {c_name} (heads=[{c_heads}], credits={c_cr})")
     courses_str = "\n".join(courses_formatted)
 
     # Build persistent System Instruction with Locked Session Schema for API prefix caching
@@ -789,21 +909,29 @@ def extract_sliced_page(
         f"COURSES IN STRICT LEFT-TO-RIGHT ORDER:\n{courses_str}\n"
         "====================================\n\n"
         "EXTRACTION DIRECTIVES:\n"
-        "1. STRICT COLUMN ALIGNMENT & DIPLOMA CANDIDATES:\n"
-        "   - Align marks by matching column headers and Course Codes, NOT by rigid physical page margins.\n"
-        "   - For DIRECT SECOND YEAR / DIPLOMA candidates: Their marks may be shifted horizontally or lack lower-semester SGPIs. Set candidate_type='Diploma'.\n"
+        "1. STRICT COLUMN 1..N POSITIONAL ORDER BINDING (PREVENTS SUBJECT-COLUMN SHIFTS):\n"
+        "   - On this gazette, student rows do NOT print subject names next to numbers. Marks appear in strict horizontal columns corresponding to COLUMN 1 through COLUMN N above.\n"
+        "   - Map the i-th column block of marks directly to the i-th course (COLUMN i) listed above.\n"
+        "   - NEVER shift marks from one column to another. Every candidate's courses list must match the column order.\n"
         "2. DYNAMIC HEADS (ZERO PHANTOM COLUMNS):\n"
         "   - Output ONLY the heads defined in the Locked Schema for each course.\n"
         "   - If a course has heads ['TW', 'PR', 'TOT'], output ONLY {'TW': '...', 'PR': '...', 'TOT': '...'}. NEVER add 'TH'.\n"
         "   - If a course is Audit (empty heads), output marks={}, grade='P' or 'NP'.\n"
-        "3. ACCURATE MARKS, ABSENT & GRACE MARKS:\n"
-        "   - Absent: If a student was absent ('--', 'AB', 'ABS'), transcribe marks as 'AB', grade='AB', gp='0', cg='0'.\n"
-        "   - Grace Marks: If a mark has a symbol (e.g. '36+4#' or '40#'), record final marks as '40' and remark='PASS_WITH_GRACE_#'.\n"
-        "   - Letters vs Numbers: Put the Grade Point NUMBER (10,9,8,7,6,5,4,0) in 'gp', and the Letter Grade (O,A+,A,B+,B,C,D,F) in 'grade'.\n"
-        "4. CANDIDATE IDENTIFICATION & WRAPPED ROWS:\n"
+        "3. OFFICIAL MUMBAI UNIVERSITY GRADING SCALE (NO A+ OR B+):\n"
+        "   - Scale: 10->O, 9->A, 8->B, 7->C, 6->D, 5->E, 4->P, 0->F, AB->Absent.\n"
+        "   - DO NOT INVENT 'A+' or 'B+' grades under any circumstances. Grade Point 9 is ALWAYS 'A', Grade Point 8 is ALWAYS 'B', Grade Point 7 is 'C'.\n"
+        "   - Put Grade Point NUMBER (10,9,8,7,6,5,4,0) in 'gp', and Letter Grade (O,A,B,C,D,E,P,F,AB) in 'grade'.\n"
+        "4. LOWER SEMESTER HISTORY & DIPLOMA CANDIDATES (NO SEMESTER DISPLACEMENT):\n"
+        "   - On Sem VII and Sem VIII gazettes, previous semester SGPIs are printed with explicit labels: SEM-I, SEM-II, ..., SEM-VII.\n"
+        "   - Map each SGPI strictly to its labeled semester in the 'history' object:\n"
+        "     * SEM-I -> 'sem1', SEM-II -> 'sem2', SEM-III -> 'sem3', SEM-IV -> 'sem4', SEM-V -> 'sem5', SEM-VI -> 'sem6', SEM-VII -> 'sem7'.\n"
+        "   - For DIRECT SECOND YEAR / DIPLOMA candidates: SEM-I and SEM-II do NOT exist on the sheet. Do NOT put SEM-III into 'sem1'! Leave 'sem1' and 'sem2' omitted. Start at 'sem3'.\n"
+        "   - Extract 'cgpi' ONLY from the 'CGPI: ...' label. Never place a semester SGPI into 'cgpi'.\n"
+        "5. CANDIDATE IDENTIFICATION & MARKS:\n"
         "   - Strip leading slash '/' from student names and set gender='F'.\n"
         "   - Multi-line rows: If student names or seat numbers wrap across 2 physical rows, combine into a single student record.\n"
-        "   - Lower Semester History: For Sem VII and VIII, extract previous semester SGPIs (sem1..sem7) and CGPI if printed.\n"
+        "   - Absent: If a student was absent ('--', 'AB', 'ABS'), transcribe marks as 'AB', grade='AB', gp='0', cg='0'.\n"
+        "   - Grace Marks: If a mark has a symbol (e.g. '36+4#' or '40#'), record final marks as '40' and remark='PASS_WITH_GRACE_#'.\n"
         "Return ONLY pure valid JSON."
     )
 
@@ -872,7 +1000,12 @@ def extract_sliced_page(
         raw_students = []
 
     catalog_temp = CourseCatalog(courses=[
-        Course(code=c.get("code", ""), name=c.get("name", ""), heads=c.get("heads", []), credits=safe_float(c.get("credits", 0)))
+        Course(
+            code=normalize_course_code(c.get("code", "")),
+            name=c.get("name", ""),
+            heads=c.get("heads", []),
+            credits=safe_float(c.get("credits", 0))
+        )
         for c in courses
     ])
 

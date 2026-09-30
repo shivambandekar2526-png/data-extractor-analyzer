@@ -5,6 +5,7 @@ Standalone models supporting multi-archetype academic result extraction,
 dual-identifier flat dictionary serialization, and mathematical verification.
 """
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -32,9 +33,11 @@ class CourseCatalog:
         return {c.name: c.code for c in self.courses}
 
     def get_by_code(self, code: str) -> Optional[Course]:
-        clean = code.strip().replace(" ", "").upper()
+        clean = (code or "").strip().replace(" ", "").upper()
+        clean_norm = re.sub(r"^\d{1,2}\.\s*", "", clean)
         for c in self.courses:
-            if c.code.strip().replace(" ", "").upper() == clean:
+            c_code = (c.code or "").strip().replace(" ", "").upper()
+            if c_code == clean or re.sub(r"^\d{1,2}\.\s*", "", c_code) == clean_norm:
                 return c
         return None
 
