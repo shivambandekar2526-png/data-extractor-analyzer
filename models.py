@@ -15,10 +15,14 @@ class Course:
     """A single course/subject definition."""
     code: str                                              # e.g. "CSC501", "42211"
     name: str                                              # e.g. "Computer Network"
+    num: str = ""
     heads: List[str] = field(default_factory=list)         # e.g. ["SE", "IA", "TOT"] or ["TW", "PO", "TOT"]
+    head1: str = "TH"
+    head2: str = "IN"
     max_marks: Dict[str, int] = field(default_factory=dict)
     min_marks: Dict[str, int] = field(default_factory=dict)
     credits: float = 0.0
+    col_indices: List[int] = field(default_factory=list)
     course_type: str = ""
 
 
