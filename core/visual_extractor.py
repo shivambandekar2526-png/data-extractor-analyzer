@@ -166,18 +166,24 @@ def extract_candidate_window(page_text: str, raw_seat: str) -> str:
     """Extract candidate text window anchored at seat number without cross-student pollution."""
     if not page_text or not raw_seat:
         return ""
-    seat_pos = page_text.find(raw_seat)
-    if seat_pos == -1:
+    m_seat = re.search(rf"(?:^|\b){re.escape(raw_seat)}\b", page_text)
+    if not m_seat:
         return ""
+    seat_pos = m_seat.start()
     after_seat = page_text[seat_pos:]
-    m_next = re.search(r"\n\s*(\d{6,10})\b", after_seat[len(raw_seat):])
+    m_next = re.search(r"\n\s*(?:SEAT(?:\s*NO)?[:\s\.-]+)?(\d{5,10})\b\s+(?:/)?\s*[A-Z]", after_seat[len(raw_seat):], re.IGNORECASE)
+    if not m_next:
+        m_next = re.search(r"\n\s*(\d{6,10})\b", after_seat[len(raw_seat):])
     if m_next:
         return after_seat[:len(raw_seat) + m_next.start()]
-    return after_seat[:1500]
+    m_footer = re.search(r"\n\s*(?:/-\s*FEMALE|G:Grade|Entered by\s*:|Page No\.:)", after_seat, re.IGNORECASE)
+    if m_footer:
+        return after_seat[:m_footer.start()]
+    return after_seat[:2500]
 
 
 def extract_history_and_cgpi_from_window(cand_window: str) -> Tuple[Dict[str, Dict[str, str]], str]:
-    """Label-anchored vector extraction for historical semesters and CGPI."""
+    """Label-anchored vector extraction for historical semesters, credits, marks, and CGPI."""
     hist_dict: Dict[str, Dict[str, str]] = {}
     cgpi_val = ""
     if not cand_window:
@@ -188,14 +194,26 @@ def extract_history_and_cgpi_from_window(cand_window: str) -> Tuple[Dict[str, Di
     ]
     for sem_num, roman in SEMESTER_ROMAN_MAP:
         m_sgpi = re.search(rf"\bSEM[-_\s]*{roman}\s*:\s*([0-9\.]+)", cand_window, re.I)
+        m_cred = re.search(rf"CREDITS:[^\n]*?\bSEM[-_\s]*{roman}\s*:\s*([0-9]+)", cand_window, re.I)
+        m_mrk = re.search(rf"MARKS:[^\n]*?\bSEM[-_\s]*{roman}\s*:\s*([0-9]+)/([0-9]+)", cand_window, re.I)
+
+        entry = {}
         if m_sgpi:
-            hist_dict[sem_num] = {"sgpi": m_sgpi.group(1).strip()}
+            entry["sgpi"] = m_sgpi.group(1).strip()
+        if m_cred:
+            entry["credits"] = m_cred.group(1).strip()
+        if m_mrk:
+            entry["marks"] = m_mrk.group(1).strip()
+            entry["max"] = m_mrk.group(2).strip()
+
+        if entry:
+            hist_dict[sem_num] = entry
         else:
             m_dash = re.search(rf"\bSEM[-_\s]*{roman}\s*:\s*(--|ABS|AB|-|\s*;)", cand_window, re.I)
             if m_dash or ("DIPLOMA" in cand_window.upper() and sem_num in ("1", "2")):
                 hist_dict.pop(sem_num, None)
 
-    m_cgpi = re.search(r"\bCGPI\s*:\s*([0-9\.]+)", cand_window, re.I)
+    m_cgpi = re.search(r"\b(?:FINAL\s+)?(?:CGPI|CGPA)\s*[:\s=]+\s*([0-9\.]+|--)", cand_window, re.I)
     if m_cgpi:
         cgpi_val = m_cgpi.group(1).strip()
 
@@ -276,6 +294,44 @@ def _parse_matrix_rows_to_students(
 
         cand_type = str(row_dict.get("Candidate_Type") or row_dict.get("candidate_type") or ("Diploma" if "DIPLOMA" in cand_window.upper() else "Regular")).strip()
 
+        tot_marks_val = str(row_dict.get("Total_Marks") or row_dict.get("total_marks") or "").strip().strip("()")
+        cr_val = str(row_dict.get("Credits_Earned") or row_dict.get("credits_earned") or "").strip().strip("()")
+        cg_val = str(row_dict.get("Total_CG") or row_dict.get("total_cg") or "").strip().strip("()")
+        sgpi_val = str(row_dict.get("SGPI") or row_dict.get("sgpi") or "").strip().strip("()")
+
+        if cand_window:
+            # Reconcile total marks if missing
+            if not tot_marks_val or tot_marks_val in ("--", "0", ""):
+                m_res_norm = re.search(r"\b(P|F|A|ABS)\s+(\d{2,4})\b", cand_window)
+                if m_res_norm:
+                    tot_marks_val = m_res_norm.group(2).strip()
+                else:
+                    m_tot_lbl = re.search(r"\b(?:TOTAL|TOT|MARKS|TOTAL\s+MARKS)[:\s=]+(\d{2,4})\b", cand_window, re.I)
+                    if m_tot_lbl:
+                        tot_marks_val = m_tot_lbl.group(1).strip()
+
+            # Reconcile credits, total_cg, and sgpi if missing
+            if not sgpi_val or sgpi_val in ("--", "0", "0.0", "0.00", ""):
+                m_sum = re.search(r"\b(\d{1,2})\s+(\d{2,4})\s+([0-9]{1,2}\.[0-9]{2})\b", cand_window)
+                if m_sum:
+                    if not cr_val:
+                        cr_val = m_sum.group(1).strip()
+                    if not cg_val:
+                        cg_val = m_sum.group(2).strip()
+                    sgpi_val = m_sum.group(3).strip()
+                else:
+                    m_lbl = re.search(r"\b(?:SGPI|GPA|SGPA)[:\s=]+([0-9\.]+)\b", cand_window, re.I)
+                    if m_lbl:
+                        sgpi_val = m_lbl.group(1).strip()
+                    else:
+                        m_tab = re.search(r"\|\s*([0-9]{1,2}(?:\.[0-9]{2})?)\s+([0-9]{2,4}(?:\.[0-9]{2})?)\b.*?\|\s*([0-9]{1,2}\.[0-9]{2})\b", cand_window, re.DOTALL)
+                        if m_tab:
+                            if not cr_val:
+                                cr_val = m_tab.group(1).strip()
+                            if not cg_val:
+                                cg_val = m_tab.group(2).strip()
+                            sgpi_val = m_tab.group(3).strip()
+
         st = StudentRecord(
             seat_no=raw_seat,
             student_name=clean_name,
@@ -287,10 +343,10 @@ def _parse_matrix_rows_to_students(
             semester=sem_val,
             result_status=res_val,
             remark=rem_val,
-            total_marks=str(row_dict.get("Total_Marks") or row_dict.get("total_marks") or "").strip().strip("()"),
-            credits_earned=str(row_dict.get("Credits_Earned") or row_dict.get("credits_earned") or "").strip().strip("()"),
-            total_cg=str(row_dict.get("Total_CG") or row_dict.get("total_cg") or "").strip().strip("()"),
-            sgpi=str(row_dict.get("SGPI") or row_dict.get("sgpi") or "").strip().strip("()"),
+            total_marks=tot_marks_val,
+            credits_earned=cr_val,
+            total_cg=cg_val,
+            sgpi=sgpi_val,
             cgpi=cgpi_val,
             history=cand_hist,
             raw_flat_dict=row_dict
@@ -663,7 +719,7 @@ def _parse_student_dict_list(
                     clean_line = line.strip()
                     if raw_seat in clean_line:
                         # Dynamic Match: <Seat> [optional /] <Name> (<10-16 digit PRN>) [(<10-12 digit ABC_ID>)]
-                        m_hdr = re.search(rf"^{re.escape(raw_seat)}\s*(/)?\s*(.*?)\s*\(([0-9]{{10,16}})\)(?:\s*\(([0-9]{{10,12}})\))?", clean_line)
+                        m_hdr = re.search(rf"(?:^|\b){re.escape(raw_seat)}\b\s*(/)?\s*(.*?)\s*\(([0-9]{{10,16}})\)(?:\s*\(([0-9]{{10,12}})\))?", clean_line)
                         if m_hdr:
                             has_header_match = True
                             cand_header_is_female = bool(m_hdr.group(1))
@@ -671,7 +727,7 @@ def _parse_student_dict_list(
                             cand_header_prn = m_hdr.group(3).strip()
                             cand_header_abc = (m_hdr.group(4) or "").strip()
                         else:
-                            m_hdr_relaxed = re.search(rf"^{re.escape(raw_seat)}\s*(/)?\s*([A-Za-z\s\.,]+(?:\s*\([A-Za-z\s]+\))?)", clean_line)
+                            m_hdr_relaxed = re.search(rf"(?:^|\b){re.escape(raw_seat)}\b\s*(/)?\s*([A-Za-z\s\.,]+(?:\s*\([A-Za-z\s]+\))?)", clean_line)
                             if m_hdr_relaxed:
                                 has_header_match = True
                                 cand_header_is_female = bool(m_hdr_relaxed.group(1))
@@ -779,7 +835,7 @@ def _parse_student_dict_list(
                     if m_dash or ("DIPLOMA" in cand_window.upper() and sem_num in ("1", "2")):
                         hist_dict.pop(sem_num, None)
 
-            m_cgpi = re.search(r"\bCGPI\s*:\s*([0-9\.]+)", cand_window, re.I)
+            m_cgpi = re.search(r"\b(?:FINAL\s+)?(?:CGPI|CGPA)\s*[:\s=]+\s*([0-9\.]+|--)", cand_window, re.I)
             if m_cgpi:
                 cgpi_val = m_cgpi.group(1).strip()
 
@@ -834,6 +890,32 @@ def _parse_student_dict_list(
             or getattr(spec, "semester", "")
             or ""
         )
+        cr_val = str(raw.get("credits_earned", "")).strip().strip("()")
+        cg_val = str(raw.get("total_cg", "")).strip().strip("()")
+        sgpi_val = str(raw.get("sgpi", "")).strip().strip("()")
+
+        if cand_window:
+            if not sgpi_val or sgpi_val in ("--", "0", "0.0", "0.00", ""):
+                m_sum = re.search(r"\b(\d{1,2})\s+(\d{2,4})\s+([0-9]{1,2}\.[0-9]{2})\b", cand_window)
+                if m_sum:
+                    if not cr_val:
+                        cr_val = m_sum.group(1).strip()
+                    if not cg_val:
+                        cg_val = m_sum.group(2).strip()
+                    sgpi_val = m_sum.group(3).strip()
+                else:
+                    m_lbl = re.search(r"\b(?:SGPI|GPA|SGPA)[:\s=]+([0-9\.]+)\b", cand_window, re.I)
+                    if m_lbl:
+                        sgpi_val = m_lbl.group(1).strip()
+                    else:
+                        m_tab = re.search(r"\|\s*([0-9]{1,2}(?:\.[0-9]{2})?)\s+([0-9]{2,4}(?:\.[0-9]{2})?)\b.*?\|\s*([0-9]{1,2}\.[0-9]{2})\b", cand_window, re.DOTALL)
+                        if m_tab:
+                            if not cr_val:
+                                cr_val = m_tab.group(1).strip()
+                            if not cg_val:
+                                cg_val = m_tab.group(2).strip()
+                            sgpi_val = m_tab.group(3).strip()
+
         st = StudentRecord(
             seat_no=normalize_identifier(raw_seat),
             student_name=norm_name_info.get("student_name", raw_name.lstrip("/ ").strip()),
@@ -846,9 +928,9 @@ def _parse_student_dict_list(
             result_status=res_val,
             remark=rem_val,
             total_marks=tot_marks_val,
-            credits_earned=str(raw.get("credits_earned", "")).strip().strip("()"),
-            total_cg=str(raw.get("total_cg", "")).strip().strip("()"),
-            sgpi=str(raw.get("sgpi", "")).strip().strip("()"),
+            credits_earned=cr_val,
+            total_cg=cg_val,
+            sgpi=sgpi_val,
             cgpi=cgpi_val,
             history=hist_dict
         )
@@ -1127,7 +1209,7 @@ def detect_candidate_seat_numbers(text: str) -> List[str]:
     # C. Seat followed by parenthesized PRN (e.g. "101410022 (20210164...)")
     anchored_patterns = [
         r"(?:^|\n)\s*([0-9]{6,10})\s+(?:/)?\s*[A-Z][A-Z\s\.,]{2,}",
-        r"\b(?:SEAT(?:\s*NO)?[:\s\.-]+)([0-9]{6,10})\b",
+        r"\b(?:SEAT(?:\s*NO)?[:\s\.-]+)([0-9]{5,10})\b",
         r"\b([0-9]{6,10})\s*\(\s*[0-9]{10,16}\s*\)",
     ]
     for pat in anchored_patterns:
@@ -2366,6 +2448,36 @@ def run_visual_blueprint_pipeline(
                     pass
         except Exception as e:
             logger.warning("Spotlight micro-healing failed: %s", e)
+
+    # Stage 5: Document-wide 100% Student Recall Safety Net
+    # Reconciles extracted students against all detectable seat numbers across the entire document
+    try:
+        doc_recon = fitz.open(pdf_path)
+        existing_seats = {s.seat_no for s in all_students if s.seat_no}
+        for p_idx, p in enumerate(doc_recon):
+            p_text = p.get_text("text") or ""
+            p_seats = detect_candidate_seat_numbers(p_text)
+            p_missing = [s for s in p_seats if s not in existing_seats]
+            if p_missing:
+                logger.warning("Safety Net: Recovering %d missed candidate(s) from Page %d: %s", len(p_missing), p_idx + 1, p_missing)
+                rec_raw = [{"seat_no": s} for s in p_missing]
+                rec_students = _parse_student_dict_list(
+                    raw_students=rec_raw,
+                    catalog=meta.catalog,
+                    page_text=p_text,
+                    slot_registry=slot_registry,
+                    valid_grades=valid_grades,
+                    spec=spec,
+                    audit_cb=audit_cb
+                )
+                for rs in rec_students:
+                    if rs.seat_no and rs.seat_no not in existing_seats:
+                        rs = align_and_heal_student(rs, meta.catalog, ground_truth=None, valid_grades=valid_grades, engine=relation_engine)
+                        all_students.append(rs)
+                        existing_seats.add(rs.seat_no)
+        doc_recon.close()
+    except Exception as recon_err:
+        logger.warning("Document-wide reconciliation safety net check encountered: %s", recon_err)
 
     # Final catalog ordering alignment & serialization
     for idx, s in enumerate(all_students):

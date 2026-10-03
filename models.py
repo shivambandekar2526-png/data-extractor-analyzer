@@ -153,10 +153,9 @@ class StudentRecord:
             "Credits_Earned": self.credits_earned,
             "Total_CG": self.total_cg,
             "SGPI": self.sgpi,
+            "CGPI": self.cgpi or "",
         })
 
-        if self.cgpi:
-            d["CGPI"] = self.cgpi
         if self.ern:
             d["ERN"] = self.ern
         if self.mother_name:

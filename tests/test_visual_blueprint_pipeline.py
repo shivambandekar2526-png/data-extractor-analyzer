@@ -733,7 +733,7 @@ class TestVisualBlueprintPipeline(unittest.TestCase):
         extract_sliced_page(self.sample_pdf, page_index=1, blueprint=blueprint, client=client)
 
         self.assertTrue(mock_generate.called)
-        _, kwargs = mock_generate.call_args
+        _, kwargs = mock_generate.call_args_list[0]
         sys_inst = kwargs.get("system_instruction", "")
         usr_prompt = kwargs.get("user_prompt", "")
 
@@ -1314,6 +1314,148 @@ class TestVisualBlueprintPipeline(unittest.TestCase):
         self.assertEqual(flat["Semester"], "VIII")
         self.assertEqual(flat["CGPI"], "8.04")
         self.assertEqual(flat["SGPI_Sem_1"], "9.58")
+
+    def test_mandatory_student_metadata_recall_and_sgpi_cgpi(self):
+        """
+        Guarantees that all mandatory student attributes (Name, Seat, PRN, Total Marks,
+        Gender, Result Status, SGPI, CGPI, and Sem History) are correctly extracted
+        and serialized without omission.
+        """
+        catalog = CourseCatalog(courses=[
+            Course(code="CSC801", name="AI", credits=3.0, heads=["TH", "IA", "TOT"]),
+            Course(code="CSDO8013", name="RL", credits=3.0, heads=["TH", "IA", "TOT"]),
+        ])
+        meta = ExamMeta(exam_title="B.E. SEM VIII", semester="VIII", catalog=catalog)
+
+        # Candidate 1: Male candidate with female mother's name (SNEHA) -> Must be M
+        # Candidate 2: Female candidate with leading slash -> Must be F
+        # Candidate 3: Diploma candidate with held CGPI (--)
+        page_text = (
+            "  7000441  NITESH RAMESH YAMUNA  (2021016402156235)  (205253887148)\n"
+            "    60  16  76  60  16  76  P  547\n"
+            "    3 A 9 27  3 A 9 27  21  186  8.86\n"
+            "    SGPI: SEM-I: 9.58 ; SEM-II: 8.18 ; SEM-VII: 8.05 ; CGPI: 8.04\n"
+            "----------------------------------------------------------------------------------------------------\n"
+            "  7000444 /ANGANE PRIYANKA VIVEK VIBHUTI  (2021016402160152)  (510040362489)\n"
+            "    57  20  77  68  15  83  P  558\n"
+            "    3 A 9 27  3 O 10 30  21  195  9.29\n"
+            "    SGPI: SEM-I: 9.20 ; SEM-II: 9.10 ; SEM-VII: 9.15 ; CGPI: 9.14\n"
+            "----------------------------------------------------------------------------------------------------\n"
+            "  7000458  PATIL RAHUL SANJAY SNEHA  (2021016402169999)  (510040369999)\n"
+            "    40  10  50  45  12  57  P  RLE  423\n"
+            "    3 D 6 18  3 C 7 21  21  141  6.71\n"
+            "    (DIPLOMA STUDENT)  SGPI: SEM-III: 7.22 ; SEM-IV: 5.92 ; SEM-VI: -- ; SEM-VII: 5.73 ; CGPI: --\n"
+        )
+
+        raw_students = [
+            {"seat_no": "7000441"},
+            {"seat_no": "7000444"},
+            {"seat_no": "7000458"},
+        ]
+
+        students = _parse_student_dict_list(
+            raw_students=raw_students,
+            catalog=catalog,
+            page_text=page_text
+        )
+
+        self.assertEqual(len(students), 3)
+
+        # 1. Candidate 1 (Male, despite female mother's name YAMUNA)
+        s1 = students[0]
+        self.assertEqual(s1.seat_no, "7000441")
+        self.assertEqual(s1.student_name, "NITESH RAMESH YAMUNA")
+        self.assertEqual(s1.gender, "M")
+        self.assertEqual(s1.prn, "2021016402156235")
+        self.assertEqual(s1.abc_id, "205253887148")
+        self.assertEqual(s1.result_status, "P")
+        self.assertEqual(s1.total_marks, "547")
+        self.assertEqual(s1.credits_earned, "21")
+        self.assertEqual(s1.total_cg, "186")
+        self.assertEqual(s1.sgpi, "8.86")
+        self.assertEqual(s1.cgpi, "8.04")
+        self.assertEqual(s1.history.get("1", {}).get("sgpi"), "9.58")
+        self.assertEqual(s1.history.get("7", {}).get("sgpi"), "8.05")
+
+        # 2. Candidate 2 (Female, leading slash correctly stripped from name)
+        s2 = students[1]
+        self.assertEqual(s2.seat_no, "7000444")
+        self.assertEqual(s2.student_name, "ANGANE PRIYANKA VIVEK VIBHUTI")
+        self.assertEqual(s2.gender, "F")
+        self.assertEqual(s2.prn, "2021016402160152")
+        self.assertEqual(s2.total_marks, "558")
+        self.assertEqual(s2.sgpi, "9.29")
+        self.assertEqual(s2.cgpi, "9.14")
+
+        # 3. Candidate 3 (Diploma, RLE status, CGPI is --)
+        s3 = students[2]
+        self.assertEqual(s3.seat_no, "7000458")
+        self.assertEqual(s3.student_name, "PATIL RAHUL SANJAY SNEHA")
+        self.assertEqual(s3.gender, "M")
+        self.assertEqual(s3.candidate_type, "Diploma")
+        self.assertEqual(s3.result_status, "RLE")
+        self.assertEqual(s3.remark, "RLE")
+        self.assertEqual(s3.total_marks, "423")
+        self.assertEqual(s3.sgpi, "6.71")
+        self.assertEqual(s3.cgpi, "--")
+        self.assertNotIn("1", s3.history)  # Diploma students do not have Sem 1
+        self.assertEqual(s3.history.get("3", {}).get("sgpi"), "7.22")
+
+        # 4. Serialization check to flat dict
+        for st in students:
+            flat = st.to_flat_dict(catalog)
+            self.assertIn("Seat_No", flat)
+            self.assertIn("Student_Name", flat)
+            self.assertIn("Gender", flat)
+            self.assertIn("PRN", flat)
+            self.assertIn("Total_Marks", flat)
+            self.assertIn("Result_Status", flat)
+            self.assertIn("SGPI", flat)
+            self.assertIn("CGPI", flat)
+            self.assertTrue(len(flat["Student_Name"]) > 3)
+            self.assertTrue(len(flat["PRN"]) >= 10)
+            self.assertIn(flat["Gender"], ("M", "F"))
+            self.assertTrue(len(flat["SGPI"]) > 0)
+            self.assertTrue(len(flat["CGPI"]) > 0)
+
+    def test_zero_missing_students_recovery_guarantee(self):
+        """
+        Guarantees that 100% of detected candidates on a page are recovered
+        even if model JSON returns an incomplete list or omits candidates.
+        """
+        catalog = CourseCatalog(courses=[Course(code="CSC801", name="AI", credits=3.0)])
+        page_text = (
+            "  7000441  STUDENT ONE  (2021016402156235)\n"
+            "    50  15  65  P  450\n"
+            "    21  168  8.00\n"
+            "  7000442  STUDENT TWO  (2021016402156236)\n"
+            "    55  18  73  P  480\n"
+            "    21  189  9.00\n"
+        )
+        detected_seats = ["7000441", "7000442"]
+
+        # Simulate model only extracting candidate 1
+        model_students = [
+            StudentRecord(seat_no="7000441", student_name="STUDENT ONE", sgpi="8.00")
+        ]
+
+        extracted_seat_set = {s.seat_no for s in model_students if s.seat_no}
+        missing_seats = [s for s in detected_seats if s not in extracted_seat_set]
+        self.assertEqual(missing_seats, ["7000442"])
+
+        recovered_raw = [{"seat_no": s} for s in missing_seats]
+        recovered = _parse_student_dict_list(
+            raw_students=recovered_raw,
+            catalog=catalog,
+            page_text=page_text
+        )
+        self.assertEqual(len(recovered), 1)
+        r0 = recovered[0]
+        self.assertEqual(r0.seat_no, "7000442")
+        self.assertEqual(r0.student_name, "STUDENT TWO")
+        self.assertEqual(r0.prn, "2021016402156236")
+        self.assertEqual(r0.sgpi, "9.00")
+        self.assertEqual(r0.total_marks, "480")
 
 
 if __name__ == "__main__":

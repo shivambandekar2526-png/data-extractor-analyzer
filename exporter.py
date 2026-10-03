@@ -169,7 +169,7 @@ def export_ai_extracted_data(
     base_headers = [
         "Seat_No", "Student_Name", "Gender", "Candidate_Type", "PRN",
         "Semester", "Result_Status", "Remark", "Total_Marks",
-        "Credits_Earned", "Total_CG", "SGPI"
+        "Credits_Earned", "Total_CG", "SGPI", "CGPI"
     ]
     # Check if ERN, Mother_Name, ABC_ID exist in data
     if any("Mother_Name" in r and r["Mother_Name"] for r in flat_rows):
@@ -178,8 +178,6 @@ def export_ai_extracted_data(
         base_headers.insert(5, "ERN")
     if any("ABC_ID" in r and r["ABC_ID"] for r in flat_rows):
         base_headers.insert(5, "ABC_ID")
-    if any("CGPI" in r and r["CGPI"] for r in flat_rows):
-        base_headers.append("CGPI")
 
     for bh in base_headers:
         add_field(bh)
@@ -229,8 +227,12 @@ def export_ai_extracted_data(
 
     # 4. Global Empty-Column Pruner:
     # Completely drop any column that is 100% empty across all student rows
-    # (keeps essential identification columns: Seat_No, Student_Name, Result_Status, Semester)
-    protected_core = {"Seat_No", "Student_Name", "Result_Status", "Semester", "Remark"}
+    # (keeps essential identification and academic columns intact)
+    protected_core = {
+        "Seat_No", "Student_Name", "Gender", "Candidate_Type", "PRN",
+        "Result_Status", "Remark", "Total_Marks", "Credits_Earned",
+        "Total_CG", "SGPI", "CGPI", "Semester"
+    }
     pruned_fieldnames: List[str] = []
     for f in fieldnames:
         if f in protected_core:
