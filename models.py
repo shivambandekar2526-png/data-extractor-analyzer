@@ -19,12 +19,7 @@ class Course:
     max_marks: Dict[str, int] = field(default_factory=dict)
     min_marks: Dict[str, int] = field(default_factory=dict)
     credits: float = 0.0
-
-
-def normalize_course_code(code: str) -> str:
-    """Strip leading serial numbers: '01.CSC801' -> 'CSC801', '17.CSL801' -> 'CSL801'."""
-    clean = str(code or "").strip().upper()
-    return re.sub(r"^\d{1,2}\.\s*", "", clean)
+    course_type: str = ""
 
 
 @dataclass
@@ -75,6 +70,7 @@ class ExamMeta:
     max_total_marks: int = 0
     archetype: str = ""
     catalog: CourseCatalog = field(default_factory=CourseCatalog)
+    spec: Optional[Any] = None
 
 
 @dataclass
@@ -87,6 +83,19 @@ class CourseResult:
     grade_point: str = ""
     credits: str = ""
     credit_points: str = ""    # credits * grade_point
+
+
+CANONICAL_HEADS_MAP: Dict[str, str] = {
+    "TH": "TH", "SE": "TH", "ESE": "TH", "THEORY": "TH", "EXT": "TH",
+    "IA": "IA", "IN": "IA", "ISE": "IA", "INTERNAL": "IA", "INT": "IA",
+    "TW": "TW", "TERMWORK": "TW", "TERM_WORK": "TW",
+    "PR": "PR", "PRA": "PR", "PO": "PR", "P&O": "PR", "OR": "PR", "ORAL": "PR", "ORPR": "PR", "OR_PR": "PR",
+    "TOT": "TOT", "TOTAL": "TOT", "SUB_TOTAL": "TOT", "MARKS": "TOT"
+}
+
+def _canonicalize_head(h: str) -> str:
+    clean = re.sub(r"[^A-Za-z0-9_&]", "", str(h or "")).strip().upper()
+    return CANONICAL_HEADS_MAP.get(clean, clean)
 
 
 @dataclass
@@ -111,58 +120,70 @@ class StudentRecord:
     cgpi: str = ""
     course_results: List[CourseResult] = field(default_factory=list)
     history: Dict[str, Dict[str, str]] = field(default_factory=dict)
+    raw_flat_dict: Dict[str, Any] = field(default_factory=dict)
 
     def to_flat_dict(self, catalog: Optional[CourseCatalog] = None) -> Dict[str, Any]:
         """
         Flatten to dict with DUAL IDENTIFIERS matching existing extractor output.
-        Produces columns like: CSC301_SE, CSC301_IA, CSC301_TOT, CSC301_Grade,
+        Produces columns like: CSC301_TH, CSC301_IA, CSC301_TOT, CSC301_Grade,
         CSC301_GP, CSC301_Credits, CSC301_CG, CSC301_Subject
         """
-        d: Dict[str, Any] = {
+        active_semester = self.semester
+        if not active_semester or active_semester == "Current":
+            if self.raw_flat_dict and self.raw_flat_dict.get("Semester") and self.raw_flat_dict.get("Semester") != "Current":
+                active_semester = self.raw_flat_dict.get("Semester")
+            elif catalog and getattr(catalog, "semester", None):
+                active_semester = catalog.semester
+            else:
+                active_semester = "Current"
+
+        d: Dict[str, Any] = dict(self.raw_flat_dict) if self.raw_flat_dict else {}
+        d.update({
             "Seat_No": self.seat_no,
             "Student_Name": self.student_name,
             "Gender": self.gender,
             "Candidate_Type": self.candidate_type or "Regular",
             "PRN": self.prn,
             "ABC_ID": self.abc_id,
-            "Semester": self.semester or "Current",
+            "Semester": active_semester,
             "Result_Status": self.result_status,
-            "Remark": self.remark or "None",
+            "Remark": self.remark or "",
             "Total_Marks": self.total_marks,
             "Max_Marks": self.max_marks,
             "Credits_Earned": self.credits_earned,
             "Total_CG": self.total_cg,
             "SGPI": self.sgpi,
-        }
+        })
 
+        if self.cgpi:
+            d["CGPI"] = self.cgpi
         if self.ern:
             d["ERN"] = self.ern
         if self.mother_name:
             d["Mother_Name"] = self.mother_name
 
         for cr in self.course_results:
-            c_code = normalize_course_code(cr.course_code)
             c_name = cr.course_name
-            if not c_name and catalog:
-                c_obj = catalog.get_by_code(c_code)
-                if c_obj:
-                    c_name = c_obj.name
             allowed_heads = None
             if catalog:
-                c_obj = catalog.get_by_code(c_code)
-                if c_obj and c_obj.heads:
-                    allowed_heads = set(c_obj.heads)
+                c_obj = catalog.get_by_code(cr.course_code)
+                if c_obj:
+                    if not c_name:
+                        c_name = c_obj.name
+                    if c_obj.heads:
+                        allowed_heads = {_canonicalize_head(h) for h in c_obj.heads}
 
             for head, val in cr.marks.items():
-                if allowed_heads is not None and head not in allowed_heads:
+                norm_h = _canonicalize_head(head)
+                if allowed_heads is not None and norm_h not in allowed_heads:
                     continue
-                d[f"{c_code}_{head}"] = val
-            d[f"{c_code}_Grade"] = cr.grade
-            d[f"{c_code}_GP"] = cr.grade_point
-            d[f"{c_code}_Credits"] = cr.credits
-            d[f"{c_code}_CG"] = cr.credit_points
+                d[f"{cr.course_code}_{norm_h}"] = val
+            d[f"{cr.course_code}_Grade"] = cr.grade
+            d[f"{cr.course_code}_GP"] = cr.grade_point
+            d[f"{cr.course_code}_Credits"] = cr.credits
+            d[f"{cr.course_code}_CG"] = cr.credit_points
             if c_name:
-                d[f"{c_code}_Subject"] = c_name
+                d[f"{cr.course_code}_Subject"] = c_name
 
         # Historical semester data
         for sem_label, sem_data in self.history.items():

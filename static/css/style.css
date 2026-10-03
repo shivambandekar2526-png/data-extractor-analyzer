@@ -889,6 +889,166 @@ body.dark-theme {
   box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
 }
 
+/* Live Execution Controls Toolbar & Buttons */
+.progress-right-group {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.extraction-controls-group {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.btn-ctrl {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.32rem 0.72rem;
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+  outline: none;
+}
+
+.btn-ctrl .ctrl-icon {
+  font-size: 0.82rem;
+  line-height: 1;
+}
+
+.btn-ctrl-pause {
+  background: rgba(245, 158, 11, 0.12);
+  color: #F59E0B;
+  border-color: rgba(245, 158, 11, 0.35);
+}
+.btn-ctrl-pause:hover {
+  background: rgba(245, 158, 11, 0.22);
+  border-color: rgba(245, 158, 11, 0.6);
+  transform: translateY(-1px);
+}
+
+.btn-ctrl-resume {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10B981;
+  border-color: rgba(16, 185, 129, 0.45);
+}
+.btn-ctrl-resume:hover {
+  background: rgba(16, 185, 129, 0.25);
+  border-color: rgba(16, 185, 129, 0.7);
+  transform: translateY(-1px);
+}
+
+.btn-ctrl-stop {
+  background: rgba(239, 68, 68, 0.12);
+  color: #EF4444;
+  border-color: rgba(239, 68, 68, 0.35);
+}
+.btn-ctrl-stop:hover {
+  background: rgba(239, 68, 68, 0.22);
+  border-color: rgba(239, 68, 68, 0.6);
+  transform: translateY(-1px);
+}
+
+/* Live Stream Status Pill */
+.status-live-pill {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #10B981;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.2rem 0.65rem;
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+/* Results Title Row & Live Pulse Badge */
+.results-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 0.25rem;
+}
+
+.live-pulse-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.22rem 0.65rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: var(--radius-full);
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.45);
+  color: #10B981;
+}
+
+.live-pulse-badge.paused {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.45);
+  color: #F59E0B;
+}
+
+.live-pulse-badge.stopped {
+  background: rgba(148, 163, 184, 0.15);
+  border-color: rgba(148, 163, 184, 0.35);
+  color: #CBD5E1;
+}
+
+.pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10B981;
+  box-shadow: 0 0 8px #10B981;
+  animation: pulseDotAnim 1.6s ease-in-out infinite;
+}
+
+.pulse-dot.paused {
+  background: #F59E0B;
+  box-shadow: 0 0 6px #F59E0B;
+  animation: none;
+}
+
+.pulse-dot.stopped {
+  background: #94A3B8;
+  box-shadow: none;
+  animation: none;
+}
+
+@keyframes pulseDotAnim {
+  0% { transform: scale(0.9); opacity: 0.6; }
+  50% { transform: scale(1.35); opacity: 1; }
+  100% { transform: scale(0.9); opacity: 0.6; }
+}
+
+/* Live Row Highlight Flash */
+@keyframes liveRowFlash {
+  0% {
+    background-color: rgba(99, 102, 241, 0.38) !important;
+  }
+  40% {
+    background-color: rgba(16, 185, 129, 0.26) !important;
+  }
+  100% {
+    background-color: transparent !important;
+  }
+}
+
+.data-table tr.live-row-highlight td {
+  animation: liveRowFlash 2.4s ease-out;
+}
+
 /* Live AI & GPU Inference Audit Console Window */
 .audit-card {
   border: 1px solid rgba(255, 255, 255, 0.1);

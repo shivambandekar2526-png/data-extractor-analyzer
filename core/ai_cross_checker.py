@@ -71,6 +71,7 @@ class ContextEnvelope:
     archetype: str = ""
     valid_columns: List[str] = field(default_factory=list)
     courses: List[Dict[str, Any]] = field(default_factory=list)
+    layout_context: str = ""
 
     def to_compact_prompt_header(self) -> str:
         """Serializes envelope to a concise, token-efficient prompt string (~120 tokens)."""
@@ -95,14 +96,20 @@ class ContextEnvelope:
         if len(self.valid_columns) > 40:
             cols_text += f" ... (+{len(self.valid_columns) - 40} more)"
 
-        return (
-            f"=== ACADEMIC CONTEXT ENVELOPE ===\n"
-            f"EXAM: {self.exam_title or 'University Examination'} | SEMESTER: {self.semester or 'N/A'}\n"
-            f"COLLEGE: {self.college_name or 'Engineering College'}\n"
-            f"COURSES: {courses_text}\n"
-            f"VALID CSV COLUMNS: {cols_text}\n"
-            f"================================="
-        )
+        header_lines = [
+            "=== ACADEMIC CONTEXT ENVELOPE ===",
+            f"EXAM: {self.exam_title or 'University Examination'} | SEMESTER: {self.semester or 'N/A'}",
+            f"COLLEGE: {self.college_name or 'Engineering College'}",
+            f"COURSES: {courses_text}",
+            f"VALID CSV COLUMNS: {cols_text}",
+            "================================="
+        ]
+        if self.layout_context:
+            header_lines.append("")
+            header_lines.append(self.layout_context)
+            header_lines.append("")
+
+        return "\n".join(header_lines)
 
 
 @dataclass
@@ -190,8 +197,13 @@ def locate_student_page(seat_no: str, name: str, page_texts: List[str]) -> int:
     return 0
 
 
-def build_context_envelope(meta: Any, students: List[Dict[str, Any]], archetype: str = "") -> ContextEnvelope:
-    """Builds a ContextEnvelope from parsed metadata and student columns."""
+def build_context_envelope(
+    meta: Any,
+    students: List[Dict[str, Any]],
+    archetype: str = "",
+    pdf_path: Optional[str] = None
+) -> ContextEnvelope:
+    """Builds a ContextEnvelope from parsed metadata and student columns, injecting layout mapping if available."""
     valid_cols: List[str] = []
     if students:
         seen = set()
@@ -210,13 +222,35 @@ def build_context_envelope(meta: Any, students: List[Dict[str, Any]], archetype:
             for c in meta.courses
         ]
 
+    layout_ctx = ""
+    if pdf_path and os.path.isfile(pdf_path):
+        try:
+            from .layout_mapper import extract_page_layout_map
+        except Exception:
+            try:
+                from core.layout_mapper import extract_page_layout_map
+            except Exception:
+                try:
+                    from data_extractor_AI.core.layout_mapper import extract_page_layout_map
+                except Exception:
+                    extract_page_layout_map = None
+
+        if extract_page_layout_map:
+            try:
+                cat = getattr(meta, "catalog", None)
+                lmap = extract_page_layout_map(pdf_path, page_index=0, catalog=cat, archetype=archetype)
+                layout_ctx = lmap.to_prompt_context()
+            except Exception as e:
+                logger.debug("Failed to extract layout map for context envelope: %s", e)
+
     return ContextEnvelope(
         exam_title=getattr(meta, "exam_title", "") or "",
         semester=getattr(meta, "semester", "") or "",
         college_name=getattr(meta, "college_name", "") or "",
         archetype=archetype,
         valid_columns=valid_cols,
-        courses=courses_list
+        courses=courses_list,
+        layout_context=layout_ctx
     )
 
 
@@ -542,9 +576,11 @@ def verify_student_chunk(
         f"   - Numbers swapped or dropped in TH / IA / TOT marks.\n"
         f"   - Inverted or missed Pass / Fail / KT / Absent statuses.\n"
         f"   - Notation symbols (*, @, #) or grace marks merged incorrectly.\n"
-        f"3. STRICT REQUIREMENT: If you find an error, you MUST provide an 'evidence_quote' which is the EXACT, VERBATIM substring from the raw text above.\n"
-        f"4. If no errors are found in a record, do not output anything for it.\n"
-        f"5. Return a JSON object with a 'discrepancies' array:\n"
+        f"3. PHYSICAL COLUMN BOUNDARIES & LAYOUT CONTEXT: Match candidate marks strictly to their horizontal column slots (refer to the Physical Column Grid in the header). NEVER swap or shift numbers horizontally between neighboring courses.\n"
+        f"4. SIMULTANEOUS EQUATION VERIFICATION: Verify component balances (TOT = TH + IA, or TOT = TW + PR, CG = Credits * GP). If raw text has an OCR smudge or transposition, use mathematical balance to confirm and self-heal.\n"
+        f"5. STRICT REQUIREMENT: If you find an error, you MUST provide an 'evidence_quote' which is the EXACT, VERBATIM substring from the raw text above.\n"
+        f"6. If no errors are found in a record, do not output anything for it.\n"
+        f"7. Return a JSON object with a 'discrepancies' array:\n"
         f"{{\n"
         f'  "discrepancies": [\n'
         f"    {{\n"
@@ -601,8 +637,11 @@ def run_ai_cross_check(
     progress_cb: Optional[Callable[[float, str, Optional[Dict[str, Any]]], None]] = None,
     auto_apply: bool = False,
     chunk_size: int = 4,
-    audit_cb: Optional[Callable[[Dict[str, Any]], None]] = None
+    audit_cb: Optional[Callable[[Dict[str, Any]], None]] = None,
+    controller: Optional[Any] = None,
+    live_update_cb: Optional[Callable[[Dict[str, Any]], None]] = None
 ) -> Dict[str, Any]:
+
     """
     Executes complete end-to-end AI Cross-Checking & Self-Healing Pipeline.
     
@@ -655,7 +694,7 @@ def run_ai_cross_check(
     if not page_texts:
         return {"success": False, "error": f"Failed to extract readable text from PDF: {pdf_path}"}
 
-    envelope = build_context_envelope(meta, students)
+    envelope = build_context_envelope(meta, students, pdf_path=pdf_path)
     students_by_seat = {str(s.get("Seat_No", s.get("seat_no", ""))): s for s in students}
 
     # Stage 1: Macro Column Alignment
@@ -799,9 +838,15 @@ def run_ai_cross_check(
             _notify(18.0, "Found Schema Discrepancy (Page 1)", card_dict)
 
     for idx, chunk in enumerate(chunks):
+        if controller and controller.check_pause_and_stop():
+            break
         if idx > 0:
-            # Polite inter-chunk pacing to stay comfortably within free-tier TPM/RPM limits
-            time.sleep(1.5)
+            for _ in range(15):
+                if controller and controller.check_pause_and_stop():
+                    break
+                time.sleep(0.1)
+        if controller and controller.should_stop():
+            break
 
         pct = 20.0 + ((idx / max(total_chunks, 1)) * 75.0)
         chunk_seats = [str(s.get("Seat_No", s.get("seat_no", ""))) for s in chunk]
@@ -867,6 +912,11 @@ def run_ai_cross_check(
                         st_record[card.field_name] = card.suggested_val
                         card.applied = True
                         applied_patches += 1
+                        if live_update_cb:
+                            try:
+                                live_update_cb(st_record)
+                            except Exception:
+                                pass
             else:
                 rejected_patches += 1
                 _emit(

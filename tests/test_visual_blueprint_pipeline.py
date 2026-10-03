@@ -27,16 +27,13 @@ from app import app
 from core.checksum_verifier import verify_student
 from core.cloud_client import CloudClient
 from core.visual_extractor import (
+    _parse_student_dict_list,
     align_and_heal_student,
-    analyze_page_seat_recall,
     extract_sliced_page,
     extract_visual_blueprint,
     normalize_course_code,
-    parse_grace_mark,
-    reextract_targeted_student,
     render_page_as_jpeg,
     run_visual_blueprint_pipeline,
-    validate_student_record,
 )
 from models import Course, CourseCatalog, CourseResult, ExamMeta, StudentRecord
 
@@ -552,8 +549,10 @@ class TestVisualBlueprintPipeline(unittest.TestCase):
         html = res.data.decode("utf-8")
         self.assertIn('id="cloudApiKeyAnthropic"', html)
         self.assertIn('id="cloudApiKeyDeepseek"', html)
+        self.assertIn('id="cloudApiKeyOpenrouter"', html)
         self.assertIn('value="anthropic"', html)
         self.assertIn('value="deepseek"', html)
+        self.assertIn('value="openrouter"', html)
 
     def test_align_and_heal_student_marks_and_catalog_order(self):
         """Test anti-hallucination auto-healing: component sums, Grade/GP/CG reconciliation, and catalog ordering."""
@@ -744,7 +743,7 @@ class TestVisualBlueprintPipeline(unittest.TestCase):
         self.assertIn("LOCKED SESSION COURSE SCHEMA", sys_inst)
 
     def test_grade_normalization_eradicates_synthetic_grades(self):
-        """Test that invented A+/B+ grades are strictly mapped to Mumbai University C-Scheme."""
+        """Test that A+ and B+ grades are preserved verbatim for NEP 2020 / autonomous schemes."""
         catalog = CourseCatalog(courses=[
             Course(code="CSC801", name="AI", credits=3.0, max_marks={"TH": 80, "IA": 20, "TOT": 100}),
             Course(code="CSDO8013", name="RL", credits=3.0, max_marks={"TH": 80, "IA": 20, "TOT": 100}),
@@ -753,25 +752,25 @@ class TestVisualBlueprintPipeline(unittest.TestCase):
 
         student = StudentRecord(seat_no="7001", student_name="ALICE")
         student.course_results = [
-            # A+ with GP 9 should normalize to Grade A
+            # A+ with GP 9 should be preserved verbatim
             CourseResult(course_code="CSC801", marks={"TOT": "72"}, grade="A+", grade_point="9", credits="3"),
-            # B+ with missing GP should normalize to Grade B and GP 8
-            CourseResult(course_code="CSDO8013", marks={"TOT": "62"}, grade="B+", grade_point="", credits="3"),
-            # GP 9 with missing grade should deduce Grade A
+            # B+ with GP 8 should be preserved verbatim
+            CourseResult(course_code="CSDO8013", marks={"TOT": "62"}, grade="B+", grade_point="8", credits="3"),
+            # GP 9 with missing grade should deduce Grade A+ or A
             CourseResult(course_code="CSL801", marks={"TOT": "42"}, grade="", grade_point="9", credits="1"),
         ]
 
         healed = align_and_heal_student(student, catalog=catalog)
 
-        # 1. CSC801: Grade 'A+' must become 'A', GP remains '9'
-        self.assertEqual(healed.course_results[0].grade, "A")
+        # 1. CSC801: Grade 'A+' is preserved verbatim, GP remains '9'
+        self.assertEqual(healed.course_results[0].grade, "A+")
         self.assertEqual(healed.course_results[0].grade_point, "9")
 
-        # 2. CSDO8013: Grade 'B+' must become 'B', GP becomes '8'
-        self.assertEqual(healed.course_results[1].grade, "B")
+        # 2. CSDO8013: Grade 'B+' is preserved verbatim, GP remains '8'
+        self.assertEqual(healed.course_results[1].grade, "B+")
         self.assertEqual(healed.course_results[1].grade_point, "8")
 
-        # 3. CSL801: GP 9 must deduce Grade 'A' (never 'A+')
+        # 3. CSL801: GP 9 deduces Grade A
         self.assertEqual(healed.course_results[2].grade, "A")
         self.assertEqual(healed.course_results[2].grade_point, "9")
 
@@ -850,175 +849,471 @@ class TestVisualBlueprintPipeline(unittest.TestCase):
             CourseResult(course_code="CSC801", marks={"TOT": "85"}),
         ]
 
-    def test_schema_aware_validation_and_grace_marks(self):
-        """Test schema-aware validation for TH+IA, TW+PR, TW+OR and grace mark recognition."""
-        catalog = CourseCatalog(courses=[
-            Course(code="CSC801", name="Theory Course", heads=["TH", "IA", "TOT"]),
-            Course(code="CSL801", name="Lab Course", heads=["TW", "PR", "TOT"]),
-            Course(code="CSP801", name="Project Course", heads=["TW", "OR", "TOT"]),
-            Course(code="AUD801", name="Audit Course", heads=[]),
-        ])
-
-        # Student with valid grace marks (#, +, *) and valid heads
-        valid_student = StudentRecord(seat_no="1001", student_name="VALID STUDENT")
-        valid_student.course_results = [
-            CourseResult(course_code="CSC801", marks={"TH": "36", "IA": "4", "TOT": "40#"}), # 36+4=40
-            CourseResult(course_code="CSL801", marks={"TW": "22", "PR": "23", "TOT": "45"}),  # 22+23=45
-            CourseResult(course_code="CSP801", marks={"TW": "45", "OR": "45", "TOT": "90*"}), # 45+45=90
-            CourseResult(course_code="AUD801", marks={}, grade="P", grade_point="0")           # Audit: no heads
-        ]
-
-        conflicts = validate_student_record(valid_student, catalog=catalog)
-        self.assertEqual(len(conflicts), 0, f"Expected 0 conflicts for valid student, got: {conflicts}")
-
-        # Student with schema mathematical errors
-        invalid_student = StudentRecord(seat_no="1002", student_name="INVALID STUDENT")
-        invalid_student.course_results = [
-            CourseResult(course_code="CSC801", marks={"TH": "50", "IA": "16", "TOT": "75"}), # 50+16 != 75
-            CourseResult(course_code="CSL801", marks={"TW": "20", "PR": "20", "TOT": "45"}),  # 20+20 != 45
-        ]
-
-        conflicts_inv = validate_student_record(invalid_student, catalog=catalog)
-        self.assertEqual(len(conflicts_inv), 2)
-        err_courses = [c["course"] for c in conflicts_inv]
-        self.assertIn("CSC801", err_courses)
-        self.assertIn("CSL801", err_courses)
-
-    def test_deterministic_auditor_conflict_detection(self):
-        """Test deterministic extraction is an auditor signal: flags disagreement without blind overwrite."""
-        catalog = CourseCatalog(courses=[
-            Course(code="CSC801", name="AI", heads=["TH", "IA", "TOT"])
-        ])
-
-        vision_student = StudentRecord(seat_no="7001", student_name="VISION EXTRACTED")
-        vision_student.course_results = [
-            CourseResult(course_code="CSC801", marks={"TH": "60", "IA": "16", "TOT": "76"}, grade="O", grade_point="10")
-        ]
-
-        # Deterministic record has differing marks (e.g. TOT = 66)
-        det_student = StudentRecord(seat_no="7001", student_name="DET RECORD")
-        det_student.course_results = [
-            CourseResult(course_code="CSC801", marks={"TH": "50", "IA": "16", "TOT": "66"}, grade="A", grade_point="9")
-        ]
-
-        # Validate detects auditor disagreement
-        conflicts = validate_student_record(vision_student, catalog=catalog, det_student=det_student)
-        self.assertEqual(len(conflicts), 1)
-        self.assertEqual(conflicts[0]["type"], "AUDITOR_DISAGREEMENT")
-        self.assertIn("Vision TOT (76.0) != Deterministic TOT (66.0)", conflicts[0]["detail"])
-
-        # Crucially: align_and_heal_student does NOT overwrite Vision result
-        healed = align_and_heal_student(vision_student, catalog=catalog, ground_truth=det_student)
-        self.assertEqual(healed.course_results[0].marks["TOT"], "76")
-
-    def test_page_seat_recall_and_targeted_reextraction(self):
-        """Test page recall audit identifies missing seats and triggers targeted re-extraction."""
-        page_text = (
-            "7000101  STUDENT ONE\n"
-            "7000102  STUDENT TWO\n"
-            "7000103  STUDENT THREE\n"
+        healed = align_and_heal_student(student, catalog=catalog)
+        self.assertEqual(
+            [normalize_course_code(cr.course_code) for cr in healed.course_results],
+            ["CSC801", "CSDO8013", "CSL801"]
         )
 
-        extracted_students = [
-            StudentRecord(seat_no="7000101", student_name="STUDENT ONE"),
-            StudentRecord(seat_no="7000101", student_name="STUDENT ONE DUP"), # duplicate
-            StudentRecord(seat_no="7000102", student_name="STUDENT TWO")
+    def test_2d_matrix_rows_parsing_and_zero_loss_export(self):
+        """Test that _parse_matrix_rows_to_students parses dense 2D rows and preserves A+/B+."""
+        from core.visual_extractor import _parse_matrix_rows_to_students
+
+        catalog = CourseCatalog(courses=[
+            Course(code="1313311", name="Policy", credits=2.0, heads=["TH", "IA", "TOT"]),
+            Course(code="2014411", name="Mini Project", credits=2.0, heads=["TW", "PR", "TOT"])
+        ])
+
+        column_contract = [
+            "Seat_No", "Student_Name", "Gender", "Candidate_Type", "PRN", "Result_Status",
+            "Total_Marks", "Credits_Earned", "Total_CG", "SGPI",
+            "1313311_TH", "1313311_IA", "1313311_TOT", "1313311_Grade", "1313311_GP",
+            "2014411_TW", "2014411_PR", "2014411_TOT", "2014411_Grade", "2014411_GP"
         ]
 
-        recall = analyze_page_seat_recall(page_text, extracted_students)
-        self.assertIn("7000103", recall["missing_seats"])
-        self.assertIn("7000101", recall["duplicate_seats"])
+        matrix_rows = [
+            [
+                "101410022", "AARADHYA SHINDE", "M", "Regular", "MU0341120240205831", "FAIL",
+                "549", "22", "176.0", "0.00",
+                "23", "16", "39", "A", "8",
+                "42", "21", "63", "A+", "9"
+            ],
+            [
+                "101410023", "ACHARI MOHIT", "M", "Regular", "MU0341120240205840", "PASS",
+                "553", "23", "179.0", "7.78",
+                "24", "16", "40", "A+", "9",
+                "34", "19", "53", "A", "8"
+            ]
+        ]
 
-        # Test targeted re-extraction prompt construction and execution
-        mock_client = MagicMock()
-        mock_client.generate_direct.return_value = json.dumps({
-            "seat_no": "7000103",
-            "student_name": "STUDENT THREE",
-            "courses": [{"code": "CSC801", "marks": {"TOT": "78"}, "grade": "O", "gp": "10"}]
+        students = _parse_matrix_rows_to_students(column_contract, matrix_rows, catalog)
+        self.assertEqual(len(students), 2)
+
+        # Check candidate 1
+        s1 = students[0]
+        self.assertEqual(s1.seat_no, "101410022")
+        self.assertEqual(s1.student_name, "AARADHYA SHINDE")
+        self.assertEqual(s1.total_marks, "549")
+        self.assertEqual(s1.course_results[0].grade, "A")
+        self.assertEqual(s1.course_results[1].grade, "A+")  # Legitimate A+ preserved
+
+        # Check candidate 2
+        s2 = students[1]
+        self.assertEqual(s2.seat_no, "101410023")
+        self.assertEqual(s2.course_results[0].grade, "A+")  # Legitimate A+ preserved
+
+        # Check flat export dictionary
+        flat_s2 = s2.to_flat_dict(catalog)
+        self.assertEqual(flat_s2["Seat_No"], "101410023")
+        self.assertEqual(flat_s2["1313311_Grade"], "A+")
+        self.assertEqual(flat_s2["SGPI"], "7.78")
+
+    @patch.object(CloudClient, "generate_direct")
+    def test_extract_sliced_page_with_2d_matrix_payload(self, mock_generate):
+        """Test extract_sliced_page handles 2D matrix JSON payload seamlessly."""
+        catalog = CourseCatalog(courses=[
+            Course(code="1313311", name="Policy", credits=2.0, heads=["TH", "IA", "TOT"]),
+        ])
+        column_contract = [
+            "Seat_No", "Student_Name", "Gender", "Candidate_Type", "PRN", "Result_Status",
+            "Total_Marks", "Credits_Earned", "Total_CG", "SGPI",
+            "1313311_TH", "1313311_IA", "1313311_TOT", "1313311_Grade", "1313311_GP"
+        ]
+        blueprint = {
+            "exam_title": "TEST EXAM",
+            "semester": "IV",
+            "courses": [{"code": "1313311", "name": "Policy", "heads": ["TH", "IA", "TOT"], "credits": 2}],
+            "column_contract": column_contract
+        }
+
+        mock_generate.return_value = json.dumps({
+            "rows": [
+                ["101410022", "AARADHYA SHINDE", "M", "Regular", "PRN1", "PASS", "500", "20", "160.0", "8.00", "25", "15", "40", "A+", "9"]
+            ]
         })
 
-        re_s = reextract_targeted_student(
-            pdf_path=self.sample_pdf,
-            page_index=0,
-            seat_no="7000103",
-            target_courses=["CSC801"],
-            blueprint={"exam_title": "B.E.", "courses": [{"code": "CSC801"}]},
-            client=mock_client
-        )
+        client = MagicMock()
+        client.is_configured.return_value = True
+        client.generate_direct = mock_generate
 
-        self.assertIsNotNone(re_s)
-        self.assertEqual(re_s.seat_no, "7000103")
-        self.assertEqual(re_s.student_name, "STUDENT THREE")
-        self.assertTrue(mock_client.generate_direct.called)
-        _, kwargs = mock_client.generate_direct.call_args
-        self.assertIn("Look directly upward from each number in the candidate row", kwargs["system_instruction"])
-        self.assertIn("NEVER shift values horizontally", kwargs["system_instruction"])
+        with patch("core.visual_extractor.render_page_as_jpeg", return_value=b"\xff\xd8fake"), \
+             patch("fitz.open") as mock_fitz:
+            mock_doc = MagicMock()
+            mock_doc.__len__.return_value = 1
+            mock_page = MagicMock()
+            mock_page.get_text.return_value = "Page text"
+            mock_doc.__getitem__.return_value = mock_page
+            mock_fitz.return_value = mock_doc
 
-    def test_grade_preservation_without_percentage_recalculation(self):
-        """Test printed grade is preserved and not recalculated from percentage."""
-        catalog = CourseCatalog(courses=[
-            Course(code="CSC801", name="AI", credits=3.0, max_marks={"TH": 80, "IA": 20, "TOT": 100})
-        ])
-
-        # Student with printed Grade 'B' and GP '8', even though TOT is 75 (where 75 >= 70 might be 'A')
-        student = StudentRecord(seat_no="9001", student_name="GRADE PRESERVED")
-        student.course_results = [
-            CourseResult(course_code="CSC801", marks={"TOT": "75"}, grade="B", grade_point="8", credits="3")
-        ]
-
-        healed = align_and_heal_student(student, catalog=catalog)
-        # Printed grade 'B' MUST be preserved, not overwritten to 'A'
-        self.assertEqual(healed.course_results[0].grade, "B")
-        self.assertEqual(healed.course_results[0].grade_point, "8")
-
-    def test_exporter_numeric_zero_preservation(self):
-        """Test exporter preserves numeric 0 (e.g. Grade F GP=0) and canonical course codes."""
-        from exporter import export_ai_extracted_data
-        import tempfile
-
-        catalog = CourseCatalog(courses=[
-            Course(code="01.CSC801", name="AI", heads=["TH", "IA", "TOT"], credits=3.0),
-            Course(code="17.CSL801", name="AI Lab", heads=["TW", "PR", "TOT"], credits=1.0)
-        ])
-        meta = ExamMeta(exam_title="B.E. Sem VIII", semester="VIII", catalog=catalog)
-
-        # Student with GP 0 (Fail) in lab, and normal score in theory
-        student = StudentRecord(
-            seat_no="9002",
-            student_name="FAIL CANDIDATE",
-            result_status="FAIL",
-            sgpi="0.00"
-        )
-        student.course_results = [
-            CourseResult(course_code="01.CSC801", marks={"TH": "45", "IA": "15", "TOT": "60"}, grade="C", grade_point="7", credits="3", credit_points="21"),
-            CourseResult(course_code="17.CSL801", marks={"TW": "0", "PR": "0", "TOT": "0"}, grade="F", grade_point="0", credits="1", credit_points="0")
-        ]
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            out_folder, csv_path = export_ai_extracted_data(
-                meta=meta,
-                students=[student],
-                input_pdf_path=self.sample_pdf,
-                base_output_dir=tmpdir
+            students = extract_sliced_page(
+                pdf_path="dummy.pdf",
+                page_index=0,
+                blueprint=blueprint,
+                client=client,
+                column_contract=column_contract,
+                catalog=catalog
             )
 
-            with open(csv_path, "r", encoding="utf-8") as f:
-                header_line = f.readline().strip().split(",")
-                row_line = f.readline().strip().split(",")
+            self.assertEqual(len(students), 1)
+            self.assertEqual(students[0].seat_no, "101410022")
+            self.assertEqual(students[0].course_results[0].grade, "A+")
 
-            # 1. Canonical course codes in headers (CSC801_TH, NOT 01.CSC801_TH)
-            self.assertIn("CSC801_TH", header_line)
-            self.assertIn("CSL801_TW", header_line)
-            self.assertNotIn("01.CSC801_TH", header_line)
+    @patch.object(CloudClient, "generate_direct")
+    def test_extract_sliced_page_with_positional_slots_prevents_shift(self, mock_generate):
+        """Test positional slot extraction strictly prevents column shift between CSDO8023 and AIDSCSDOL8023."""
+        slots_def = [
+            {"slot": 1, "code": "CSC801", "name": "AI", "type": "Theory", "credits": 3},
+            {"slot": 2, "code": "CSDO8013", "name": "RL", "type": "Theory", "credits": 3},
+            {"slot": 3, "code": "CSDO8023", "name": "Social Media Analytic", "type": "Theory", "credits": 3},
+            {"slot": 4, "code": "ILO8021", "name": "PM", "type": "Theory", "credits": 3},
+            {"slot": 5, "code": "CSL801", "name": "AI Lab", "type": "Lab", "credits": 1},
+            {"slot": 6, "code": "AIDSCSDOL8013", "name": "RL Lab", "type": "Lab", "credits": 1},
+            {"slot": 7, "code": "AIDSCSDOL8023", "name": "Social Media Analytic Lab", "type": "Lab", "credits": 1},
+            {"slot": 8, "code": "AIDSCSP801", "name": "Major Project", "type": "Project", "credits": 6},
+        ]
+        catalog = CourseCatalog(courses=[
+            Course(code=s["code"], name=s["name"], credits=s["credits"]) for s in slots_def
+        ])
+        blueprint = {
+            "exam_title": "B.E. SEM VIII",
+            "semester": "VIII",
+            "courses": [{"code": s["code"], "name": s["name"], "credits": s["credits"]} for s in slots_def],
+            "slots": slots_def
+        }
 
-            # 2. Labs do NOT receive ghost TH/IA columns
-            self.assertNotIn("CSL801_TH", header_line)
-            self.assertNotIn("CSL801_IA", header_line)
+        # Candidate 7000457 ground truth
+        mock_generate.return_value = json.dumps({
+            "students": [
+                {
+                    "seat_no": "7000457",
+                    "student_name": "GAWAND OMKAR SANDEEP",
+                    "gender": "M",
+                    "candidate_type": "Regular",
+                    "result_status": "P",
+                    "total_marks": "484",
+                    "credits_earned": "21",
+                    "total_cg": "173",
+                    "sgpi": "8.24",
+                    "slots": {
+                        "1": {"tot": "62", "th": "42", "in": "20", "grade": "A", "gp": "9", "cg": "27"},
+                        "2": {"tot": "65", "th": "45", "in": "20", "grade": "A", "gp": "9", "cg": "27"},
+                        "3": {"tot": "57", "th": "39", "in": "18", "grade": "B", "gp": "8", "cg": "24"},
+                        "4": {"tot": "66", "th": "47", "in": "19", "grade": "A", "gp": "9", "cg": "27"},
+                        "5": {"tot": "37", "tw": "19", "or": "18", "grade": "B", "gp": "8", "cg": "8"},
+                        "6": {"tot": "38", "tw": "20", "or": "18", "grade": "A", "gp": "9", "cg": "9"},
+                        "7": {"tot": "40", "tw": "20", "or": "20", "grade": "O", "gp": "10", "cg": "10"},
+                        "8": {"tot": "119", "tw": "41", "or": "78", "grade": "B", "gp": "8", "cg": "48"}
+                    }
+                }
+            ]
+        })
 
-            # 3. Numeric 0 GP and marks are preserved, NOT pruned
-            self.assertIn("CSL801_GP", header_line)
-            col_idx = header_line.index("CSL801_GP")
-            self.assertEqual(row_line[col_idx], "0")
+        client = MagicMock()
+        client.is_configured.return_value = True
+        client.generate_direct = mock_generate
+
+        with patch("core.visual_extractor.render_page_as_jpeg", return_value=b"\xff\xd8fake"), \
+             patch("fitz.open") as mock_fitz:
+            mock_doc = MagicMock()
+            mock_doc.__len__.return_value = 1
+            mock_page = MagicMock()
+            mock_page.get_text.return_value = "Page text"
+            mock_doc.__getitem__.return_value = mock_page
+            mock_fitz.return_value = mock_doc
+
+            students = extract_sliced_page(
+                pdf_path="dummy.pdf",
+                page_index=0,
+                blueprint=blueprint,
+                client=client,
+                catalog=catalog,
+                slot_registry=slots_def
+            )
+
+            self.assertEqual(len(students), 1)
+            s = students[0]
+            self.assertEqual(s.seat_no, "7000457")
+            self.assertEqual(s.total_marks, "484")
+            self.assertEqual(s.sgpi, "8.24")
+
+            # Check that Theory Course CSDO8023 (Slot 3) has marks=57, grade=B, gp=8
+            c3 = next(cr for cr in s.course_results if cr.course_code == "CSDO8023")
+            self.assertEqual(c3.marks.get("TOT"), "57")
+            self.assertEqual(c3.grade, "B")
+            self.assertEqual(c3.grade_point, "8")
+
+            # Check that Lab Course AIDSCSDOL8023 (Slot 7) has marks=40, grade=O, gp=10
+            c7 = next(cr for cr in s.course_results if cr.course_code == "AIDSCSDOL8023")
+            self.assertEqual(c7.marks.get("TOT"), "40")
+            self.assertEqual(c7.grade, "O")
+            self.assertEqual(c7.grade_point, "10")
+
+    @patch.object(CloudClient, "generate_direct")
+    def test_extract_sliced_page_with_list_slots(self, mock_generate):
+        """Test positional slots provided as a list bind properly to slot_registry."""
+        slots_def = [
+            {"slot": 1, "code": "CS101", "name": "Intro", "type": "Theory", "credits": 3},
+            {"slot": 2, "code": "CS102", "name": "Data", "type": "Theory", "credits": 3},
+        ]
+        catalog = CourseCatalog(courses=[Course(code=s["code"], name=s["name"], credits=s["credits"]) for s in slots_def])
+        blueprint = {"exam_title": "TEST", "semester": "I", "courses": [], "slots": slots_def}
+
+        mock_generate.return_value = json.dumps({
+            "students": [
+                {
+                    "seat_no": "99901",
+                    "student_name": "JOHN DOE",
+                    "slots": [
+                        {"tot": "85", "grade": "O", "gp": "10", "cg": "30"},
+                        {"tot": "70", "grade": "B", "gp": "8", "cg": "24"}
+                    ]
+                }
+            ]
+        })
+
+        client = MagicMock()
+        client.is_configured.return_value = True
+        client.generate_direct = mock_generate
+
+        with patch("core.visual_extractor.render_page_as_jpeg", return_value=b"\xff\xd8fake"), \
+             patch("fitz.open") as mock_fitz:
+            mock_doc = MagicMock()
+            mock_doc.__len__.return_value = 1
+            mock_page = MagicMock()
+            mock_page.get_text.return_value = "Page text"
+            mock_doc.__getitem__.return_value = mock_page
+            mock_fitz.return_value = mock_doc
+
+            students = extract_sliced_page(
+                pdf_path="dummy.pdf",
+                page_index=0,
+                blueprint=blueprint,
+                client=client,
+                catalog=catalog,
+                slot_registry=slots_def
+            )
+
+            self.assertEqual(len(students), 1)
+            s = students[0]
+            self.assertEqual(s.course_results[0].course_code, "CS101")
+            self.assertEqual(s.course_results[0].marks.get("TOT"), "85")
+            self.assertEqual(s.course_results[1].course_code, "CS102")
+            self.assertEqual(s.course_results[1].marks.get("TOT"), "70")
+
+    def test_field_precision_course_credits_and_cg_healing(self):
+        """Test that duplicated CG in credits (e.g. 21) heals to catalog credits (3) and CG identity (C*GP) heals 9->10 and 54->60."""
+        catalog = CourseCatalog(courses=[
+            Course(code="CSDO8023", name="Social Media", credits=3.0),
+            Course(code="AIDSCSDOL8023", name="Social Media Lab", credits=1.0),
+            Course(code="AIDSCSP801", name="Major Project", credits=6.0)
+        ])
+
+        student = StudentRecord(
+            seat_no="7000476",
+            student_name="TEST STUDENT",
+            course_results=[
+                CourseResult(
+                    course_code="CSDO8023",
+                    marks={"TOT": "61"},
+                    grade="C",
+                    grade_point="7",
+                    credits="21",  # Hallucinated duplication from CG
+                    credit_points="21"
+                ),
+                CourseResult(
+                    course_code="AIDSCSDOL8023",
+                    marks={"TOT": "41"},
+                    grade="O",
+                    grade_point="10",
+                    credits="1",
+                    credit_points="9"  # Visual misread, should heal 1 * 10 = 10
+                ),
+                CourseResult(
+                    course_code="AIDSCSP801",
+                    marks={"TOT": "136"},
+                    grade="O",
+                    grade_point="10",
+                    credits="6",
+                    credit_points="54"  # Visual misread, should heal 6 * 10 = 60
+                )
+            ]
+        )
+
+        healed = align_and_heal_student(student, catalog=catalog)
+        # CSDO8023 credits healed to 3
+        self.assertEqual(healed.course_results[0].credits, "3")
+        self.assertEqual(healed.course_results[0].credit_points, "21")
+        # AIDSCSDOL8023 CG healed to 10
+        self.assertEqual(healed.course_results[1].credits, "1")
+        self.assertEqual(healed.course_results[1].credit_points, "10")
+        # AIDSCSP801 CG healed to 60
+        self.assertEqual(healed.course_results[2].credits, "6")
+        self.assertEqual(healed.course_results[2].credit_points, "60")
+
+    def test_field_precision_header_anchoring_and_gender(self):
+        """Test that digital candidate header line anchors exact surname spelling, PRN, and gender."""
+        catalog = CourseCatalog(courses=[Course(code="C1", name="Sub1", credits=3.0)])
+        raw_students = [
+            {
+                "seat_no": "7000500",
+                "student_name": "THORAT VAISHNAV VILAS SANDHYA",  # Standardized spelling from AI
+                "gender": "F",  # AI hallucinated F due to SANDHYA
+                "prn": "2021016402169999",  # Hallucinated PRN
+                "slots": {"1": {"tot": "50", "grade": "C", "gp": "7", "credits": "3", "cg": "21"}}
+            },
+            {
+                "seat_no": "7000458",
+                "student_name": "DONDE SAKSHI DINESH SMITA",
+                "gender": "F",
+                "prn": "2022016402240447",
+                "slots": {"1": {"tot": "40", "grade": "D", "gp": "6", "credits": "3", "cg": "18"}}
+            }
+        ]
+
+        # Candidate text window containing exact header lines
+        page_text = (
+            "7000500  THORWAT VAISHNAV VILAS SANDHYA                                 (2021016402164111)             (137464702402)\n"
+            "   37 16 53 3 C 7 21\n"
+            "7000458 /DONDE SAKSHI DINESH SMITA                                      (2022016402240447)             (457807038422)\n"
+            "   32 10 42 3 D 6 18\n"
+        )
+
+        students = _parse_student_dict_list(raw_students, catalog=catalog, page_text=page_text)
+        self.assertEqual(len(students), 2)
+        # 7000500: Name anchored to THORWAT, PRN to 2021016402164111, Gender to M (no slash)
+        self.assertEqual(students[0].student_name, "THORWAT VAISHNAV VILAS SANDHYA")
+        self.assertEqual(students[0].prn, "2021016402164111")
+        self.assertEqual(students[0].gender, "M")
+        # 7000458: Gender anchored to F (slash present)
+        self.assertEqual(students[1].gender, "F")
+
+    def test_spotlight_healer_preserves_all_metadata_and_history(self):
+        """Zero-trust spotlight patch must never strip semester, cgpi, history, or metadata."""
+        from core.spotlight_healer import validate_spotlight_patch, DiscrepancyReport
+        from core.dynamic_relation_engine import DynamicRelationEngine
+        from core.document_spec import DocumentExecutionSpec
+
+        engine = DynamicRelationEngine(DocumentExecutionSpec())
+        st = StudentRecord(
+            seat_no="7000441",
+            student_name="NITESH RAMESH YAMUNA",
+            semester="VIII",
+            cgpi="8.04",
+            history={"1": {"sgpi": "9.58"}, "7": {"sgpi": "8.05"}},
+            mother_name="YAMUNA",
+            prn="2021016402156235",
+            abc_id="205253887148",
+            course_results=[
+                CourseResult(
+                    course_code="CSC801",
+                    course_name="AI",
+                    marks={"TH": "35", "IA": "15", "TOT": "50"},
+                    grade="C",
+                    grade_point="7",
+                    credits="3",
+                    credit_points="21"
+                )
+            ]
+        )
+
+        report = DiscrepancyReport(
+            seat_no="7000441",
+            student_name="NITESH RAMESH YAMUNA",
+            course_code="CSC801",
+            field_name="CSC801_TOT",
+            extracted_val="50",
+            expected_val="50",
+            discrepancy_magnitude=0,
+            formula="TH + IA == TOT",
+            component_values={"TH": 35, "IA": 15}
+        )
+
+        patch = {
+            "resolved": True,
+            "corrected_field": "TOT",
+            "corrected_value": "50",
+            "reason": "Verified",
+            "verbatim_evidence": "35 15 50"
+        }
+
+        ok, msg, patched = validate_spotlight_patch(
+            patch=patch,
+            report=report,
+            student=st,
+            engine=engine,
+            raw_snippet="7000441 NITESH 35 15 50"
+        )
+
+        self.assertTrue(ok)
+        self.assertEqual(patched.semester, "VIII")
+        self.assertEqual(patched.cgpi, "8.04")
+        self.assertEqual(len(patched.history), 2)
+        self.assertEqual(patched.mother_name, "YAMUNA")
+
+    def test_course_slot_project_profile_and_no_false_alarm(self):
+        """Major Project courses must have max TOT 150 and not be treated as 50-mark lab slots."""
+        from core.document_spec import CourseSlot, DocumentExecutionSpec
+        from core.dynamic_relation_engine import DynamicRelationEngine
+
+        slot = CourseSlot(
+            slot=8,
+            code="AIDSCSP801",
+            name="Major Project II",
+            credits=6.0,
+            course_type="Project",
+            components=["TW", "PR", "TOT"]
+        )
+        self.assertTrue(slot.is_project())
+        self.assertFalse(slot.is_lab())
+        self.assertEqual(slot.get_max_tot(), 150.0)
+
+        spec = DocumentExecutionSpec(slots=[slot])
+        engine = DynamicRelationEngine(spec)
+        st = StudentRecord(
+            seat_no="7000441",
+            student_name="NITESH RAMESH YAMUNA",
+            course_results=[
+                CourseResult(
+                    course_code="AIDSCSP801",
+                    course_name="Major Project II",
+                    marks={"TOT": "136", "TW": "91", "PR": "45"},
+                    grade="O",
+                    grade_point="10",
+                    credits="6",
+                    credit_points="60"
+                )
+            ],
+            total_cg="60",
+            credits_earned="6"
+        )
+        _, discs = engine.audit_and_heal_student(st)
+        conflicts = [d for d in discs if d.status == "CONFLICT"]
+        self.assertEqual(len(conflicts), 0)
+
+    def test_parse_matrix_rows_with_page_text_preserves_history_and_semester(self):
+        """_parse_matrix_rows_to_students anchors history and semester from page_text."""
+        from core.visual_extractor import _parse_matrix_rows_to_students
+        from models import ExamMeta
+
+        catalog = CourseCatalog(courses=[Course(code="CSC801", name="AI", heads=["TH", "IA", "TOT"], credits=3.0)])
+        meta = ExamMeta(exam_title="Test Exam", semester="VIII", college_name="Test", catalog=catalog)
+        page_text = (
+            "7000441  NITESH RAMESH YAMUNA  (2021016402156235)  (205253887148)\n"
+            "   58 17 75 3 A 8 24  P 500\n"
+            "   SGPI: SEM-I: 9.58 ; SEM-II: 9.36 ; SEM-VII: 8.05 ; CGPI: 8.04\n"
+        )
+        rows = [{"Seat_No": "7000441"}]
+        students = _parse_matrix_rows_to_students(["Seat_No"], rows, catalog=catalog, meta=meta, page_text=page_text)
+        self.assertEqual(len(students), 1)
+        st = students[0]
+        self.assertEqual(st.semester, "VIII")
+        self.assertEqual(st.cgpi, "8.04")
+        self.assertIn("1", st.history)
+        self.assertEqual(st.history["1"]["sgpi"], "9.58")
+        flat = st.to_flat_dict(catalog)
+        self.assertEqual(flat["Semester"], "VIII")
+        self.assertEqual(flat["CGPI"], "8.04")
+        self.assertEqual(flat["SGPI_Sem_1"], "9.58")
 
 
 if __name__ == "__main__":

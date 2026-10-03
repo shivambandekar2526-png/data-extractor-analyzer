@@ -133,13 +133,6 @@
               <span class="pipeline-radio-desc">Page 1 Image Blueprint + Sliced Page-by-Page Vision AI + Transactional Rollback</span>
             </div>
           </label>
-          <label class="pipeline-radio-card" id="pipelineBlockLabel">
-            <input type="radio" name="extractionPipeline" id="pipelineBlock" value="block_extraction">
-            <div class="pipeline-radio-body">
-              <span class="pipeline-radio-title">🧩 Universal Block Extraction (Any College)</span>
-              <span class="pipeline-radio-desc">Slice & Stitch — 1 AI call per student row. Works on any gazette format, any institution</span>
-            </div>
-          </label>
         </div>
 
         <div class="or-divider"><span>OR SELECT FROM BATCH DATA</span></div>
@@ -188,13 +181,33 @@
 
     <!-- Live Progress Section -->
     <div id="progressSection" class="progress-section hidden">
-      <div class="card">
+      <div class="card progress-card">
         <div class="progress-header">
           <div class="progress-info">
-            <span class="spinner"></span>
+            <span class="spinner" id="progressSpinner"></span>
             <strong id="progressMessage">Extracting records...</strong>
+            <span id="liveStatusBadge" class="status-pill status-live-pill hidden">
+              <span class="pulse-dot"></span>
+              <span id="liveCountText">0 records fetched live</span>
+            </span>
           </div>
-          <span id="progressPercentage" class="progress-num">0%</span>
+          <div class="progress-right-group">
+            <div class="extraction-controls-group" id="extractionControlsGroup">
+              <button type="button" id="btnPauseExtraction" class="btn-ctrl btn-ctrl-pause" title="Pause extraction temporarily">
+                <span class="ctrl-icon">⏸</span>
+                <span class="ctrl-label">Pause</span>
+              </button>
+              <button type="button" id="btnResumeExtraction" class="btn-ctrl btn-ctrl-resume hidden" title="Resume extraction">
+                <span class="ctrl-icon">▶</span>
+                <span class="ctrl-label">Resume</span>
+              </button>
+              <button type="button" id="btnStopExtraction" class="btn-ctrl btn-ctrl-stop" title="Stop extraction &amp; preserve all captured records">
+                <span class="ctrl-icon">⏹</span>
+                <span class="ctrl-label">Stop &amp; Save</span>
+              </button>
+            </div>
+            <span id="progressPercentage" class="progress-num">0%</span>
+          </div>
         </div>
         <div class="progress-bar-track">
           <div id="progressBar" class="progress-bar-fill" style="width: 0%;"></div>
@@ -305,7 +318,13 @@
       <section class="card">
         <div class="results-header">
           <div>
-            <h2 id="resultTitle">Academic Result Intelligence</h2>
+            <div class="results-title-row">
+              <span id="liveTableBadge" class="live-pulse-badge hidden">
+                <span class="pulse-dot"></span>
+                <span id="liveTableBadgeText">LIVE STREAMING</span>
+              </span>
+              <h2 id="resultTitle">Academic Result Intelligence</h2>
+            </div>
             <p id="resultMeta" class="results-meta-text">Analyzing dataset...</p>
           </div>
           <div class="export-actions">
@@ -336,6 +355,9 @@
             <input type="text" id="searchInput" class="search-input" placeholder="Search by seat number, student name, or grade...">
             <div class="audit-summary-pill" id="auditPill">
               <span id="auditPassedCount">0</span> Verified Records
+            </div>
+            <div class="audit-summary-pill live-stream-pill hidden" id="liveStreamPill" style="background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.35); color: #10B981;">
+              ⚡ <span id="liveStreamPillText">Streaming Live</span>
             </div>
             <div class="audit-summary-pill token-summary-pill hidden" id="tokenPill" style="background: rgba(56, 189, 248, 0.12); border-color: rgba(56, 189, 248, 0.35); color: #38bdf8;">
               🪙 <span id="tokenPillText">Tokens: 0 in / 0 out (0 tot)</span>
@@ -668,7 +690,6 @@
               <option value="local">⚡ Local AI (Possibility &amp; Ollama GPU - Fast &amp; Private)</option>
               <option value="cloud">☁️ Pure Cloud AI (Groq / Gemini / OpenAI Orchestrator)</option>
               <option value="visual_blueprint">👁️ Visual Blueprint &amp; Sliced Stream Vision AI</option>
-              <option value="block_extraction">🧩 Universal Block Extraction (Any College)</option>
             </select>
           </div>
 
@@ -1156,6 +1177,27 @@
                   <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyOpenAI" title="Show / Hide">👁️</button>
                 </div>
               </div>
+
+              <!-- OpenRouter Key Card -->
+              <div class="provider-key-card prov-openrouter">
+                <div class="provider-key-header">
+                  <div class="provider-meta">
+                    <span class="prov-brand-icon">🌐</span>
+                    <div>
+                      <div class="prov-name-wrap">
+                        <span class="prov-name">OpenRouter</span>
+                        <span class="prov-badge">Free Vision Models (Gemma 4, Qwen 2.5)</span>
+                      </div>
+                      <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" class="provider-key-link">Get API Key ↗</a>
+                    </div>
+                  </div>
+                  <span id="openrouterKeyBadge" class="key-status-badge missing">⚪ Not set</span>
+                </div>
+                <div class="password-input-wrapper">
+                  <input type="password" id="cloudApiKeyOpenrouter" class="form-input prov-key-input" placeholder="sk-or-v1-... (or paste comma-separated key pool)" autocomplete="off">
+                  <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyOpenrouter" title="Show / Hide">👁️</button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1198,6 +1240,7 @@
                   <select id="cloudProviderSelect" class="form-select modern-select">
                     <option value="groq">Groq Cloud</option>
                     <option value="gemini">Google Gemini</option>
+                    <option value="openrouter">OpenRouter (Free Vision)</option>
                     <option value="anthropic">Anthropic Claude</option>
                     <option value="deepseek">DeepSeek AI</option>
                     <option value="openai">OpenAI</option>
@@ -1255,6 +1298,13 @@
                   <span class="diag-status" id="diagGeminiStatus">—</span>
                 </div>
                 <div class="diag-latency" id="diagGeminiLatency">Standby</div>
+              </div>
+              <div class="diag-card" id="diagOpenrouterCard">
+                <div class="diag-card-top">
+                  <span class="diag-prov-name">🌐 OpenRouter</span>
+                  <span class="diag-status" id="diagOpenrouterStatus">—</span>
+                </div>
+                <div class="diag-latency" id="diagOpenrouterLatency">Standby</div>
               </div>
               <div class="diag-card" id="diagAnthropicCard">
                 <div class="diag-card-top">

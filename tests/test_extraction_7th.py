@@ -22,44 +22,59 @@ def audit_logger(entry):
         if "duration_sec" in d:
             print(f"      --> Latency: {d['duration_sec']}s | Extracted: {d.get('extracted_count')} students")
 
-print("--- STARTING REAL EXTRACTION TEST ON 2122-7th.pdf ---")
-client = OllamaClient()
-print("Ollama online check:", client.is_available())
+def run_test():
+    print("--- STARTING REAL EXTRACTION TEST ON 2122-7th.pdf ---")
+    client = OllamaClient()
+    print("Ollama online check:", client.is_available())
 
-meta, students, archetype = extract_pdf(
-    pdf_path="Batch Data/21-22 data/2122-7th.pdf",
-    progress_callback=lambda pct, msg: print(f"Progress: {pct:.1f}% - {msg}"),
-    client=client,
-    audit_callback=audit_logger
-)
+    candidates = [
+        "Batch Data/21-22 data/2122-7th.pdf",
+        "../Batch Data/21-22 data/2122-7th.pdf",
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "Batch Data", "21-22 data", "2122-7th.pdf"))
+    ]
+    pdf_path = next((p for p in candidates if os.path.exists(p)), None)
+    if not pdf_path:
+        print("Skipping test: 2122-7th.pdf not found.")
+        return
 
-print("\n--- RESULTS ---")
-print(f"Archetype: {archetype}")
-print(f"Total students: {len(students)}")
-print(f"Total courses in catalog: {len(meta.catalog.courses)}")
-print(f"Total audit events emitted: {len(audit_events)}")
+    meta, students, archetype = extract_pdf(
+        pdf_path=pdf_path,
+        progress_callback=lambda pct, msg: print(f"Progress: {pct:.1f}% - {msg}"),
+        client=client,
+        audit_callback=audit_logger
+    )
 
-chk = verify_batch(students, meta.catalog)
-print(f"Checksum verification: {chk.get('pass_percentage')}% passed ({chk.get('all_passed')}/{chk.get('total_verified')})")
+    print("\n--- RESULTS ---")
+    print(f"Archetype: {archetype}")
+    print(f"Total students: {len(students)}")
+    print(f"Total courses in catalog: {len(meta.catalog.courses)}")
+    print(f"Total audit events emitted: {len(audit_events)}")
 
-if students:
-    s0 = students[0]
-    print(f"\nStudent 0 Details:")
-    print(f"  Seat: {s0.seat_no}")
-    print(f"  Name: {s0.student_name}")
-    print(f"  SGPI: {s0.sgpi}")
-    print(f"  Total Marks: {s0.total_marks}")
-    print(f"  Course Results Count: {len(s0.course_results)}")
-    for cr in s0.course_results:
-        print(f"    {cr.course_code} - {cr.course_name}: {cr.marks} (Gr: {cr.grade}, GP: {cr.grade_point}, CR: {cr.credits}, CG: {cr.credit_points})")
+    chk = verify_batch(students, meta.catalog)
+    print(f"Checksum verification: {chk.get('pass_percentage')}% passed ({chk.get('all_passed')}/{chk.get('total_verified')})")
 
-des_dir, csv_file = export_ai_extracted_data(
-    meta=meta,
-    students=students,
-    input_pdf_path="Batch Data/21-22 data/2122-7th.pdf",
-    base_output_dir="data_extractor_AI/output",
-    archetype=archetype,
-    checksum_data=chk
-)
-print(f"\nExport directory: {des_dir}")
-print(f"CSV file: {csv_file}")
+    if students:
+        s0 = students[0]
+        print(f"\nStudent 0 Details:")
+        print(f"  Seat: {s0.seat_no}")
+        print(f"  Name: {s0.student_name}")
+        print(f"  SGPI: {s0.sgpi}")
+        print(f"  Total Marks: {s0.total_marks}")
+        print(f"  Course Results Count: {len(s0.course_results)}")
+        for cr in s0.course_results:
+            print(f"    {cr.course_code} - {cr.course_name}: {cr.marks} (Gr: {cr.grade}, GP: {cr.grade_point}, CR: {cr.credits}, CG: {cr.credit_points})")
+
+    des_dir, csv_file = export_ai_extracted_data(
+        meta=meta,
+        students=students,
+        input_pdf_path=pdf_path,
+        base_output_dir="data_extractor_AI/output" if os.path.isdir("data_extractor_AI") else "output",
+        archetype=archetype,
+        checksum_data=chk
+    )
+    print(f"\nExport directory: {des_dir}")
+    print(f"CSV file: {csv_file}")
+
+
+if __name__ == "__main__":
+    run_test()

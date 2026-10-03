@@ -14,6 +14,12 @@ let currentResultObj = null;
 let activeAuditReport = null;
 let showOnlyVerified = false;
 
+// Live streaming & execution control variables
+let currentJobId = null;
+let currentCatalog = null;
+let previousLiveCount = 0;
+let isPollingActive = false;
+
 document.addEventListener("DOMContentLoaded", () => {
   initStatus();
   initBatches();
@@ -21,6 +27,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initUpload();
   initSearch();
   initAuditControls();
+  initExtractionControls();
   initChatbox();
   initCloudModal();
   initResultsTabs();
@@ -223,17 +230,14 @@ function initUpload() {
   const pipeLocal = document.getElementById("pipelineLocal");
   const pipeCloud = document.getElementById("pipelineCloud");
   const pipeVisual = document.getElementById("pipelineVisual");
-  const pipeBlock = document.getElementById("pipelineBlock");
   const pipeLocalLabel = document.getElementById("pipelineLocalLabel");
   const pipeCloudLabel = document.getElementById("pipelineCloudLabel");
   const pipeVisualLabel = document.getElementById("pipelineVisualLabel");
-  const pipeBlockLabel = document.getElementById("pipelineBlockLabel");
 
   function setPipelineActive(activeType) {
     if (pipeLocalLabel) pipeLocalLabel.classList.toggle("active", activeType === "local");
     if (pipeCloudLabel) pipeCloudLabel.classList.toggle("active", activeType === "cloud");
     if (pipeVisualLabel) pipeVisualLabel.classList.toggle("active", activeType === "visual_blueprint");
-    if (pipeBlockLabel) pipeBlockLabel.classList.toggle("active", activeType === "block_extraction");
 
     const telemEngine = document.getElementById("telemEngine");
     const auditGpuText = document.getElementById("auditGpuText");
@@ -246,16 +250,12 @@ function initUpload() {
     } else if (activeType === "visual_blueprint") {
       if (telemEngine) telemEngine.textContent = "Visual Blueprint & Sliced Stream (Multimodal Vision AI)";
       if (auditGpuText) auditGpuText.textContent = "Vision AI Ready";
-    } else if (activeType === "block_extraction") {
-      if (telemEngine) telemEngine.textContent = "Universal Block Extraction (Slice & Stitch — Any College)";
-      if (auditGpuText) auditGpuText.textContent = "Block AI Ready";
     }
   }
 
   if (pipeLocal) pipeLocal.addEventListener("change", () => setPipelineActive("local"));
   if (pipeCloud) pipeCloud.addEventListener("change", () => setPipelineActive("cloud"));
   if (pipeVisual) pipeVisual.addEventListener("change", () => setPipelineActive("visual_blueprint"));
-  if (pipeBlock) pipeBlock.addEventListener("change", () => setPipelineActive("block_extraction"));
 
   extractBtn.addEventListener("click", startExtraction);
 }
@@ -334,6 +334,38 @@ async function startExtraction() {
   document.getElementById("telemEventCount").textContent = "0";
   document.getElementById("telemStatus").textContent = "STARTING";
 
+  // Reset live streaming data structures
+  currentRecords = [];
+  filteredRecords = [];
+  previousLiveCount = 0;
+  currentCatalog = null;
+  currentPage = 1;
+
+  // Reset live controls & status badges
+  const btnPause = document.getElementById("btnPauseExtraction");
+  const btnResume = document.getElementById("btnResumeExtraction");
+  const btnStop = document.getElementById("btnStopExtraction");
+  const liveStatusBadge = document.getElementById("liveStatusBadge");
+  const liveTableBadge = document.getElementById("liveTableBadge");
+  const liveTableBadgeText = document.getElementById("liveTableBadgeText");
+  const liveStreamPill = document.getElementById("liveStreamPill");
+  const liveStreamPillText = document.getElementById("liveStreamPillText");
+
+  if (btnPause) { btnPause.classList.remove("hidden"); btnPause.disabled = false; }
+  if (btnResume) { btnResume.classList.add("hidden"); btnResume.disabled = false; }
+  if (btnStop) { btnStop.classList.remove("hidden"); btnStop.disabled = false; }
+  if (liveStatusBadge) liveStatusBadge.classList.add("hidden");
+  if (liveTableBadge) {
+    liveTableBadge.classList.add("hidden");
+    liveTableBadge.classList.remove("paused");
+  }
+  if (liveTableBadgeText) liveTableBadgeText.textContent = "LIVE STREAMING";
+  if (liveStreamPill) liveStreamPill.classList.add("hidden");
+  if (liveStreamPillText) liveStreamPillText.textContent = "Streaming Live";
+
+  // Lock export actions during active streaming
+  setExportButtonsLiveState(true);
+
   extractBtn.disabled = true;
   showProgress("Initializing AI extraction pipeline...", 2);
 
@@ -349,32 +381,343 @@ async function startExtraction() {
       hideProgress();
       extractBtn.disabled = false;
       document.getElementById("telemStatus").textContent = "ERROR";
+      setExportButtonsLiveState(false);
       return;
     }
 
+    currentJobId = data.job_id;
     pollJob(data.job_id);
   } catch (e) {
     alert("Network error starting extraction: " + e.message);
     hideProgress();
     extractBtn.disabled = false;
     document.getElementById("telemStatus").textContent = "OFFLINE";
+    setExportButtonsLiveState(false);
+  }
+}
+
+// 4b. Live Extraction Controls (Pause, Resume, Stop)
+function initExtractionControls() {
+  const btnPause = document.getElementById("btnPauseExtraction");
+  const btnResume = document.getElementById("btnResumeExtraction");
+  const btnStop = document.getElementById("btnStopExtraction");
+
+  if (btnPause) {
+    btnPause.addEventListener("click", async () => {
+      if (!currentJobId) return;
+      btnPause.disabled = true;
+      try {
+        const res = await fetch(`/api/jobs/${currentJobId}/pause`, { method: "POST" });
+        const data = await res.json();
+        if (data.success) {
+          btnPause.classList.add("hidden");
+          if (btnResume) {
+            btnResume.classList.remove("hidden");
+            btnResume.disabled = false;
+          }
+          const liveTableBadge = document.getElementById("liveTableBadge");
+          if (liveTableBadge) {
+            liveTableBadge.classList.add("paused");
+            const txt = document.getElementById("liveTableBadgeText");
+            if (txt) txt.textContent = "PAUSED";
+          }
+          const liveStreamPillText = document.getElementById("liveStreamPillText");
+          if (liveStreamPillText) liveStreamPillText.textContent = "Stream Paused";
+          const progMsg = document.getElementById("progressMessage");
+          if (progMsg) progMsg.textContent = "Extraction paused by user. Inspect the live table or click Resume.";
+          const telemStatus = document.getElementById("telemStatus");
+          if (telemStatus) {
+            telemStatus.textContent = "PAUSED";
+            telemStatus.className = "telemetry-val text-warning";
+          }
+        } else {
+          alert("Could not pause extraction: " + (data.error || "Unknown error"));
+          btnPause.disabled = false;
+        }
+      } catch (e) {
+        console.error("Pause request error:", e);
+        btnPause.disabled = false;
+      }
+    });
+  }
+
+  if (btnResume) {
+    btnResume.addEventListener("click", async () => {
+      if (!currentJobId) return;
+      btnResume.disabled = true;
+      try {
+        const res = await fetch(`/api/jobs/${currentJobId}/resume`, { method: "POST" });
+        const data = await res.json();
+        if (data.success) {
+          btnResume.classList.add("hidden");
+          if (btnPause) {
+            btnPause.classList.remove("hidden");
+            btnPause.disabled = false;
+          }
+          const liveTableBadge = document.getElementById("liveTableBadge");
+          if (liveTableBadge) {
+            liveTableBadge.classList.remove("paused");
+            const txt = document.getElementById("liveTableBadgeText");
+            if (txt) txt.textContent = "LIVE STREAMING";
+          }
+          const liveStreamPillText = document.getElementById("liveStreamPillText");
+          if (liveStreamPillText) liveStreamPillText.textContent = `Streaming Live (${currentRecords.length} records)`;
+          const progMsg = document.getElementById("progressMessage");
+          if (progMsg) progMsg.textContent = "Resuming extraction...";
+          const telemStatus = document.getElementById("telemStatus");
+          if (telemStatus) {
+            telemStatus.textContent = "PROCESSING";
+            telemStatus.className = "telemetry-val text-success";
+          }
+        } else {
+          alert("Could not resume extraction: " + (data.error || "Unknown error"));
+          btnResume.disabled = false;
+        }
+      } catch (e) {
+        console.error("Resume request error:", e);
+        btnResume.disabled = false;
+      }
+    });
+  }
+
+  if (btnStop) {
+    btnStop.addEventListener("click", async () => {
+      if (!currentJobId) return;
+      const countMsg = currentRecords.length > 0
+        ? `Preserve and finalize the ${currentRecords.length} student records captured so far?`
+        : "Stop the extraction process?";
+      if (!confirm(`Are you sure you want to stop extraction? ${countMsg}`)) {
+        return;
+      }
+      btnStop.disabled = true;
+      if (btnPause) btnPause.disabled = true;
+      if (btnResume) btnResume.disabled = true;
+
+      const progMsg = document.getElementById("progressMessage");
+      if (progMsg) progMsg.textContent = "Stop requested. Finalizing and saving records to CSV/Excel...";
+
+      const telemStatus = document.getElementById("telemStatus");
+      if (telemStatus) {
+        telemStatus.textContent = "STOPPING";
+        telemStatus.className = "telemetry-val text-warning";
+      }
+
+      try {
+        const res = await fetch(`/api/jobs/${currentJobId}/stop`, { method: "POST" });
+        const data = await res.json();
+        if (!data.success) {
+          alert("Could not stop extraction: " + (data.error || "Unknown error"));
+          btnStop.disabled = false;
+          if (btnPause) btnPause.disabled = false;
+        }
+      } catch (e) {
+        console.error("Stop request error:", e);
+        btnStop.disabled = false;
+        if (btnPause) btnPause.disabled = false;
+      }
+    });
+  }
+}
+
+// Helper: Toggle export action button interactivity during live streaming
+function setExportButtonsLiveState(isLive) {
+  const exportActions = document.querySelector(".export-actions");
+  if (!exportActions) return;
+  const items = exportActions.querySelectorAll("a, button");
+  items.forEach(el => {
+    if (isLive) {
+      el.style.opacity = "0.45";
+      el.style.pointerEvents = "none";
+      el.setAttribute("data-live-locked", "true");
+    } else {
+      el.style.opacity = "";
+      el.style.pointerEvents = "";
+      el.removeAttribute("data-live-locked");
+    }
+  });
+}
+
+// Helper: Extract consistent, logical column order for data table
+function extractRecordKeys(records, catalog) {
+  if (!records || records.length === 0) return [];
+
+  const priorityKeys = ["Seat_No", "seat_no", "Name", "name", "Student_Name", "PRN", "prn", "Candidate_Type", "candidate_type", "College_Name", "college_name", "College_Code", "college_code"];
+  const summaryKeys = ["Total_Marks", "total_marks", "Percentage", "percentage", "SGPI", "sgpi", "CGPA", "cgpa", "Result_Status", "result_status", "Result", "result", "Remark", "remark"];
+
+  const seen = new Set();
+  const ordered = [];
+
+  // 1. Check priority identity keys
+  priorityKeys.forEach(pk => {
+    if (records.some(r => r[pk] !== undefined) && !seen.has(pk)) {
+      seen.add(pk);
+      ordered.push(pk);
+    }
+  });
+
+  // 2. Course marks and grade fields from first 50 records
+  const sample = records.slice(0, 50);
+  sample.forEach(r => {
+    Object.keys(r).forEach(k => {
+      if (!seen.has(k) && !summaryKeys.includes(k) && !priorityKeys.includes(k)) {
+        seen.add(k);
+        ordered.push(k);
+      }
+    });
+  });
+
+  // 3. Summary metrics at end
+  summaryKeys.forEach(sk => {
+    if (records.some(r => r[sk] !== undefined) && !seen.has(sk)) {
+      seen.add(sk);
+      ordered.push(sk);
+    }
+  });
+
+  if (ordered.length === 0) {
+    return Object.keys(records[0] || {});
+  }
+
+  return ordered;
+}
+
+// 4c. Update Data Table Incrementally in Real Time
+function updateLiveTable(liveStudents, catalog) {
+  if (!Array.isArray(liveStudents) || liveStudents.length === 0) return;
+
+  if (catalog) {
+    currentCatalog = catalog;
+  }
+
+  const newCount = liveStudents.length;
+  const newSeats = new Set();
+  if (newCount > previousLiveCount) {
+    for (let i = previousLiveCount; i < newCount; i++) {
+      const st = liveStudents[i];
+      if (st) {
+        const sVal = String(st.Seat_No || st.seat_no || `row_${i}`);
+        newSeats.add(sVal);
+      }
+    }
+  }
+  previousLiveCount = newCount;
+
+  currentRecords = liveStudents;
+
+  // Search filter support during streaming
+  const searchInput = document.getElementById("searchInput");
+  const term = searchInput ? searchInput.value.toLowerCase().trim() : "";
+  if (!term) {
+    filteredRecords = [...currentRecords];
+  } else {
+    filteredRecords = currentRecords.filter(r => {
+      return Object.values(r).some(val => String(val).toLowerCase().includes(term));
+    });
+  }
+
+  // Display table page with soft pulsing highlight on newly added records
+  displayTablePage(newSeats);
+
+  // Unhide results section and streaming indicators
+  const sec = document.getElementById("resultsSection");
+  if (sec) sec.classList.remove("hidden");
+
+  const liveTableBadge = document.getElementById("liveTableBadge");
+  if (liveTableBadge) liveTableBadge.classList.remove("hidden");
+
+  const liveStreamPill = document.getElementById("liveStreamPill");
+  if (liveStreamPill) liveStreamPill.classList.remove("hidden");
+
+  const auditPassedCount = document.getElementById("auditPassedCount");
+  if (auditPassedCount) auditPassedCount.textContent = `${newCount}`;
+
+  const liveStreamPillText = document.getElementById("liveStreamPillText");
+  if (liveStreamPillText && (!liveTableBadge || !liveTableBadge.classList.contains("paused"))) {
+    liveStreamPillText.textContent = `Streaming Live (${newCount} record${newCount === 1 ? '' : 's'})`;
+  }
+
+  const liveCountText = document.getElementById("liveCountText");
+  if (liveCountText) {
+    liveCountText.textContent = `${newCount} record${newCount === 1 ? '' : 's'} fetched live`;
+  }
+  const liveStatusBadge = document.getElementById("liveStatusBadge");
+  if (liveStatusBadge) liveStatusBadge.classList.remove("hidden");
+
+  const resultMeta = document.getElementById("resultMeta");
+  if (resultMeta) {
+    resultMeta.textContent = `⚡ Live Streaming Active • Fetched ${newCount} student records simultaneously • Updating table live`;
   }
 }
 
 // 5. Poll Extraction Progress
 function pollJob(jobId) {
   if (pollInterval) clearInterval(pollInterval);
+  currentJobId = jobId;
+  isPollingActive = false;
 
   pollInterval = setInterval(async () => {
+    if (isPollingActive) return;
+    isPollingActive = true;
+
     try {
       const res = await fetch(`/api/jobs/${jobId}`);
+      if (!res.ok) return;
       const job = await res.json();
 
       showProgress(job.message || "Extracting records...", job.progress || 0);
 
+      // Handle Live Paused / Resumed button synchronization from backend
+      const btnPause = document.getElementById("btnPauseExtraction");
+      const btnResume = document.getElementById("btnResumeExtraction");
+      const liveTableBadge = document.getElementById("liveTableBadge");
+      const liveTableBadgeText = document.getElementById("liveTableBadgeText");
+      const liveStreamPillText = document.getElementById("liveStreamPillText");
+
+      if (job.is_paused) {
+        if (btnPause) btnPause.classList.add("hidden");
+        if (btnResume) {
+          btnResume.classList.remove("hidden");
+          btnResume.disabled = false;
+        }
+        if (liveTableBadge) liveTableBadge.classList.add("paused");
+        if (liveTableBadgeText) liveTableBadgeText.textContent = "PAUSED";
+        if (liveStreamPillText) liveStreamPillText.textContent = "Stream Paused";
+      } else if (job.status === "processing" || job.status === "running") {
+        if (btnPause && !job.is_stopped) {
+          btnPause.classList.remove("hidden");
+          btnPause.disabled = false;
+        }
+        if (btnResume) btnResume.classList.add("hidden");
+        if (liveTableBadge) liveTableBadge.classList.remove("paused");
+        if (liveTableBadgeText) liveTableBadgeText.textContent = "LIVE STREAMING";
+      }
+
       // Stream live audit logs
       if (job.audit_logs && job.audit_logs.length > 0) {
         updateAuditLogs(job.audit_logs);
+      }
+
+      // Stream live student records simultaneously into the table
+      if (job.live_students && Array.isArray(job.live_students) && job.live_students.length > 0) {
+        updateLiveTable(job.live_students, job.catalog);
+      }
+
+      // Stream live in-flight discrepancy cards
+      if (job.discrepancies && Array.isArray(job.discrepancies) && job.discrepancies.length > 0) {
+        activeAuditReport = {
+          total_students: (job.live_students && job.live_students.length) || currentRecords.length,
+          verified_patches: job.discrepancies.filter(d => d.sandbox_status === "VERIFIED").length,
+          rejected_patches: job.discrepancies.filter(d => d.sandbox_status === "REJECTED").length,
+          applied_patches: job.discrepancies.filter(d => d.applied).length,
+          discrepancies: job.discrepancies
+        };
+        const crossBtn = document.getElementById("crossCheckAiBtn");
+        if (crossBtn) {
+          const discCount = job.discrepancies.length;
+          crossBtn.innerHTML = `⚡ View Live AI Audit (${discCount} Healed Item${discCount === 1 ? '' : 's'})`;
+          crossBtn.style.background = "linear-gradient(135deg, #059669, #10b981)";
+          crossBtn.title = "View discrepancies and proofreading cards verified and self-healed in-flight against source PDF";
+        }
       }
 
       // Stream live token metrics
@@ -390,25 +733,78 @@ function pollJob(jobId) {
 
       const telemStatus = document.getElementById("telemStatus");
       if (telemStatus) {
-        telemStatus.textContent = job.status === "completed" ? "COMPLETED" : (job.status === "error" ? "FAILED" : "PROCESSING");
+        if (job.is_paused) {
+          telemStatus.textContent = "PAUSED";
+          telemStatus.className = "telemetry-val text-warning";
+        } else if (job.is_stopped) {
+          telemStatus.textContent = "FINALIZING";
+          telemStatus.className = "telemetry-val text-warning";
+        } else {
+          telemStatus.textContent = job.status === "completed" ? "COMPLETED" : (job.status === "error" ? "FAILED" : "PROCESSING");
+          telemStatus.className = job.status === "completed" ? "telemetry-val text-success" : (job.status === "error" ? "telemetry-val text-danger" : "telemetry-val text-accent");
+        }
       }
 
       if (job.status === "completed") {
         clearInterval(pollInterval);
+        pollInterval = null;
         hideProgress();
-        document.getElementById("extractBtn").disabled = false;
+        setExportButtonsLiveState(false);
+        const extractBtn = document.getElementById("extractBtn");
+        if (extractBtn) extractBtn.disabled = false;
+
+        // Reset live badges
+        if (liveTableBadge) liveTableBadge.classList.add("hidden");
+        const liveStreamPill = document.getElementById("liveStreamPill");
+        if (liveStreamPill) liveStreamPill.classList.add("hidden");
+        const liveStatusBadge = document.getElementById("liveStatusBadge");
+        if (liveStatusBadge) liveStatusBadge.classList.add("hidden");
+
         renderResults(job.result);
         initHistory();
+
+        if (job.result && job.result.stopped_early) {
+          appendChatMessage("assistant", `⏹ <strong>Extraction stopped early by user:</strong> ${job.result.total_students} student records were safely captured, verified, and exported to CSV & Excel.`);
+        }
+      } else if (job.status === "stopped") {
+        clearInterval(pollInterval);
+        pollInterval = null;
+        hideProgress();
+        setExportButtonsLiveState(false);
+        const extractBtn = document.getElementById("extractBtn");
+        if (extractBtn) extractBtn.disabled = false;
+
+        if (liveTableBadge) liveTableBadge.classList.add("hidden");
+        const liveStreamPill = document.getElementById("liveStreamPill");
+        if (liveStreamPill) liveStreamPill.classList.add("hidden");
+        const liveStatusBadge = document.getElementById("liveStatusBadge");
+        if (liveStatusBadge) liveStatusBadge.classList.add("hidden");
+
+        alert("Extraction was stopped before records could be captured.");
       } else if (job.status === "error") {
         clearInterval(pollInterval);
+        pollInterval = null;
         hideProgress();
-        document.getElementById("extractBtn").disabled = false;
-        alert("Extraction Error: " + (job.error || "Process failed"));
+        setExportButtonsLiveState(false);
+        const extractBtn = document.getElementById("extractBtn");
+        if (extractBtn) extractBtn.disabled = false;
+
+        if (liveTableBadge) liveTableBadge.classList.add("hidden");
+        const liveStreamPill = document.getElementById("liveStreamPill");
+        if (liveStreamPill) liveStreamPill.classList.add("hidden");
+
+        if (currentRecords && currentRecords.length > 0) {
+          alert(`Extraction interrupted with error: ${job.error || 'Process failed'}. Preserved ${currentRecords.length} records in table.`);
+        } else {
+          alert("Extraction Error: " + (job.error || "Process failed"));
+        }
       }
     } catch (e) {
       console.error("Polling error:", e);
+    } finally {
+      isPollingActive = false;
     }
-  }, 900);
+  }, 450);
 }
 
 // 5b. Live AI Audit Controls & Renderer
@@ -596,6 +992,9 @@ function renderResults(result) {
   const sec = document.getElementById("resultsSection");
   sec.classList.remove("hidden");
 
+  // Re-enable and unlock export action buttons
+  setExportButtonsLiveState(false);
+
   // Show interactive Ollama chatbox
   const chatSec = document.getElementById("chatSection");
   if (chatSec) {
@@ -682,7 +1081,7 @@ function renderResults(result) {
   sec.scrollIntoView({ behavior: "smooth" });
 }
 
-function displayTablePage() {
+function displayTablePage(highlightSeats = null) {
   const tableHeadRow = document.getElementById("tableHeadRow");
   const tableBody = document.getElementById("tableBody");
   tableHeadRow.innerHTML = "";
@@ -694,9 +1093,8 @@ function displayTablePage() {
     return;
   }
 
-  // Derive columns
-  const first = filteredRecords[0];
-  const keys = Object.keys(first);
+  // Derive columns in consistent and structured order
+  const keys = extractRecordKeys(filteredRecords, currentCatalog);
 
   // Headers
   keys.forEach(k => {
@@ -706,11 +1104,19 @@ function displayTablePage() {
   });
 
   // Rows for current page
+  const maxPage = Math.max(1, Math.ceil(filteredRecords.length / pageSize));
+  if (currentPage > maxPage) {
+    currentPage = maxPage;
+  }
   const startIdx = (currentPage - 1) * pageSize;
   const pageSlice = filteredRecords.slice(startIdx, startIdx + pageSize);
 
   pageSlice.forEach(row => {
     const tr = document.createElement("tr");
+    const seatVal = String(row["Seat_No"] || row["seat_no"] || "");
+    if (highlightSeats && seatVal && highlightSeats.has(seatVal)) {
+      tr.classList.add("live-row-highlight");
+    }
     keys.forEach(k => {
       const td = document.createElement("td");
       td.textContent = row[k] !== undefined && row[k] !== null ? row[k] : "";
@@ -1010,11 +1416,13 @@ async function initCloudModal() {
   const openaiKeyInput = document.getElementById("cloudApiKeyOpenAI");
   const anthropicKeyInput = document.getElementById("cloudApiKeyAnthropic");
   const deepseekKeyInput = document.getElementById("cloudApiKeyDeepseek");
+  const openrouterKeyInput = document.getElementById("cloudApiKeyOpenrouter");
   const groqKeyBadge = document.getElementById("groqKeyBadge");
   const geminiKeyBadge = document.getElementById("geminiKeyBadge");
   const openaiKeyBadge = document.getElementById("openaiKeyBadge");
   const anthropicKeyBadge = document.getElementById("anthropicKeyBadge");
   const deepseekKeyBadge = document.getElementById("deepseekKeyBadge");
+  const openrouterKeyBadge = document.getElementById("openrouterKeyBadge");
 
   // Active Locked Banner Elements
   const lockedModelTitle = document.getElementById("lockedModelTitle");
@@ -1031,8 +1439,15 @@ async function initCloudModal() {
     gemini: [
       { id: "gemini-flash-latest", label: "gemini-flash-latest (Recommended - Fast & High Quota)" },
       { id: "gemini-flash-lite-latest", label: "gemini-flash-lite-latest (Ultra Fast Lite)" },
-      { id: "gemini-2.5-flash", label: "gemini-2.5-flash (Balanced)" },
-      { id: "gemini-2.5-pro", label: "gemini-2.5-pro (Deep Reasoning)" }
+      { id: "gemini-3.8-flash", label: "gemini-3.8-flash (Latest Flash)" },
+      { id: "gemini-3.5-flash", label: "gemini-3.5-flash (Balanced)" },
+      { id: "gemini-pro-latest", label: "gemini-pro-latest (Deep Reasoning)" }
+    ],
+    openrouter: [
+      { id: "google/gemma-4-31b-it:free", label: "google/gemma-4-31b-it:free (Vision, Recommended Free)" },
+      { id: "google/gemma-4-26b-a4b-it:free", label: "google/gemma-4-26b-a4b-it:free (Vision, Gemma 4 Free)" },
+      { id: "qwen/qwen3.8-27b:free", label: "qwen/qwen3.8-27b:free (Vision & Fast Reasoning Free)" },
+      { id: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", label: "nvidia/nemotron-3-nano-omni:free (Multimodal Free)" }
     ],
     openai: [
       { id: "gpt-4o-mini", label: "gpt-4o-mini (Recommended - Efficient & Fast)" },
@@ -1139,6 +1554,7 @@ async function initCloudModal() {
     const list = [
       { id: "groq", badge: groqKeyBadge },
       { id: "gemini", badge: geminiKeyBadge },
+      { id: "openrouter", badge: openrouterKeyBadge },
       { id: "openai", badge: openaiKeyBadge },
       { id: "anthropic", badge: anthropicKeyBadge },
       { id: "deepseek", badge: deepseekKeyBadge }
@@ -1160,7 +1576,7 @@ async function initCloudModal() {
 
     const pillCount = document.getElementById("tabPillKeysCount");
     if (pillCount) {
-      pillCount.textContent = configuredCount > 0 ? `${configuredCount} Active / 5 Providers` : "5 Providers";
+      pillCount.textContent = configuredCount > 0 ? `${configuredCount} Active / 6 Providers` : "6 Providers";
     }
   }
 
@@ -1306,6 +1722,7 @@ async function initCloudModal() {
         const payload = { api_keys: {} };
         if (groqKeyInput && groqKeyInput.value.trim()) payload.api_keys.groq = groqKeyInput.value.trim();
         if (geminiKeyInput && geminiKeyInput.value.trim()) payload.api_keys.gemini = geminiKeyInput.value.trim();
+        if (openrouterKeyInput && openrouterKeyInput.value.trim()) payload.api_keys.openrouter = openrouterKeyInput.value.trim();
         if (openaiKeyInput && openaiKeyInput.value.trim()) payload.api_keys.openai = openaiKeyInput.value.trim();
         if (anthropicKeyInput && anthropicKeyInput.value.trim()) payload.api_keys.anthropic = anthropicKeyInput.value.trim();
         if (deepseekKeyInput && deepseekKeyInput.value.trim()) payload.api_keys.deepseek = deepseekKeyInput.value.trim();
@@ -1358,12 +1775,14 @@ async function initCloudModal() {
 
           updateBadgeHelper(groqKeyBadge, rep.groq);
           updateBadgeHelper(geminiKeyBadge, rep.gemini);
+          updateBadgeHelper(openrouterKeyBadge, rep.openrouter);
           updateBadgeHelper(openaiKeyBadge, rep.openai);
           updateBadgeHelper(anthropicKeyBadge, rep.anthropic);
           updateBadgeHelper(deepseekKeyBadge, rep.deepseek);
 
           updateDiagCard("diagGroqCard", "diagGroqStatus", "diagGroqLatency", rep.groq);
           updateDiagCard("diagGeminiCard", "diagGeminiStatus", "diagGeminiLatency", rep.gemini);
+          updateDiagCard("diagOpenrouterCard", "diagOpenrouterStatus", "diagOpenrouterLatency", rep.openrouter);
           updateDiagCard("diagAnthropicCard", "diagAnthropicStatus", "diagAnthropicLatency", rep.anthropic);
           updateDiagCard("diagDeepseekCard", "diagDeepseekStatus", "diagDeepseekLatency", rep.deepseek);
           updateDiagCard("diagOpenaiCard", "diagOpenaiStatus", "diagOpenaiLatency", rep.openai);
@@ -1415,6 +1834,7 @@ async function initCloudModal() {
         let testKey = "";
         if (curProv === "groq" && groqKeyInput) testKey = groqKeyInput.value.trim();
         else if (curProv === "gemini" && geminiKeyInput) testKey = geminiKeyInput.value.trim();
+        else if (curProv === "openrouter" && openrouterKeyInput) testKey = openrouterKeyInput.value.trim();
         else if (curProv === "openai" && openaiKeyInput) testKey = openaiKeyInput.value.trim();
         else if (curProv === "anthropic" && anthropicKeyInput) testKey = anthropicKeyInput.value.trim();
         else if (curProv === "deepseek" && deepseekKeyInput) testKey = deepseekKeyInput.value.trim();
@@ -1479,6 +1899,9 @@ async function initCloudModal() {
         if (geminiKeyInput && geminiKeyInput.value.trim()) {
           payload.api_keys.gemini = geminiKeyInput.value.trim();
         }
+        if (openrouterKeyInput && openrouterKeyInput.value.trim()) {
+          payload.api_keys.openrouter = openrouterKeyInput.value.trim();
+        }
         if (openaiKeyInput && openaiKeyInput.value.trim()) {
           payload.api_keys.openai = openaiKeyInput.value.trim();
         }
@@ -1499,6 +1922,7 @@ async function initCloudModal() {
         if (data.success) {
           if (groqKeyInput) groqKeyInput.value = "";
           if (geminiKeyInput) geminiKeyInput.value = "";
+          if (openrouterKeyInput) openrouterKeyInput.value = "";
           if (openaiKeyInput) openaiKeyInput.value = "";
           if (anthropicKeyInput) anthropicKeyInput.value = "";
           if (deepseekKeyInput) deepseekKeyInput.value = "";

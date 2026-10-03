@@ -28,6 +28,8 @@ except Exception:
         from models import Course, CourseCatalog, CourseResult, ExamMeta, StudentRecord
 
 ProgressCallback = Optional[Callable[[float, str], None]]
+LiveCallback = Optional[Callable[[StudentRecord, CourseCatalog], None]]
+
 
 
 def safe_int(val: Any, default: int = 0) -> int:
@@ -160,7 +162,9 @@ def discover_tabulation_headers(table: List[List[Optional[str]]]) -> Tuple[Cours
 
 def extract_tabulation(
     pdf_path: str,
-    progress_callback: ProgressCallback = None
+    progress_callback: ProgressCallback = None,
+    live_callback: LiveCallback = None,
+    controller: Optional[Any] = None
 ) -> Tuple[ExamMeta, List[StudentRecord]]:
     """Extract records from CBCGS Tabulation register using vector tables."""
     meta = ExamMeta(archetype="tabulation")
@@ -196,13 +200,18 @@ def extract_tabulation(
             meta.catalog = catalog
 
         for page_idx, page in enumerate(pdf.pages):
+            if controller and controller.check_pause_and_stop():
+                break
             if progress_callback:
                 pct = 20.0 + ((page_idx + 1) / total_pages * 65.0)
                 progress_callback(pct, f"Extracting page {page_idx + 1}/{total_pages} ({len(students)} students found)...")
 
             tables = page.extract_tables()
             for table in tables:
+                if controller and controller.should_stop():
+                    break
                 r_idx = 0
+
                 while r_idx < len(table):
                     row = table[r_idx]
                     if len(row) <= 2 or not row[1] or not row[2]:
@@ -316,6 +325,13 @@ def extract_tabulation(
                             student.course_results.append(c_res)
 
                         students.append(student)
+                        if live_callback:
+                            try:
+                                live_callback(student, catalog)
+                            except Exception:
+                                pass
+                        if controller and controller.check_pause_and_stop():
+                            break
                         r_idx += 5
                     else:
                         r_idx += 1
@@ -329,7 +345,9 @@ def extract_tabulation(
 
 def extract_gazette_classic(
     pdf_path: str,
-    progress_callback: ProgressCallback = None
+    progress_callback: ProgressCallback = None,
+    live_callback: LiveCallback = None,
+    controller: Optional[Any] = None
 ) -> Tuple[ExamMeta, List[StudentRecord]]:
     """Extract records from Classic University Gazette C-Scheme (Sem VIII)."""
     meta = ExamMeta(archetype="gazette_classic", semester="VIII", semester_num=8, max_total_marks=700)
@@ -346,6 +364,8 @@ def extract_gazette_classic(
     current_college = ""
 
     for page_idx, page in enumerate(reader.pages):
+        if controller and controller.check_pause_and_stop():
+            break
         if progress_callback:
             pct = 15.0 + ((page_idx + 1) / total_pages * 70.0)
             progress_callback(pct, f"Parsing Gazette page {page_idx + 1}/{total_pages} ({len(students)} students found)...")
@@ -354,6 +374,8 @@ def extract_gazette_classic(
         lines = [l.strip() for l in text.split("\n") if l.strip()]
         idx = 0
         while idx < len(lines):
+            if controller and controller.should_stop():
+                break
             line = lines[idx]
 
             if "OFFICE REGISTER FOR" in line and not meta.exam_title:
@@ -491,6 +513,13 @@ def extract_gazette_classic(
                     rec.candidate_type = "Diploma"
 
                 students.append(rec)
+                if live_callback:
+                    try:
+                        live_callback(rec, catalog)
+                    except Exception:
+                        pass
+                if controller and controller.check_pause_and_stop():
+                    break
                 idx += 5
             else:
                 idx += 1
@@ -562,7 +591,9 @@ def is_boilerplate_spool(line: str) -> bool:
 
 def extract_gazette_spool(
     pdf_path: str,
-    progress_callback: ProgressCallback = None
+    progress_callback: ProgressCallback = None,
+    live_callback: LiveCallback = None,
+    controller: Optional[Any] = None
 ) -> Tuple[ExamMeta, List[StudentRecord]]:
     """Extract records from Continuous Tape Spool (Sem VII) with all 10-12 courses."""
     meta = ExamMeta(archetype="gazette_spool", semester="VII", semester_num=7, max_total_marks=750)
@@ -594,6 +625,8 @@ def extract_gazette_spool(
     # 2. Collect de-noised lines across all pages
     clean_lines: List[str] = []
     for page_idx, page in enumerate(reader.pages):
+        if controller and controller.check_pause_and_stop():
+            break
         if progress_callback:
             pct = 10.0 + ((page_idx + 1) / total_pages * 40.0)
             progress_callback(pct, f"De-noising Spool page {page_idx + 1}/{total_pages}...")
@@ -607,6 +640,8 @@ def extract_gazette_spool(
     total_lines = len(clean_lines)
 
     while i < total_lines:
+        if controller and controller.check_pause_and_stop():
+            break
         l = clean_lines[i]
         m_seat = re.match(r"^\s*(\d{7})\s+([/A-Za-z\s]+?)\s*\|", l)
         if m_seat:
@@ -787,6 +822,13 @@ def extract_gazette_spool(
                 rec.total_marks = str(tot_sum)
 
             students.append(rec)
+            if live_callback:
+                try:
+                    live_callback(rec, catalog)
+                except Exception:
+                    pass
+            if controller and controller.check_pause_and_stop():
+                break
             i = j
         else:
             i += 1
@@ -817,7 +859,9 @@ def is_boilerplate_nep(line: str) -> bool:
 
 def extract_gazette_nep(
     pdf_path: str,
-    progress_callback: ProgressCallback = None
+    progress_callback: ProgressCallback = None,
+    live_callback: LiveCallback = None,
+    controller: Optional[Any] = None
 ) -> Tuple[ExamMeta, List[StudentRecord]]:
     """Extract complete records from NEP 2020 Examination Gazette."""
     meta = ExamMeta(archetype="gazette_nep", scheme="NEP 2020")
@@ -909,6 +953,8 @@ def extract_gazette_nep(
     # 3. Iterate through all student pages
     data_pages_count = max(1, total_pages - first_stud_page)
     for p_idx in range(first_stud_page, total_pages):
+        if controller and controller.check_pause_and_stop():
+            break
         if progress_callback:
             pct = 10.0 + (p_idx - first_stud_page) / data_pages_count * 80.0
             progress_callback(pct, f"Extracting NEP 2020 page {p_idx+1}/{total_pages}...")
@@ -936,6 +982,8 @@ def extract_gazette_nep(
             page_courses = [c.code for c in catalog.courses]
 
         for idx, l in enumerate(lines):
+            if controller and controller.should_stop():
+                break
             m = anchor_re.match(l)
             if not m:
                 continue
@@ -1075,7 +1123,7 @@ def extract_gazette_nep(
                     credit_points=cg
                 ))
 
-            students.append(StudentRecord(
+            rec = StudentRecord(
                 seat_no=seat,
                 student_name=name,
                 gender=gender,
@@ -1088,7 +1136,15 @@ def extract_gazette_nep(
                 total_cg=total_cg,
                 sgpi=sgpi,
                 course_results=course_results
-            ))
+            )
+            students.append(rec)
+            if live_callback:
+                try:
+                    live_callback(rec, catalog)
+                except Exception:
+                    pass
+            if controller and controller.check_pause_and_stop():
+                break
 
     meta.catalog = catalog
     return meta, students
@@ -1101,21 +1157,24 @@ def extract_gazette_nep(
 def extract_with_possibility_engine(
     pdf_path: str,
     archetype: str,
-    progress_callback: ProgressCallback = None
+    progress_callback: ProgressCallback = None,
+    live_callback: LiveCallback = None,
+    controller: Optional[Any] = None
 ) -> Tuple[ExamMeta, List[StudentRecord]]:
     """Dispatch to the corresponding pre-trained possibility extraction engine."""
     if archetype == "tabulation":
-        return extract_tabulation(pdf_path, progress_callback)
+        return extract_tabulation(pdf_path, progress_callback, live_callback=live_callback, controller=controller)
     elif archetype == "gazette_classic":
-        return extract_gazette_classic(pdf_path, progress_callback)
+        return extract_gazette_classic(pdf_path, progress_callback, live_callback=live_callback, controller=controller)
     elif archetype == "gazette_spool":
-        return extract_gazette_spool(pdf_path, progress_callback)
+        return extract_gazette_spool(pdf_path, progress_callback, live_callback=live_callback, controller=controller)
     elif archetype == "gazette_nep":
-        return extract_gazette_nep(pdf_path, progress_callback)
+        return extract_gazette_nep(pdf_path, progress_callback, live_callback=live_callback, controller=controller)
     else:
         # Default fallback
         try:
-            return extract_gazette_spool(pdf_path, progress_callback)
+            return extract_gazette_spool(pdf_path, progress_callback, live_callback=live_callback, controller=controller)
         except Exception:
-            return extract_gazette_classic(pdf_path, progress_callback)
+            return extract_gazette_classic(pdf_path, progress_callback, live_callback=live_callback, controller=controller)
+
 

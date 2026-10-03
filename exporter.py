@@ -12,12 +12,12 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 try:
-    from .models import CourseCatalog, ExamMeta, StudentRecord, normalize_course_code
+    from .models import CourseCatalog, ExamMeta, StudentRecord, _canonicalize_head
 except Exception:
     try:
-        from data_extractor_AI.models import CourseCatalog, ExamMeta, StudentRecord, normalize_course_code
+        from data_extractor_AI.models import CourseCatalog, ExamMeta, StudentRecord, _canonicalize_head
     except Exception:
-        from models import CourseCatalog, ExamMeta, StudentRecord, normalize_course_code
+        from models import CourseCatalog, ExamMeta, StudentRecord, _canonicalize_head
 
 try:
     from core.excel_report_generator import AcademicExcelReportGenerator, get_academic_filename
@@ -187,26 +187,30 @@ def export_ai_extracted_data(
     # 2. Courses in exact catalog order with only authorized heads
     if meta and meta.catalog and meta.catalog.courses:
         for c in meta.catalog.courses:
-            c_code = normalize_course_code(c.code)
-            # Only add heads that physically exist for this course (no default to TH, IA, TOT)
-            actual_heads = [h for h in c.heads if h and str(h).strip()] if c.heads else []
+            # Only add heads that physically exist for this course (canonicalized to TH, IA, TW, PR, TOT)
+            actual_heads = []
+            seen_h = set()
+            for h in (c.heads or []):
+                norm_h = _canonicalize_head(h)
+                if norm_h and norm_h not in seen_h:
+                    seen_h.add(norm_h)
+                    actual_heads.append(norm_h)
             for h in actual_heads:
-                add_field(f"{c_code}_{h}")
+                add_field(f"{c.code}_{h}")
             
-            add_field(f"{c_code}_Grade")
-            # Only add GP, Credits, CG if credits > 0 or if present in candidate records (preserve 0)
+            add_field(f"{c.code}_Grade")
+            # Only add GP, Credits, CG if credits > 0 or if present in candidate records
             has_credits = getattr(c, "credits", 0) and float(c.credits) > 0
-            has_gp_data = any(r.get(f"{c_code}_GP") is not None and str(r.get(f"{c_code}_GP")).strip() not in ("", "None") for r in flat_rows)
-            has_cg_data = any(r.get(f"{c_code}_CG") is not None and str(r.get(f"{c_code}_CG")).strip() not in ("", "None") for r in flat_rows)
-            has_credits_data = any(r.get(f"{c_code}_Credits") is not None and str(r.get(f"{c_code}_Credits")).strip() not in ("", "None") for r in flat_rows)
+            has_gp_data = any(str(r.get(f"{c.code}_GP", "")).strip() not in ("", "None", "0") for r in flat_rows)
+            has_cg_data = any(str(r.get(f"{c.code}_CG", "")).strip() not in ("", "None", "0", "0.0") for r in flat_rows)
             
             if has_credits or has_gp_data:
-                add_field(f"{c_code}_GP")
-            if has_credits or has_credits_data:
-                add_field(f"{c_code}_Credits")
+                add_field(f"{c.code}_GP")
+            if has_credits or any(str(r.get(f"{c.code}_Credits", "")).strip() not in ("", "None", "0") for r in flat_rows):
+                add_field(f"{c.code}_Credits")
             if has_credits or has_cg_data:
-                add_field(f"{c_code}_CG")
-            add_field(f"{c_code}_Subject")
+                add_field(f"{c.code}_CG")
+            add_field(f"{c.code}_Subject")
 
     # 3. Add any historical or remaining custom fields from flat rows (excluding hallucinated heads)
     for r in flat_rows:
@@ -217,16 +221,16 @@ def export_ai_extracted_data(
                     prefix, suffix = k.split("_", 1)
                     c_match = meta.catalog.get_by_code(prefix)
                     if c_match:
-                        valid_heads = set(c_match.heads) if c_match.heads else set()
-                        if suffix in ("TH", "IA", "TW", "PR", "TOT", "OR", "ESE", "PO", "PRA") and suffix not in valid_heads:
+                        valid_heads = {_canonicalize_head(h) for h in c_match.heads} if c_match.heads else set()
+                        norm_suffix = _canonicalize_head(suffix)
+                        if norm_suffix in ("TH", "IA", "TW", "PR", "TOT", "OR", "ESE", "PO", "PRA") and norm_suffix not in valid_heads:
                             continue
                 add_field(k)
 
     # 4. Global Empty-Column Pruner:
     # Completely drop any column that is 100% empty across all student rows
     # (keeps essential identification columns: Seat_No, Student_Name, Result_Status, Semester)
-    # Note: Legitimate numeric 0 is preserved and never treated as empty.
-    protected_core = {"Seat_No", "Student_Name", "Result_Status", "Semester"}
+    protected_core = {"Seat_No", "Student_Name", "Result_Status", "Semester", "Remark"}
     pruned_fieldnames: List[str] = []
     for f in fieldnames:
         if f in protected_core:
@@ -235,7 +239,7 @@ def export_ai_extracted_data(
             has_data = any(
                 r.get(f) is not None
                 and str(r.get(f)).strip() != ""
-                and str(r.get(f)).strip().lower() != "none"
+                and str(r.get(f)).strip() != "None"
                 for r in flat_rows
             )
             if has_data:
@@ -266,6 +270,9 @@ def export_ai_extracted_data(
         "courses": cat_dict,
         "checksum_verification": checksum_data or {}
     }
+    if hasattr(meta, "spec") and meta.spec:
+        payload["document_execution_spec"] = meta.spec.to_dict() if hasattr(meta.spec, "to_dict") else meta.spec
+
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, ensure_ascii=False)
 

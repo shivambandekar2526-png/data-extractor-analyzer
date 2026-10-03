@@ -122,7 +122,9 @@ def extract_pdf(
     pdf_path: str,
     progress_callback: ProgressCallback = None,
     client: Optional[OllamaClient] = None,
-    audit_callback: Optional[AuditCallback] = None
+    audit_callback: Optional[AuditCallback] = None,
+    live_callback: Optional[Callable[[StudentRecord, CourseCatalog], None]] = None,
+    controller: Optional[Any] = None
 ) -> Tuple[ExamMeta, List[StudentRecord], str]:
     """
     Execute end-to-end AI academic extraction with live audit telemetry:
@@ -132,6 +134,8 @@ def extract_pdf(
     - Executes real local Ollama AI extraction on page blocks with JSON Schema constraints.
     - Conducts mathematical checksum proofs & AI self-healing.
     - Emits live audit logs to audit_callback for real-time UI streaming.
+    - Emits live extracted student records to live_callback as they are parsed.
+    - Supports real-time Pause, Resume, and Stop via controller.
     """
     if client is None:
         client = OllamaClient()
@@ -172,6 +176,9 @@ def extract_pdf(
     if total_pages == 0:
         raise ValueError(f"No pages found in PDF: {pdf_path}")
 
+    if controller and controller.check_pause_and_stop():
+        return ExamMeta(archetype="unknown"), [], "unknown"
+
     # 2. Archetype Classification
     report_progress(progress_callback, 10.0, "Analyzing document possibility archetype...")
     archetype, confidence = classify_document(pages)
@@ -183,9 +190,14 @@ def extract_pdf(
         {"archetype": archetype, "confidence": confidence, "total_pages": total_pages}
     )
 
+    if controller and controller.check_pause_and_stop():
+        return ExamMeta(archetype=archetype), [], archetype
+
     # 3. Complete Course & Student Extraction via Multi-Tier Engine
     report_progress(progress_callback, 20.0, f"Extracting full student catalog & courses via {archetype} engine...")
-    meta, base_students = extract_with_possibility_engine(pdf_path, archetype, progress_callback)
+    meta, base_students = extract_with_possibility_engine(
+        pdf_path, archetype, progress_callback, live_callback=live_callback, controller=controller
+    )
     emit_audit(
         "structure",
         "CATALOG BUILT",
@@ -196,14 +208,40 @@ def extract_pdf(
         }
     )
 
+    if controller and controller.should_stop():
+        return meta, base_students, archetype
+
     # 4. Live Local Ollama AI Inference Across Document Pages
     if ollama_online:
         pages_to_infer = total_pages if not base_students else min(2, total_pages)
         report_progress(progress_callback, 30.0, f"Running Ollama AI ({client.model}) on pages...")
 
         for p_idx in range(pages_to_infer):
+            if controller and controller.check_pause_and_stop():
+                return meta, base_students, archetype
+
             p_text = pages[p_idx].text or ""
             if p_text.strip():
+                l_context = ""
+                try:
+                    from .layout_mapper import extract_page_layout_map, format_page_text_with_layout
+                except Exception:
+                    try:
+                        from data_extractor_AI.core.layout_mapper import extract_page_layout_map, format_page_text_with_layout
+                    except Exception:
+                        extract_page_layout_map = None
+                        format_page_text_with_layout = None
+
+                if extract_page_layout_map and os.path.isfile(pdf_path):
+                    try:
+                        lmap = extract_page_layout_map(pdf_path, page_index=p_idx, catalog=meta.catalog, archetype=archetype)
+                        l_context = lmap.to_prompt_context()
+                        anchored_text = format_page_text_with_layout(pdf_path, page_index=p_idx, layout_map=lmap)
+                        if anchored_text:
+                            p_text = anchored_text
+                    except Exception:
+                        pass
+
                 pct = 30.0 + ((p_idx + 1) / pages_to_infer * 50.0)
                 report_progress(
                     progress_callback,
@@ -213,7 +251,7 @@ def extract_pdf(
                 emit_audit(
                     "ai_prompt",
                     "AI PROMPT",
-                    f"Sending Page {p_idx + 1}/{total_pages} text stream ({len(p_text)} chars) to Ollama with JSON Schema constraint...",
+                    f"Sending Page {p_idx + 1}/{total_pages} text stream ({len(p_text)} chars) to Ollama with layout map & JSON Schema...",
                     {"page": p_idx + 1, "chars": len(p_text), "prompt_preview": p_text[:280] + "..."}
                 )
 
@@ -221,8 +259,16 @@ def extract_pdf(
                     client=client,
                     formatted_page_text=p_text,
                     archetype=archetype,
-                    page_num=p_idx + 1
+                    page_num=p_idx + 1,
+                    layout_context=l_context
                 )
+
+                if live_callback and ai_page_students:
+                    for s in ai_page_students:
+                        try:
+                            live_callback(s, meta.catalog)
+                        except Exception:
+                            pass
 
                 emit_audit(
                     "ai_response",
@@ -237,11 +283,18 @@ def extract_pdf(
                     }
                 )
 
+    if controller and controller.should_stop():
+        return meta, base_students, archetype
+
     # 5. Checksum Verification & AI Self-Healing
     report_progress(progress_callback, 82.0, f"Running mathematical checksum audit on {len(base_students)} records...")
     healed_students: List[StudentRecord] = []
 
     for s in base_students:
+        if controller and controller.check_pause_and_stop():
+            healed_students.append(s)
+            continue
+
         s.semester = s.semester or meta.semester
         chk = verify_student(s, meta.catalog)
         if not chk.all_passed:
@@ -259,6 +312,11 @@ def extract_pdf(
                     {"seat": s.seat_no}
                 )
                 s = heal_student(client, s, chk, "", meta.catalog)
+                if live_callback:
+                    try:
+                        live_callback(s, meta.catalog)
+                    except Exception:
+                        pass
         healed_students.append(s)
 
     report_progress(progress_callback, 90.0, "Auditing mathematical equations across cohort...")

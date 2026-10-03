@@ -17,6 +17,7 @@ import logging
 import math
 import os
 import re
+import socket
 import time
 import urllib.error
 import urllib.request
@@ -33,12 +34,11 @@ USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 DEFAULT_PROVIDERS = {
     "groq": {
         "name": "Groq",
-        "default_model": "llama-3.3-70b-versatile",
+        "default_model": "openai/gpt-oss-120b",
         "available_models": [
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant",
+            "openai/gpt-oss-120b",
             "qwen/qwen3.8-27b",
-            "openai/gpt-oss-120b"
+            "openai/gpt-oss-20b"
         ],
         "base_url": "https://api.groq.com/openai/v1"
     },
@@ -48,8 +48,10 @@ DEFAULT_PROVIDERS = {
         "available_models": [
             "gemini-flash-latest",
             "gemini-flash-lite-latest",
-            "gemini-2.5-flash",
-            "gemini-2.5-pro"
+            "gemini-3.8-flash",
+            "gemini-3.5-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-pro-latest"
         ],
         "base_url": "https://generativelanguage.googleapis.com/v1beta"
     },
@@ -82,6 +84,17 @@ DEFAULT_PROVIDERS = {
         ],
         "base_url": "https://api.deepseek.com"
     },
+    "openrouter": {
+        "name": "OpenRouter",
+        "default_model": "google/gemma-4-31b-it:free",
+        "available_models": [
+            "google/gemma-4-31b-it:free",
+            "google/gemma-4-26b-a4b-it:free",
+            "qwen/qwen3.8-27b:free",
+            "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
+        ],
+        "base_url": "https://openrouter.ai/api/v1"
+    },
     "custom": {
         "name": "Custom OpenAI-Compatible",
         "default_model": "default",
@@ -91,22 +104,27 @@ DEFAULT_PROVIDERS = {
 }
 
 # Hierarchy of candidates for automatic orchestration (ranked by speed, capability, & quota)
-# Uses high-TPM models (e.g. Llama 3.3 70B: 30k TPM, Gemini Flash: 250k TPM) to prevent HTTP 413/429
 ORCHESTRATION_CANDIDATES = [
-    {"provider": "gemini", "model": "gemini-flash-latest", "label": "Google Gemini Flash (250k TPM)", "supports_vision": True},
+    # Top Multimodal Vision Candidates
+    {"provider": "gemini", "model": "gemini-flash-latest", "label": "Google Gemini Flash", "supports_vision": True},
     {"provider": "gemini", "model": "gemini-flash-lite-latest", "label": "Google Gemini Flash Lite", "supports_vision": True},
-    {"provider": "anthropic", "model": "claude-3-5-sonnet-20241022", "label": "Anthropic Claude 3.5 Sonnet", "supports_vision": True},
-    {"provider": "deepseek", "model": "deepseek-chat", "label": "DeepSeek V3 (64k Context)", "supports_vision": False},
-    {"provider": "groq", "model": "llama-3.3-70b-versatile", "label": "Groq Llama 3.3 70B (30k TPM)", "supports_vision": False},
+    {"provider": "gemini", "model": "gemini-3.8-flash", "label": "Google Gemini 3.8 Flash", "supports_vision": True},
+    {"provider": "gemini", "model": "gemini-3.5-flash", "label": "Google Gemini 3.5 Flash", "supports_vision": True},
+    {"provider": "gemini", "model": "gemini-3.5-flash-lite", "label": "Google Gemini 3.5 Flash Lite", "supports_vision": True},
+    {"provider": "gemini", "model": "gemini-pro-latest", "label": "Google Gemini Pro", "supports_vision": True},
+    {"provider": "openrouter", "model": "google/gemma-4-31b-it:free", "label": "OpenRouter Gemma 4 Vision (Free)", "supports_vision": True},
+    {"provider": "openrouter", "model": "google/gemma-4-26b-a4b-it:free", "label": "OpenRouter Gemma 4 26B (Free)", "supports_vision": True},
+    {"provider": "openrouter", "model": "qwen/qwen3.8-27b:free", "label": "OpenRouter Qwen Vision (Free)", "supports_vision": True},
     {"provider": "openai", "model": "gpt-4o-mini", "label": "OpenAI GPT-4o-mini", "supports_vision": True},
+    {"provider": "anthropic", "model": "claude-3-5-sonnet-20241022", "label": "Anthropic Claude 3.5 Sonnet", "supports_vision": True},
     {"provider": "anthropic", "model": "claude-3-5-haiku-20241022", "label": "Anthropic Claude 3.5 Haiku", "supports_vision": True},
-    {"provider": "deepseek", "model": "deepseek-reasoner", "label": "DeepSeek R1 Reasoner", "supports_vision": False},
-    {"provider": "gemini", "model": "gemini-2.5-flash", "label": "Google Gemini 2.5 Flash", "supports_vision": True},
-    {"provider": "gemini", "model": "gemini-2.5-flash-lite", "label": "Google Gemini 2.5 Flash Lite", "supports_vision": True},
-    {"provider": "groq", "model": "llama-3.1-8b-instant", "label": "Groq Llama 3.1 8B Instant (30k TPM)", "supports_vision": False},
-    {"provider": "groq", "model": "qwen/qwen3.8-27b", "label": "Groq Fast Reasoning (27B)", "supports_vision": False},
     {"provider": "openai", "model": "gpt-4o", "label": "OpenAI GPT-4o Flagship", "supports_vision": True},
-    {"provider": "groq", "model": "openai/gpt-oss-120b", "label": "Groq Flagship (120B, 8k TPM)", "supports_vision": False}
+    # Ultra-Fast Text & Reasoning Candidates (Groq & DeepSeek)
+    {"provider": "groq", "model": "openai/gpt-oss-120b", "label": "Groq Flagship (120B)", "supports_vision": False},
+    {"provider": "groq", "model": "qwen/qwen3.8-27b", "label": "Groq Fast Reasoning (27B)", "supports_vision": False},
+    {"provider": "groq", "model": "openai/gpt-oss-20b", "label": "Groq Speed (20B)", "supports_vision": False},
+    {"provider": "deepseek", "model": "deepseek-chat", "label": "DeepSeek V3 (64k Context)", "supports_vision": False},
+    {"provider": "deepseek", "model": "deepseek-reasoner", "label": "DeepSeek R1 Reasoner", "supports_vision": False}
 ]
 
 
@@ -128,6 +146,10 @@ class CloudClient:
     # Multi-Key Pool trackers: maps "provider:key_prefix" to expiration timestamp, and "provider" to active pool index
     _key_cooldowns: Dict[str, float] = {}
     _key_pool_indices: Dict[str, int] = {}
+
+    # Adaptive Rate-Limit Backoff Level per provider (Level 0: 60s, Level 1: 120s, Level 2: 240s, Level 3+: 480s)
+    _provider_backoff_level: Dict[str, int] = {}
+    _provider_last_success: Dict[str, float] = {}
 
     # Global cumulative token metrics across all CloudClient instances in the process
     _global_token_usage: Dict[str, int] = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
@@ -165,6 +187,7 @@ class CloudClient:
             "api_keys": {
                 "groq": "",
                 "gemini": "",
+                "openrouter": "",
                 "openai": "",
                 "anthropic": "",
                 "deepseek": "",
@@ -302,7 +325,7 @@ class CloudClient:
         """Check if at least one AI provider has an API key configured and cloud AI is enabled."""
         if not self.config.get("enabled", True):
             return False
-        for p in ["groq", "gemini", "openai", "anthropic", "deepseek", "custom"]:
+        for p in ["groq", "gemini", "openrouter", "openai", "anthropic", "deepseek", "custom"]:
             if len(self.get_key_pool(p)) > 0:
                 return True
         return bool(self.config.get("api_key", "").strip())
@@ -337,7 +360,7 @@ class CloudClient:
             "model": self.config.get("model", "openai/gpt-oss-120b")
         }
 
-        all_provs = ["groq", "gemini", "openai", "anthropic", "deepseek", "custom"]
+        all_provs = ["groq", "gemini", "openrouter", "openai", "anthropic", "deepseek", "custom"]
         keys_summary = {}
         for prov in all_provs:
             pool = self.get_key_pool(prov)
@@ -424,10 +447,13 @@ class CloudClient:
                         return True, f"Verified ({lat}ms)", lat
                     return False, f"Unexpected HTTP status {resp.status}", lat
 
-            else:  # Groq, OpenAI, DeepSeek, or Custom
+            else:  # Groq, OpenRouter, OpenAI, DeepSeek, or Custom
                 base_url = self.config.get("custom_base_url") if prov == "custom" else DEFAULT_PROVIDERS.get(prov, {}).get("base_url", "https://api.openai.com/v1")
                 url = f"{base_url.rstrip('/')}/chat/completions"
                 headers["Authorization"] = f"Bearer {key}"
+                if prov == "openrouter":
+                    headers["HTTP-Referer"] = "https://github.com/shivambandekar2526-png/result-analysis-aids"
+                    headers["X-Title"] = "Result Analysis AI"
                 payload = {
                     "model": model,
                     "messages": [{"role": "user", "content": "Respond with OK"}],
@@ -458,13 +484,16 @@ class CloudClient:
     def get_best_working_model(self, force_refresh: bool = False, probe: bool = False, requires_vision: bool = False) -> Dict[str, str]:
         """
         Orchestration Core: Selects the best working model across all configured providers.
-        STRICT STICKINESS: Once locked onto a working model, sticks to it until an error occurs.
-        If probe=False (default during execution failover), selects candidate without burning HTTP calls.
-        If requires_vision=True, limits selection strictly to models capable of multimodal vision.
+        PRIORITY ORDER: Highest tier models (e.g. Gemini) are given top priority.
+        OPPORTUNISTIC RECOVERY: If a lower-priority fallback is active, checks if top-priority models
+        have completed their rate-limit cooldown and restores them.
+        ANTI-THRASHING STICKINESS: Once locked onto a model, sticks to it unless a higher-priority
+        model becomes available or an error triggers failover.
         """
         now = time.time()
 
-        # If not forcing refresh, check if currently locked model is still valid, not in cooldown, and satisfies vision reqs
+        # 1. Determine currently locked candidate priority index
+        locked_priority = 999
         if not force_refresh and CloudClient._locked_model:
             locked_prov = CloudClient._locked_model.get("provider", "").lower()
             locked_mod = CloudClient._locked_model.get("model", "")
@@ -473,12 +502,14 @@ class CloudClient:
             if vision_ok:
                 cooldown_key = f"{locked_prov}:{locked_mod}"
                 if now >= CloudClient._provider_cooldowns.get(locked_prov, 0) and now >= CloudClient._model_cooldowns.get(cooldown_key, 0):
-                    # Has key and not in cooldown -> stick to it!
                     if self.get_api_key(locked_prov):
-                        return CloudClient._locked_model
+                        for idx, c in enumerate(ORCHESTRATION_CANDIDATES):
+                            if c["provider"].lower() == locked_prov and c["model"] == locked_mod:
+                                locked_priority = idx
+                                break
 
-        # Probe or select candidates in order of capability / speed
-        for cand in ORCHESTRATION_CANDIDATES:
+        # 2. Iterate candidates in strict priority order
+        for idx, cand in enumerate(ORCHESTRATION_CANDIDATES):
             if requires_vision and not cand.get("supports_vision", False):
                 continue
 
@@ -496,37 +527,60 @@ class CloudClient:
             if now < CloudClient._model_cooldowns.get(cooldown_key, 0):
                 continue  # In temporary cooldown due to recent error
 
+            # If we reached the currently locked model and nothing higher-priority is available, stick to it!
+            if not force_refresh and idx == locked_priority and CloudClient._locked_model:
+                return CloudClient._locked_model
+
             if probe:
                 ok, msg, _ = self.probe_candidate(prov, mod, key, timeout=5)
                 if not ok:
                     continue
 
+            # Higher-priority model is available or newly locked
             CloudClient._locked_model = {"provider": prov, "model": mod}
             self.config["provider"] = prov
             self.config["model"] = mod
-            # Persist updated locked provider/model
             try:
                 with open(CONFIG_FILE, "w", encoding="utf-8") as f:
                     json.dump(self.config, f, indent=2)
             except Exception:
                 pass
-            logger.info("Cloud Orchestrator locked onto model: %s (%s, vision=%s)", mod, prov, cand.get("supports_vision", False))
+            logger.info("Cloud Orchestrator selected model: %s (%s, vision=%s)", mod, prov, cand.get("supports_vision", False))
             return CloudClient._locked_model
 
-        # Fallback to configured model or safe vision fallback
+        # Fallback: if all eligible candidates are in cooldown, pick the one with earliest cooldown expiry
+        eligible_cands = [
+            c for c in ORCHESTRATION_CANDIDATES
+            if (not requires_vision or c.get("supports_vision", False)) and (self.get_api_key(c["provider"]) or c["provider"] == "custom")
+        ]
+        if eligible_cands:
+            best_cand = min(eligible_cands, key=lambda c: CloudClient._model_cooldowns.get(f"{c['provider'].lower()}:{c['model']}", 0))
+            return {"provider": best_cand["provider"].lower(), "model": best_cand["model"]}
+
         if requires_vision:
             return {
                 "provider": "gemini",
-                "model": "gemini-flash-lite-latest"
+                "model": "gemini-flash-latest"
             }
         return {
             "provider": self.config.get("provider", "groq"),
-            "model": self.config.get("model", "llama-3.3-70b-versatile")
+            "model": "openai/gpt-oss-120b"
         }
 
     @classmethod
+    def record_provider_success(cls, provider: str) -> None:
+        """Track successful execution to reset rate-limit backoff levels if operating stably."""
+        prov = provider.lower()
+        now = time.time()
+        last_succ = cls._provider_last_success.get(prov, 0.0)
+        # If successfully operating for > 90 seconds without rate-limits, reset backoff level
+        if last_succ > 0 and (now - last_succ) > 90:
+            cls._provider_backoff_level[prov] = 0
+        cls._provider_last_success[prov] = now
+
+    @classmethod
     def mark_provider_failed(cls, provider: str, cooldown_seconds: int = 30) -> None:
-        """Mark an entire provider as temporarily unavailable (e.g. 429 rate limit or quota exceeded)."""
+        """Mark an entire provider as temporarily unavailable (e.g. 401/403 invalid key or total provider outage)."""
         prov = provider.lower()
         cls._provider_cooldowns[prov] = time.time() + cooldown_seconds
         logger.warning("Provider '%s' entered rate-limit cooldown for %ds.", prov, cooldown_seconds)
@@ -535,16 +589,44 @@ class CloudClient:
 
     @classmethod
     def mark_model_failed(cls, provider: str, model: str, cooldown_seconds: int = 60, is_rate_limit: bool = False) -> None:
-        """Mark a model as failed and place it into temporary cooldown."""
+        """
+        Mark a model as failed and place it into temporary cooldown.
+        Applies exponential backoff on consecutive rate limits to prevent thrashing loops.
+        """
         prov = provider.lower()
         cooldown_key = f"{prov}:{model}"
-        cls._model_cooldowns[cooldown_key] = time.time() + cooldown_seconds
+        now = time.time()
+
+        if is_rate_limit:
+            if cooldown_seconds >= 300:
+                # Extended / daily quota exhaustion
+                cls._provider_backoff_level[prov] = 3
+                eff_cooldown = cooldown_seconds
+            else:
+                level = cls._provider_backoff_level.get(prov, 0)
+                # Exponential backoff based on level: 60s, 120s, 240s, 480s
+                backoff_factors = [60, 120, 240, 480]
+                eff_cooldown = backoff_factors[min(level, len(backoff_factors) - 1)]
+                cls._provider_backoff_level[prov] = level + 1
+        else:
+            eff_cooldown = cooldown_seconds
+
+        target_expiry = now + eff_cooldown
+        if target_expiry > cls._model_cooldowns.get(cooldown_key, 0):
+            cls._model_cooldowns[cooldown_key] = target_expiry
+
+        # If all candidates for this provider are cooling down, place provider in cooldown
+        prov_models = [c["model"] for c in ORCHESTRATION_CANDIDATES if c["provider"] == prov]
+        if prov_models and all(now < cls._model_cooldowns.get(f"{prov}:{m}", 0) for m in prov_models):
+            min_expiry = min(cls._model_cooldowns.get(f"{prov}:{m}", 0) for m in prov_models)
+            cls._provider_cooldowns[prov] = min_expiry
+
+        logger.warning("Model %s (%s) cooling down for %ds (rate_limit=%s, backoff_lvl=%d)",
+                       model, prov, eff_cooldown, is_rate_limit, cls._provider_backoff_level.get(prov, 0))
+
         # Clear locked model so orchestrator picks next working model
         if cls._locked_model and cls._locked_model.get("provider", "").lower() == prov and cls._locked_model.get("model") == model:
             cls._locked_model = None
-        # Only mark entire provider failed if it is a single-quota provider like Groq (Gemini has independent model quotas)
-        if is_rate_limit and prov != "gemini":
-            cls.mark_provider_failed(prov, cooldown_seconds=min(cooldown_seconds, 30))
 
     def probe_all_providers(self, keys_dict: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         """
@@ -658,8 +740,18 @@ class CloudClient:
                 req = urllib.request.Request(url, headers=headers)
                 with urllib.request.urlopen(req, timeout=6) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
+            elif prov == "openrouter" and key:
+                url = "https://openrouter.ai/api/v1/models"
+                headers["Authorization"] = f"Bearer {key}"
+                headers["HTTP-Referer"] = "https://github.com/shivambandekar2526-png/result-analysis-aids"
+                headers["X-Title"] = "Result Analysis AI"
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=6) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
                     for m in data.get("data", []):
-                        live_models.append(m.get("id", ""))
+                        mid = m.get("id", "")
+                        if ":free" in mid:
+                            live_models.append(mid)
         except Exception:
             pass
 
@@ -943,11 +1035,14 @@ class CloudClient:
             session["messages"] = messages
             return reply_text
 
-        # --- OpenAI / Groq / DeepSeek / Custom ---
+        # --- OpenAI / OpenRouter / Groq / DeepSeek / Custom ---
         else:
             base_url = self.config.get("custom_base_url") if provider == "custom" else DEFAULT_PROVIDERS.get(provider, {}).get("base_url", "https://api.openai.com/v1")
             url = f"{base_url.rstrip('/')}/chat/completions"
             headers["Authorization"] = f"Bearer {api_key}"
+            if provider == "openrouter":
+                headers["HTTP-Referer"] = "https://github.com/shivambandekar2526-png/result-analysis-aids"
+                headers["X-Title"] = "Result Analysis AI"
 
             messages = list(session.get("messages", []))
             if is_new or len(messages) == 0:
@@ -1057,7 +1152,11 @@ class CloudClient:
 
         auto_orchestrate = self.config.get("auto_orchestrate", True)
         attempts = 0
-        max_attempts = 4 if auto_orchestrate else 1
+        eligible = [
+            c for c in ORCHESTRATION_CANDIDATES
+            if self.get_api_key(c["provider"]) or c["provider"] == "custom"
+        ]
+        max_attempts = max(len(eligible), 6) if auto_orchestrate else 1
         last_error = None
 
         while attempts < max_attempts:
@@ -1103,8 +1202,6 @@ class CloudClient:
                     provider, model, e, is_rate_limit
                 )
                 self.mark_model_failed(provider, model, cooldown_seconds=60, is_rate_limit=is_rate_limit)
-                if is_rate_limit:
-                    time.sleep(min(2.0 * attempts, 4.0))
                 if not auto_orchestrate:
                     raise
 
@@ -1132,7 +1229,11 @@ class CloudClient:
         auto_orchestrate = self.config.get("auto_orchestrate", True)
         requires_vision = bool(image_bytes)
         attempts = 0
-        max_attempts = 4 if auto_orchestrate else 1
+        eligible = [
+            c for c in ORCHESTRATION_CANDIDATES
+            if (not requires_vision or c.get("supports_vision", False)) and (self.get_api_key(c["provider"]) or c["provider"] == "custom")
+        ]
+        max_attempts = max(len(eligible), 6) if auto_orchestrate else 1
         last_error = None
 
         headers = {
@@ -1148,16 +1249,15 @@ class CloudClient:
                 model = active_candidate["model"]
             else:
                 provider = self.config.get("provider", "gemini" if requires_vision else "groq").lower()
-                model = self.config.get("model", "gemini-flash-lite-latest" if requires_vision else "llama-3.3-70b-versatile")
+                model = self.config.get("model", "gemini-flash-latest" if requires_vision else "openai/gpt-oss-120b")
 
             api_key = self.get_api_key(provider)
             if not api_key and provider != "custom":
                 continue
 
-            # Per-candidate in-place rate limit pacing retry (up to 3 retries on HTTP 429 before switching models)
-            max_rate_retries = 3
+            # Per-candidate in-place retry (at most 1 quick retry for brief blips, otherwise fail over immediately)
+            max_rate_retries = 1
             rate_attempt = 0
-            candidate_success = False
 
             while rate_attempt <= max_rate_retries:
                 rate_attempt += 1
@@ -1275,22 +1375,25 @@ class CloudClient:
                         out_tok = int(usage_meta.get("output_tokens", 0) or 0)
                         tot_tok = in_tok + out_tok
 
-                    # 3. OpenAI / Groq / DeepSeek / Custom
+                    # 3. OpenAI / OpenRouter / Groq / DeepSeek / Custom
                     else:
                         base_url = self.config.get("custom_base_url") if provider == "custom" else DEFAULT_PROVIDERS.get(provider, {}).get("base_url", "https://api.openai.com/v1")
                         url = f"{base_url.rstrip('/')}/chat/completions"
                         req_headers = dict(headers)
                         req_headers["Authorization"] = f"Bearer {api_key}"
+                        if provider == "openrouter":
+                            req_headers["HTTP-Referer"] = "https://github.com/shivambandekar2526-png/result-analysis-aids"
+                            req_headers["X-Title"] = "Result Analysis AI"
 
                         messages = []
                         if system_instruction:
                             messages.append({"role": "system", "content": system_instruction})
 
-                        if image_bytes and provider == "openai":
+                        if image_bytes and provider in ("openai", "openrouter", "custom"):
                             b64_data = base64.b64encode(image_bytes).decode("utf-8")
                             content = [
-                                {"type": "image_url", "image_url": {"url": f"data:{image_mime};base64,{b64_data}"}},
-                                {"type": "text", "text": user_prompt}
+                                {"type": "text", "text": user_prompt},
+                                {"type": "image_url", "image_url": {"url": f"data:{image_mime};base64,{b64_data}"}}
                             ]
                             messages.append({"role": "user", "content": content})
                         else:
@@ -1301,6 +1404,9 @@ class CloudClient:
                             "messages": messages,
                             "temperature": temperature
                         }
+                        if provider == "openrouter":
+                            # Suppress excessive reasoning tokens (prevents 28k tokens runaway loop on Qwen/Nemotron)
+                            payload["reasoning"] = {"effort": "none"}
                         if format_json:
                             if response_schema and provider in ("openai", "groq"):
                                 payload["response_format"] = {
@@ -1320,9 +1426,10 @@ class CloudClient:
                             with urllib.request.urlopen(req, timeout=timeout) as resp:
                                 resp_data = json.loads(resp.read().decode("utf-8"))
                         except urllib.error.HTTPError as he:
-                            if he.code == 400 and format_json and "response_format" in payload:
-                                logger.info("Direct call on %s returned 400 with response_format, retrying without it...", provider)
-                                del payload["response_format"]
+                            if he.code == 400 and ("response_format" in payload or "reasoning" in payload):
+                                logger.info("Direct call on %s returned 400 with reasoning/response_format, retrying without...", provider)
+                                payload.pop("reasoning", None)
+                                payload.pop("response_format", None)
                                 data_bytes = json.dumps(payload).encode("utf-8")
                                 req_retry = urllib.request.Request(url, data=data_bytes, headers=req_headers)
                                 with urllib.request.urlopen(req_retry, timeout=timeout) as resp:
@@ -1364,7 +1471,9 @@ class CloudClient:
                     CloudClient._global_token_usage["output_tokens"] += out_tok
                     CloudClient._global_token_usage["total_tokens"] += tot_tok
 
-                    # Successful execution: update primary config and return
+                    # Successful execution: update primary config, lock active model, record provider success, and return
+                    self.record_provider_success(provider)
+                    CloudClient._locked_model = {"provider": provider, "model": model}
                     self.config["provider"] = provider
                     self.config["model"] = model
 
@@ -1405,15 +1514,24 @@ class CloudClient:
 
                     is_payload_limit = (he.code == 413) or ("tokens per minute" in err_body.lower())
                     is_rate_limit = is_payload_limit or (he.code == 429) or any(k in err_body.lower() for k in ["rate limit", "quota", "resource_exhausted", "too many requests"])
+                    is_server_busy = (he.code in (500, 502, 503, 504)) or any(k in err_body.lower() for k in ["high demand", "overloaded", "service unavailable", "backend error", "resource exhausted"])
+                    is_model_missing = (he.code in (400, 404)) and any(k in err_body.lower() for k in ["decommissioned", "not found", "does not exist", "no access", "not support", "no longer available"])
+
+                    if is_model_missing:
+                        # Model is decommissioned or unavailable -> mark in cooldown for 1 hour and break to failover immediately
+                        self.mark_model_failed(provider, model, cooldown_seconds=3600, is_rate_limit=False)
+                        msg = err_body[:250] if err_body else str(he)
+                        last_error = RuntimeError(f"HTTP {he.code} from {provider} ({model}): {msg}")
+                        break
 
                     if is_payload_limit:
-                        # Prompt exceeded model's TPM limit (e.g. Groq 8k TPM on 120B) -> switch to next model immediately
+                        self.mark_model_failed(provider, model, cooldown_seconds=120, is_rate_limit=True)
                         msg = err_body[:250] if err_body else str(he)
-                        last_error = RuntimeError(f"HTTP 413 from {provider}: {msg}")
+                        last_error = RuntimeError(f"HTTP 413 from {provider} ({model}): {msg}")
                         break
 
                     if is_rate_limit:
-                        # Multi-Key Pool Rotation: check if provider has another key configured
+                        # Check multi-key pool rotation first
                         rotated_key = self.rotate_key(provider, failed_key=api_key, cooldown_seconds=60)
                         if rotated_key:
                             api_key = rotated_key
@@ -1437,118 +1555,107 @@ class CloudClient:
                                     pass
                             continue
 
-                    if is_rate_limit and rate_attempt <= max_rate_retries:
-                        # Extract wait time from Retry-After header or response body
-                        wait_time = 4.0
-                        retry_hdr = he.headers.get("Retry-After") if hasattr(he, "headers") else None
-                        if retry_hdr:
-                            try:
-                                wait_time = max(float(retry_hdr) + 0.5, 2.0)
-                            except Exception:
-                                pass
-                        else:
-                            # Match Google Gemini's "Please retry in 15.64s", Groq's "try again in Xs", or OpenAI's "retry after Xs"
-                            m = re.search(r"(?:try again in|please retry in|retry after|wait)\s*([0-9]+(?:\.[0-9]+)?)\s*s?", err_body, re.IGNORECASE)
-                            if m:
-                                try:
-                                    wait_time = float(m.group(1)) + 1.0
-                                except Exception:
-                                    wait_time = 4.0 * rate_attempt
-                            else:
-                                wait_time = min(3.5 * rate_attempt + 2.0, 16.0)
+                        # Check if quota is exhausted for an extended duration (e.g. daily free tier exhausted)
+                        is_quota_exhausted = any(k in err_body.lower() for k in ["quota exceeded", "exceeded your current quota", "limit: 0", "limit: 20"]) or bool(re.search(r"retry in\s*[0-9]+[hm]", err_body, re.I))
+                        if is_quota_exhausted:
+                            # Quota exhausted -> fail over to next model immediately without blocking sleeps
+                            self.mark_model_failed(provider, model, cooldown_seconds=600, is_rate_limit=True)
+                            msg = err_body[:250] if err_body else str(he)
+                            last_error = RuntimeError(f"Quota exhausted on {provider} ({model}): {msg}")
+                            break
 
-                        # Allow wait times up to 30.0s so Gemini quota recovery works reliably
-                        wait_time = min(wait_time, 30.0)
+                        # Quick rate blip: at most 1 pacing retry if wait time is short (<= 4s)
+                        if rate_attempt <= max_rate_retries:
+                            m_wait = re.search(r"(?:try again in|please retry in|retry after|wait)\s*([0-9]+(?:\.[0-9]+)?)\s*s\b", err_body, re.IGNORECASE)
+                            wait_time = float(m_wait.group(1)) + 0.5 if m_wait else 2.0
+                            if wait_time <= 4.0:
+                                if audit_cb:
+                                    try:
+                                        audit_cb({
+                                            "timestamp": time.strftime("%H:%M:%S"),
+                                            "type": "cloud_ai_pacing",
+                                            "badge": "RATE LIMIT PACING",
+                                            "title": f"⏳ Rate limit on {provider.upper()} ({model}). Pacing request for {wait_time:.1f}s before 1 retry...",
+                                            "details": {
+                                                "provider": provider,
+                                                "model": model,
+                                                "wait_seconds": round(wait_time, 1),
+                                                "rate_retry": rate_attempt,
+                                                "max_retries": max_rate_retries,
+                                                "error_summary": err_body[:250] if err_body else str(he)
+                                            }
+                                        })
+                                    except Exception:
+                                        pass
+                                time.sleep(wait_time)
+                                continue
 
-                        if audit_cb:
-                            try:
-                                audit_cb({
-                                    "timestamp": time.strftime("%H:%M:%S"),
-                                    "type": "cloud_ai_pacing",
-                                    "badge": "RATE LIMIT PACING",
-                                    "title": f"⏳ Rate limit on {provider.upper()} ({model}). Pacing request for {wait_time:.1f}s before retry ({rate_attempt}/{max_rate_retries})...",
-                                    "details": {
-                                        "provider": provider,
-                                        "model": model,
-                                        "wait_seconds": round(wait_time, 1),
-                                        "rate_retry": rate_attempt,
-                                        "max_retries": max_rate_retries,
-                                        "error_summary": err_body[:250] if err_body else str(he)
-                                    }
-                                })
-                            except Exception:
-                                pass
+                        self.mark_model_failed(provider, model, cooldown_seconds=60, is_rate_limit=True)
+                        msg = err_body[:250] if err_body else str(he)
+                        last_error = RuntimeError(f"HTTP 429 from {provider} ({model}): {msg}")
+                        break
 
-                        logger.info("Rate limit on %s (%s). Pacing for %.1fs (retry %d/%d)...", provider, model, wait_time, rate_attempt, max_rate_retries)
-                        time.sleep(wait_time)
-                        continue  # Retry same candidate model
+                    if is_server_busy:
+                        if rate_attempt <= max_rate_retries:
+                            time.sleep(1.5)
+                            continue
+                        self.mark_model_failed(provider, model, cooldown_seconds=45, is_rate_limit=False)
+                        msg = err_body[:250] if err_body else str(he)
+                        last_error = RuntimeError(f"HTTP {he.code} (Server busy) from {provider}: {msg}")
+                        break
 
-                    # If not rate limit or retries exhausted, format error and break to outer failover
+                    # Format unexpected HTTP error and break to outer failover
                     msg = err_body[:250] if err_body else str(he)
                     try:
                         err_json = json.loads(err_body)
                         msg = err_json.get("error", {}).get("message", msg)
                     except Exception:
                         pass
-                    last_error = RuntimeError(f"HTTP {he.code} from {provider}: {msg}")
+                    self.mark_model_failed(provider, model, cooldown_seconds=60, is_rate_limit=False)
+                    last_error = RuntimeError(f"HTTP {he.code} from {provider} ({model}): {msg}")
+                    break
+
+                except (urllib.error.URLError, TimeoutError, socket.timeout, ConnectionError, OSError) as net_err:
+                    last_error = net_err
+                    # Timeout / Network error -> break to outer failover immediately to try next candidate
+                    self.mark_model_failed(provider, model, cooldown_seconds=60, is_rate_limit=False)
                     break
 
                 except Exception as e:
                     last_error = e
-                    # Non-HTTPError (e.g. socket timeout, network disconnection) -> break to failover
+                    self.mark_model_failed(provider, model, cooldown_seconds=60, is_rate_limit=False)
                     break
 
             # Outer failover handling
             err_str = str(last_error).lower()
             is_rate_limit = any(k in err_str for k in ["429", "quota", "too many requests", "rate limit", "resource exhausted"])
             logger.warning(
-                "Direct Cloud AI candidate failed on %s (%s): %s (rate_limit=%s). Orchestrating failover...",
-                provider, model, last_error, is_rate_limit
+                "Direct Cloud AI candidate failed on %s (%s): %s. Orchestrating failover...",
+                provider, model, last_error
             )
-            cooldown_sec = 45 if is_rate_limit else 60
+            cooldown_sec = 60 if is_rate_limit else 45
             self.mark_model_failed(provider, model, cooldown_seconds=cooldown_sec, is_rate_limit=is_rate_limit)
 
-            if audit_cb:
-                try:
-                    err_label = "HTTP 429 Quota Exceeded / Rate Limit" if is_rate_limit else f"Error: {last_error}"
-                    audit_cb({
-                        "timestamp": time.strftime("%H:%M:%S"),
-                        "type": "ai_error",
-                        "badge": "MODEL FAILOVER",
-                        "title": f"⚠️ {err_label} on {provider.upper()} ({model}). Auto-switching models...",
-                        "details": {
-                            "failed_provider": provider,
-                            "failed_model": model,
-                            "error": str(last_error),
-                            "is_rate_limit": is_rate_limit,
-                            "cooldown_seconds": cooldown_sec,
-                            "attempt": attempts
-                        }
-                    })
-                except Exception:
-                    pass
-
             if auto_orchestrate:
-                next_cand = self.get_best_working_model(force_refresh=True, probe=False)
+                next_cand = self.get_best_working_model(force_refresh=True, probe=False, requires_vision=requires_vision)
                 if audit_cb and next_cand and (next_cand["model"] != model or next_cand["provider"] != provider):
                     try:
                         audit_cb({
                             "timestamp": time.strftime("%H:%M:%S"),
                             "type": "cloud_ai_active",
-                            "badge": "NEW ACTIVE MODEL",
-                            "title": f"🔄 Switched active model: Now using {next_cand['provider'].upper()} ({next_cand['model']})",
+                            "badge": "MODEL FAILOVER",
+                            "title": f"🔄 Failover: Switching from {provider.upper()} ({model}) to {next_cand['provider'].upper()} ({next_cand['model']})",
                             "details": {
                                 "new_provider": next_cand["provider"],
                                 "new_model": next_cand["model"],
                                 "previous_provider": provider,
-                                "previous_model": model
+                                "previous_model": model,
+                                "reason": str(last_error)[:200]
                             }
                         })
                     except Exception:
                         pass
 
-            if is_rate_limit:
-                time.sleep(1.5)
             if not auto_orchestrate:
                 raise last_error
 

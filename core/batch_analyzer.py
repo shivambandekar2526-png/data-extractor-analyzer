@@ -313,13 +313,32 @@ class BatchAcademicAnalyzer:
         progress_cb: Optional[Callable[[float, str], None]] = None
     ) -> List[Dict[str, Any]]:
         """Extract student records from a PDF semester file using chosen engine."""
-        pages = ingest_pdf(file_path)
-        arch, conf = classify_document(pages)
+        arch = "tabulation"
+        students = []
+        meta = None
 
-        if progress_cb:
-            progress_cb(10.0, f"Sem {sem_num}: Classified as {arch.upper()} ({conf:.0%})")
-
-        meta, students = extract_with_possibility_engine(file_path, arch, progress_cb)
+        if engine_mode == "visual_blueprint":
+            try:
+                from .visual_extractor import run_visual_blueprint_pipeline
+                from .cloud_client import CloudClient
+                cc = CloudClient()
+                if cc.is_configured():
+                    meta, students, arch = run_visual_blueprint_pipeline(file_path, progress_cb=progress_cb, client=cc)
+                else:
+                    pages = ingest_pdf(file_path)
+                    arch, conf = classify_document(pages)
+                    meta, students = extract_with_possibility_engine(file_path, arch, progress_cb)
+            except Exception as e:
+                logger.warning("Visual blueprint failed in batch analyzer for Sem %d: %s. Falling back to possibility engine.", sem_num, e)
+                pages = ingest_pdf(file_path)
+                arch, conf = classify_document(pages)
+                meta, students = extract_with_possibility_engine(file_path, arch, progress_cb)
+        else:
+            pages = ingest_pdf(file_path)
+            arch, conf = classify_document(pages)
+            if progress_cb:
+                progress_cb(10.0, f"Sem {sem_num}: Classified as {arch.upper()} ({conf:.0%})")
+            meta, students = extract_with_possibility_engine(file_path, arch, progress_cb)
 
         records = []
         for s in students:
@@ -1001,11 +1020,18 @@ class BatchAcademicAnalyzer:
                     "details": {"file": s_info["filename"], "engine": pdf_pipeline if ftype == "pdf" else excel_mode}
                 })
 
+            step_next = 5.0 + ((idx + 1) / total_sems) * 75.0
+
+            def sem_prog(pct: float, prog_msg: str):
+                if progress_cb:
+                    scaled = step_base + (pct / 100.0) * (step_next - step_base)
+                    progress_cb(scaled, f"Sem {sem}: {prog_msg}")
+
             if ftype == "excel":
                 use_ai = (excel_mode == "ai_fix")
-                records = self.parse_excel_semester(fpath, sem, target_branch, use_ai_fix=use_ai)
+                records = self.parse_excel_semester(fpath, sem, target_branch, use_ai_fix=use_ai, progress_cb=sem_prog)
             else:
-                records = self.extract_pdf_semester(fpath, sem, engine_mode=pdf_pipeline)
+                records = self.extract_pdf_semester(fpath, sem, engine_mode=pdf_pipeline, progress_cb=sem_prog)
 
             semester_data[sem] = records
 

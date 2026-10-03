@@ -56,7 +56,7 @@ STUDENT_JSON_SCHEMA = {
 }
 
 SYSTEM_INSTRUCTION = (
-    "You are an expert academic result data extractor. "
+    "You are an expert academic result data extractor and mathematical auditor. "
     "Extract student records from the provided page text into strict JSON matching the schema. "
     "Rules:\n"
     "1. Extract the seat number (7-10 digits), full student name, and gender (if name starts with '/' then 'F', else 'M').\n"
@@ -64,7 +64,9 @@ SYSTEM_INSTRUCTION = (
     "3. Extract numeric totals: total marks, credits earned, total credit points (CG/ECG), and SGPI/GPA.\n"
     "4. Extract 16-digit PRN, 12-digit ABC ID, ERN, or Mother's Name if present.\n"
     "5. In Summary tokens like '539 P 22 175 7.95', map total_marks='539', result_status='P', credits_earned='22', total_cg='175', sgpi='7.95'.\n"
-    "6. If the student is identified as Diploma, DSE, Direct Second Year, or joined laterally, set candidate_type='Diploma', else 'Regular'."
+    "6. If the student is identified as Diploma, DSE, Direct Second Year, or joined laterally, set candidate_type='Diploma', else 'Regular'.\n"
+    "7. SIMULTANEOUS IN-FLIGHT AUDIT & SELF-HEALING: Verify component mark equations (tot = th + ia, or tw + pr), cg = credits * gp, and sgpi = total_cg / credits_earned. If an OCR misread or smudge is detected, self-heal inline using equation balance.\n"
+    "8. PHYSICAL COLUMN MAPPING: Maintain strict horizontal column alignment. Do NOT shift or swap column marks."
 )
 
 
@@ -74,7 +76,8 @@ def extract_student_blocks_with_ai(
     archetype: str,
     timeout: int = 45,
     page_num: int = 1,
-    audit_callback: Optional[Any] = None
+    audit_callback: Optional[Any] = None,
+    layout_context: str = ""
 ) -> List[StudentRecord]:
     """
     Pass clean spatial/student text to local Ollama with JSON Schema enforcement.
@@ -86,7 +89,8 @@ def extract_student_blocks_with_ai(
         archetype=archetype,
         timeout=timeout,
         page_num=page_num,
-        audit_callback=audit_callback
+        audit_callback=audit_callback,
+        layout_context=layout_context
     )
     return students
 
@@ -97,7 +101,8 @@ def extract_student_blocks_with_ai_detailed(
     archetype: str,
     timeout: int = 45,
     page_num: int = 1,
-    audit_callback: Optional[Any] = None
+    audit_callback: Optional[Any] = None,
+    layout_context: str = ""
 ) -> Tuple[List[StudentRecord], Optional[str], float]:
     """
     Pass clean text to Ollama with full telemetry (duration, raw JSON, parsed students).
@@ -106,11 +111,17 @@ def extract_student_blocks_with_ai_detailed(
     if not client.is_available() or not formatted_page_text.strip():
         return [], None, 0.0
 
-    prompt = (
-        f"Extract all student academic records from this {archetype} text segment into JSON.\n"
-        "Summary format: TotalMarks Result Credits TotalCG SGPI (e.g. '539 P 22 175 7.95').\n\n"
-        f"DOCUMENT TEXT:\n{formatted_page_text[:4000]}"
+    prompt_parts = [
+        f"Extract all student academic records from this {archetype} text segment into JSON.",
+        "Summary format: TotalMarks Result Credits TotalCG SGPI (e.g. '539 P 22 175 7.95')."
+    ]
+    if layout_context:
+        prompt_parts.append("\n" + layout_context)
+    prompt_parts.append(
+        "\nSimultaneously verify equations: tot = th + ia, cg = credits * gp, and sgpi = total_cg / credits_earned. Self-heal any OCR misread on the fly.\n"
     )
+    prompt_parts.append(f"DOCUMENT TEXT:\n{formatted_page_text[:4000]}")
+    prompt = "\n".join(prompt_parts)
 
     t0 = time.time()
     try:

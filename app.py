@@ -48,6 +48,7 @@ from core.excel_csv_ingester import TabularIngester, sanitize_dict_for_json
 from core.batch_analyzer import BatchAcademicAnalyzer
 from core.batch_excel_generator import BatchExcelReportGenerator
 from exporter import export_ai_extracted_data, write_csv_file, write_excel_file
+from core.execution_controller import ExtractionController
 
 tabular_ingester = TabularIngester(OUTPUT_DIR)
 batch_analyzer = BatchAcademicAnalyzer(OUTPUT_DIR)
@@ -65,8 +66,12 @@ app.json.sort_keys = False
 jobs: Dict[str, Dict[str, Any]] = {}
 jobs_lock = threading.Lock()
 
+job_controllers: Dict[str, ExtractionController] = {}
+job_controllers_lock = threading.Lock()
+
 batch_jobs: Dict[str, Dict[str, Any]] = {}
 batch_jobs_lock = threading.Lock()
+
 
 
 def update_job_progress(job_id: str, progress: float, message: str) -> None:
@@ -87,6 +92,8 @@ def update_batch_job_progress(job_id: str, progress: float, message: str) -> Non
 
 def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosscheck: bool = False, pipeline_mode: str = "local") -> None:
     """Background extraction thread executing the AI pipeline (Local, Cloud, or Visual Blueprint)."""
+    with job_controllers_lock:
+        ctrl = job_controllers.get(job_id)
     try:
         client = None
         update_job_progress(job_id, 2.0, "Starting AI extraction pipeline...")
@@ -112,34 +119,54 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosschec
                             jobs[job_id]["token_usage"]["output"] += out_tok
                             jobs[job_id]["token_usage"]["total"] += tot_tok
 
+                        # Capture in-flight simultaneous audit healing as verified discrepancy cards
+                        if entry.get("type") == "inflight_audit_healed":
+                            if "discrepancies" not in jobs[job_id]:
+                                jobs[job_id]["discrepancies"] = []
+                            disc_card = {
+                                "seat_no": str(details.get("seat_no", "")).strip(),
+                                "field_name": str(details.get("field", "")).strip(),
+                                "extracted_val": details.get("raw_extracted"),
+                                "suggested_val": details.get("audited_and_fixed"),
+                                "reason": details.get("reason") or details.get("proof_rule") or "Simultaneous in-flight mathematical auto-heal",
+                                "evidence_quote": f"Verified in-flight via equation ({details.get('proof_rule', 'Single-pass')})",
+                                "sandbox_status": "VERIFIED",
+                                "sandbox_reason": "Audited and verified in-flight during single-pass extraction.",
+                                "applied": True,
+                                "card_type": "data",
+                                "page_number": int(details.get("page", 1))
+                            }
+                            jobs[job_id]["discrepancies"].append(disc_card)
+
+        def on_live_student(student, catalog):
+            with jobs_lock:
+                if job_id in jobs:
+                    flat = student.to_flat_dict(catalog)
+                    seat = str(flat.get("Seat_No", flat.get("seat_no", ""))).strip()
+                    existing_idx = None
+                    if seat:
+                        for idx, s in enumerate(jobs[job_id]["live_students"]):
+                            if str(s.get("Seat_No", s.get("seat_no", ""))).strip() == seat:
+                                existing_idx = idx
+                                break
+                    if existing_idx is not None:
+                        jobs[job_id]["live_students"][existing_idx] = flat
+                    else:
+                        jobs[job_id]["live_students"].append(flat)
+                    if catalog and getattr(catalog, "courses", None):
+                        jobs[job_id]["catalog"] = catalog.to_dict()
+
+        def on_live_patch_update(st_dict):
+            with jobs_lock:
+                if job_id in jobs:
+                    seat = str(st_dict.get("Seat_No", st_dict.get("seat_no", ""))).strip()
+                    for idx, s in enumerate(jobs[job_id]["live_students"]):
+                        if str(s.get("Seat_No", s.get("seat_no", ""))).strip() == seat:
+                            jobs[job_id]["live_students"][idx] = dict(st_dict)
+                            break
+
         t0 = time.time()
-        if pipeline_mode == "block_extraction":
-            from core.block_extractor import run_block_extraction_pipeline
-            from core.cloud_client import CloudClient, ORCHESTRATION_CANDIDATES
-            cc_probe = CloudClient()
-            active_cand = cc_probe.get_best_working_model(requires_vision=True)
-
-            log_audit({
-                "timestamp": time.strftime("%H:%M:%S"),
-                "type": "cloud_ai_active",
-                "badge": "BLOCK EXTRACTION",
-                "title": f"Universal Block Extraction Initialized with {active_cand['provider'].upper()} ({active_cand['model']})",
-                "details": {
-                    "provider": active_cand["provider"],
-                    "model": active_cand["model"],
-                    "pipeline": "block_extraction",
-                    "auto_failover": True,
-                    "failover_candidates": [c["label"] for c in ORCHESTRATION_CANDIDATES[:5]]
-                }
-            })
-
-            meta, students, archetype = run_block_extraction_pipeline(
-                pdf_path=target_pdf_path,
-                progress_cb=on_progress,
-                audit_cb=log_audit,
-                client=cc_probe
-            )
-        elif pipeline_mode == "visual_blueprint":
+        if pipeline_mode == "visual_blueprint":
             from core.visual_extractor import run_visual_blueprint_pipeline
             from core.cloud_client import CloudClient, ORCHESTRATION_CANDIDATES
             cc_probe = CloudClient()
@@ -163,7 +190,9 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosschec
                 pdf_path=target_pdf_path,
                 progress_cb=on_progress,
                 audit_cb=log_audit,
-                client=cc_probe
+                client=cc_probe,
+                live_cb=on_live_student,
+                controller=ctrl
             )
         elif pipeline_mode == "cloud" or cloud_crosscheck:
             # 100% Pure Cloud AI Pipeline: bypass local Ollama neural inference passes entirely
@@ -200,7 +229,9 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosschec
             })
 
             update_job_progress(job_id, 20.0, f"Matched Archetype: {archetype} ({confidence:.0%}). Extracting ledger...")
-            meta, students = extract_with_possibility_engine(target_pdf_path, archetype, on_progress)
+            meta, students = extract_with_possibility_engine(
+                target_pdf_path, archetype, on_progress, live_callback=on_live_student, controller=ctrl
+            )
             log_audit({
                 "timestamp": time.strftime("%H:%M:%S"),
                 "type": "structure",
@@ -217,13 +248,46 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosschec
                 pdf_path=target_pdf_path,
                 progress_callback=on_progress,
                 client=client,
-                audit_callback=log_audit
+                audit_callback=log_audit,
+                live_callback=on_live_student,
+                controller=ctrl
             )
+
+        was_stopped = bool(ctrl and ctrl.is_stopped)
+        if was_stopped:
+            log_audit({
+                "timestamp": time.strftime("%H:%M:%S"),
+                "type": "control",
+                "badge": "STOPPED",
+                "title": f"Extraction stopped by user. Preserving {len(students)} student records captured.",
+                "details": {"records_preserved": len(students)}
+            })
+
+        if was_stopped and len(students) == 0:
+            with jobs_lock:
+                if job_id in jobs:
+                    jobs[job_id]["status"] = "stopped"
+                    jobs[job_id]["progress"] = 0.0
+                    jobs[job_id]["message"] = "Extraction stopped before records were captured."
+            return
 
         flat_records = [s.to_flat_dict(meta.catalog) for s in students]
 
         ai_crosscheck_result = None
-        if (pipeline_mode == "cloud" or (cloud_crosscheck and pipeline_mode != "visual_blueprint")) and run_ai_cross_check:
+        if pipeline_mode == "visual_blueprint":
+            with jobs_lock:
+                in_flight_cards = list(jobs.get(job_id, {}).get("discrepancies", []))
+            ai_crosscheck_result = {
+                "success": True,
+                "mode": "simultaneous_inflight_audit",
+                "total_discrepancies": len(in_flight_cards),
+                "verified_patches": len(in_flight_cards),
+                "applied_patches": len(in_flight_cards),
+                "rejected_patches": 0,
+                "discrepancies": in_flight_cards,
+                "summary": f"Simultaneous in-flight audit complete! {len(in_flight_cards)} items verified and self-healed in a single pass without extra token overhead."
+            }
+        elif not was_stopped and (pipeline_mode == "cloud" or cloud_crosscheck) and run_ai_cross_check:
             update_job_progress(job_id, 86.0, "Auditing & self-healing records with Cloud AI...")
             try:
                 def cc_progress(pct: float, msg: str, card: Optional[Dict[str, Any]] = None):
@@ -242,7 +306,9 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosschec
                     pdf_path=target_pdf_path,
                     progress_cb=cc_progress,
                     auto_apply=True,
-                    audit_cb=log_audit
+                    audit_cb=log_audit,
+                    controller=ctrl,
+                    live_update_cb=on_live_patch_update
                 )
             except Exception as e:
                 log_audit({
@@ -313,6 +379,7 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosschec
             "exam_title": meta.exam_title,
             "result_date": meta.result_date,
             "total_students": len(students),
+            "stopped_early": was_stopped,
             "checksum_summary": checksum_summary,
             "ai_crosscheck_summary": ai_crosscheck_result,
             "students": flat_records,
@@ -326,7 +393,10 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosschec
             if job_id in jobs:
                 jobs[job_id]["status"] = "completed"
                 jobs[job_id]["progress"] = 100.0
-                jobs[job_id]["message"] = f"Extraction complete: {len(students)} students processed in {duration}s."
+                if was_stopped:
+                    jobs[job_id]["message"] = f"Extraction stopped: {len(students)} student records preserved and saved in {duration}s."
+                else:
+                    jobs[job_id]["message"] = f"Extraction complete: {len(students)} students processed in {duration}s."
                 jobs[job_id]["result"] = res_payload
 
     except Exception as e:
@@ -769,6 +839,10 @@ def start_extraction():
         return jsonify({"success": False, "error": "No valid PDF document or tabular file provided or found."}), 400
 
     job_id = str(uuid.uuid4())
+    ctrl = ExtractionController(job_id)
+    with job_controllers_lock:
+        job_controllers[job_id] = ctrl
+
     with jobs_lock:
         jobs[job_id] = {
             "status": "processing",
@@ -777,6 +851,10 @@ def start_extraction():
             "created_at": time.time(),
             "audit_logs": [],
             "token_usage": {"input": 0, "output": 0, "total": 0},
+            "live_students": [],
+            "catalog": [],
+            "is_paused": False,
+            "is_stopped": False,
             "result": None,
             "error": None
         }
@@ -821,12 +899,96 @@ def start_extraction():
 
 @app.route("/api/jobs/<job_id>", methods=["GET"])
 def get_job_status(job_id):
-    """Poll job progress."""
+    """Poll job progress, live streaming student records, and control status."""
     with jobs_lock:
         job = jobs.get(job_id)
     if not job:
         return jsonify({"success": False, "error": "Job not found."}), 404
-    return jsonify(job)
+
+    with job_controllers_lock:
+        ctrl = job_controllers.get(job_id)
+
+    resp = dict(job)
+    if ctrl:
+        resp["is_paused"] = ctrl.is_paused
+        resp["is_stopped"] = ctrl.is_stopped
+    resp["live_count"] = len(job.get("live_students", []))
+    return jsonify(resp)
+
+
+@app.route("/api/jobs/<job_id>/pause", methods=["POST"])
+def pause_extraction_job(job_id):
+    """Pause background extraction job."""
+    with job_controllers_lock:
+        ctrl = job_controllers.get(job_id)
+    if not ctrl:
+        return jsonify({"success": False, "error": "Job not found or already terminated."}), 404
+
+    ctrl.pause()
+    with jobs_lock:
+        if job_id in jobs:
+            jobs[job_id]["is_paused"] = True
+            jobs[job_id]["status"] = "paused"
+            jobs[job_id]["message"] = "Extraction paused by user. Inspect the live table or click Resume."
+            if "audit_logs" in jobs[job_id]:
+                jobs[job_id]["audit_logs"].append({
+                    "timestamp": time.strftime("%H:%M:%S"),
+                    "type": "control",
+                    "badge": "PAUSED",
+                    "title": "Extraction execution paused by user.",
+                    "details": {"action": "pause"}
+                })
+    return jsonify({"success": True, "message": "Extraction paused."})
+
+
+@app.route("/api/jobs/<job_id>/resume", methods=["POST"])
+def resume_extraction_job(job_id):
+    """Resume background extraction job."""
+    with job_controllers_lock:
+        ctrl = job_controllers.get(job_id)
+    if not ctrl:
+        return jsonify({"success": False, "error": "Job not found or already terminated."}), 404
+
+    ctrl.resume()
+    with jobs_lock:
+        if job_id in jobs:
+            jobs[job_id]["is_paused"] = False
+            jobs[job_id]["status"] = "processing"
+            jobs[job_id]["message"] = "Resuming extraction..."
+            if "audit_logs" in jobs[job_id]:
+                jobs[job_id]["audit_logs"].append({
+                    "timestamp": time.strftime("%H:%M:%S"),
+                    "type": "control",
+                    "badge": "RESUMED",
+                    "title": "Extraction execution resumed by user.",
+                    "details": {"action": "resume"}
+                })
+    return jsonify({"success": True, "message": "Extraction resumed."})
+
+
+@app.route("/api/jobs/<job_id>/stop", methods=["POST"])
+def stop_extraction_job(job_id):
+    """Stop background extraction job and finalize whatever records are captured."""
+    with job_controllers_lock:
+        ctrl = job_controllers.get(job_id)
+    if not ctrl:
+        return jsonify({"success": False, "error": "Job not found or already terminated."}), 404
+
+    ctrl.stop()
+    with jobs_lock:
+        if job_id in jobs:
+            jobs[job_id]["is_stopped"] = True
+            jobs[job_id]["message"] = "Stopping extraction and finalizing records..."
+            if "audit_logs" in jobs[job_id]:
+                jobs[job_id]["audit_logs"].append({
+                    "timestamp": time.strftime("%H:%M:%S"),
+                    "type": "control",
+                    "badge": "STOPPING",
+                    "title": "Stop signal received. Preserving all records fetched so far...",
+                    "details": {"action": "stop"}
+                })
+    return jsonify({"success": True, "message": "Stop requested. Finalizing..."})
+
 
 
 # =========================================================================
