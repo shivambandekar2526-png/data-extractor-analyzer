@@ -34,6 +34,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initAiCrosscheckModal();
   initTabularModal();
   initBatchSuite();
+  initDataCleaningUI();
 });
 
 // 1. Status Polling & Model Switcher
@@ -3938,6 +3939,302 @@ function renderRawSemesterTable(sem) {
   });
 }
 
+// ==========================================================================
+// Smart Data Cleaning & Audit Diff Review
+// ==========================================================================
+let activeCleaningData = null;
+let activeCleaningFilter = "all";
 
+function initDataCleaningUI() {
+  const btnOpenCleaner = document.getElementById("btnOpenDataCleaner");
+  const modalBackdrop = document.getElementById("cleanDataModalBackdrop");
+  const btnCloseModal = document.getElementById("btnCloseCleanModal");
+  const btnDiscard = document.getElementById("btnDiscardCleanChanges");
+  const btnAccept = document.getElementById("btnAcceptCleanChanges");
+  const searchInput = document.getElementById("cleanDiffSearch");
 
+  if (btnOpenCleaner) {
+    btnOpenCleaner.addEventListener("click", () => {
+      runDataCleaningAudit();
+    });
+  }
 
+  if (btnCloseModal) {
+    btnCloseModal.addEventListener("click", () => {
+      if (modalBackdrop) modalBackdrop.classList.add("hidden");
+    });
+  }
+
+  if (btnDiscard) {
+    btnDiscard.addEventListener("click", async () => {
+      if (confirm("Discard all proposed cleaning modifications? Your dataset will remain in its original state.")) {
+        await discardCleaningChanges();
+      }
+    });
+  }
+
+  if (btnAccept) {
+    btnAccept.addEventListener("click", async () => {
+      await acceptCleaningChanges();
+    });
+  }
+
+  const filterBtns = document.querySelectorAll(".clean-filter-btn");
+  filterBtns.forEach(btn => {
+    btn.addEventListener("click", () => {
+      filterBtns.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      activeCleaningFilter = btn.getAttribute("data-filter") || "all";
+      renderCleaningDiffTable();
+    });
+  });
+
+  if (searchInput) {
+    searchInput.addEventListener("input", () => {
+      renderCleaningDiffTable();
+    });
+  }
+}
+
+async function runDataCleaningAudit() {
+  if (!currentRecords || currentRecords.length === 0) {
+    alert("Please extract or select a dataset first before running data cleaning.");
+    return;
+  }
+
+  const btnOpen = document.getElementById("btnOpenDataCleaner");
+  const origHtml = btnOpen ? btnOpen.innerHTML : "";
+  if (btnOpen) {
+    btnOpen.disabled = true;
+    btnOpen.innerHTML = "⏳ Auditing &amp; Cleaning...";
+  }
+
+  try {
+    const res = await fetch("/api/clean/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        students: currentRecords,
+        folder_name: currentFolderName
+      })
+    });
+    const data = await res.json();
+
+    if (!data.success) {
+      alert(`Data cleaning error: ${data.error || "Unknown error"}`);
+      return;
+    }
+
+    activeCleaningData = data;
+    renderCleaningModal(data);
+
+    const modalBackdrop = document.getElementById("cleanDataModalBackdrop");
+    if (modalBackdrop) modalBackdrop.classList.remove("hidden");
+
+  } catch (err) {
+    console.error("Failed to run data cleaning audit:", err);
+    alert(`Data cleaning failed: ${err.message}`);
+  } finally {
+    if (btnOpen) {
+      btnOpen.disabled = false;
+      btnOpen.innerHTML = origHtml;
+    }
+  }
+}
+
+function renderCleaningModal(data) {
+  const summary = data.summary || {};
+  const changes = data.changes || [];
+
+  setText("cleanStatTotalRows", summary.total_rows || 0);
+  setText("cleanStatTotalChanges", summary.total_changes || 0);
+  setText("cleanStatImputed", summary.imputed_missing || 0);
+  setText("cleanStatDiscrepancies", summary.fixed_discrepancies || 0);
+  setText("cleanStatFormat", summary.format_changes || 0);
+
+  const imputedCount = changes.filter(c => c.change_type === "missing_imputed").length;
+  const discrepancyCount = changes.filter(c => c.change_type === "discrepancy_fixed").length;
+  const formatCount = changes.filter(c => c.change_type === "format").length;
+  const outlierCount = changes.filter(c => c.change_type === "outlier_flagged").length;
+
+  setText("chipAllCount", changes.length);
+  setText("chipImputedCount", imputedCount);
+  setText("chipDiscrepancyCount", discrepancyCount);
+  setText("chipFormatCount", formatCount);
+  setText("chipOutlierCount", outlierCount);
+
+  renderCleaningDiffTable();
+}
+
+function renderCleaningDiffTable() {
+  if (!activeCleaningData) return;
+  const tbody = document.getElementById("cleanDiffBody");
+  const emptyMsg = document.getElementById("cleanEmptyMsg");
+  const table = document.getElementById("cleanDiffTable");
+  const searchVal = (document.getElementById("cleanDiffSearch")?.value || "").toLowerCase().trim();
+
+  if (!tbody) return;
+  tbody.innerHTML = "";
+
+  const allChanges = activeCleaningData.changes || [];
+  let filtered = allChanges;
+
+  if (activeCleaningFilter !== "all") {
+    filtered = filtered.filter(c => c.change_type === activeCleaningFilter);
+  }
+
+  if (searchVal) {
+    filtered = filtered.filter(c => {
+      const name = String(c.student_name || "").toLowerCase();
+      const seat = String(c.seat_no || "").toLowerCase();
+      const col = String(c.column || "").toLowerCase();
+      const reason = String(c.reason || "").toLowerCase();
+      return name.includes(searchVal) || seat.includes(searchVal) || col.includes(searchVal) || reason.includes(searchVal);
+    });
+  }
+
+  if (filtered.length === 0) {
+    if (emptyMsg) emptyMsg.classList.remove("hidden");
+    if (table) table.classList.add("hidden");
+    return;
+  }
+
+  if (emptyMsg) emptyMsg.classList.add("hidden");
+  if (table) table.classList.remove("hidden");
+
+  filtered.slice(0, 150).forEach((c, idx) => {
+    const tr = document.createElement("tr");
+
+    let typeClass = "type-format";
+    let typeLabel = "Format";
+    if (c.change_type === "missing_imputed") {
+      typeClass = "type-missing_imputed";
+      typeLabel = "Imputed";
+    } else if (c.change_type === "discrepancy_fixed") {
+      typeClass = "type-discrepancy_fixed";
+      typeLabel = "Discrepancy";
+    } else if (c.change_type === "outlier_flagged") {
+      typeClass = "type-outlier_flagged";
+      typeLabel = "Outlier";
+    }
+
+    const oldDisplay = (c.old_value !== null && c.old_value !== undefined && c.old_value !== "") ? c.old_value : "null / missing";
+    const newDisplay = (c.new_value !== null && c.new_value !== undefined && c.new_value !== "") ? c.new_value : "--";
+
+    tr.innerHTML = `
+      <td style="color:#64748B; font-weight:600; text-align:center;">${c.row_index + 1}</td>
+      <td>
+        <strong style="color:#F8FAFC;">${c.student_name || "Student"}</strong>
+        <div style="font-size:0.75rem; color:#94A3B8; font-family:monospace;">Seat: ${c.seat_no || "N/A"}</div>
+      </td>
+      <td>
+        <span style="font-family:monospace; font-weight:600; color:#38BDF8;">${c.column || ""}</span>
+      </td>
+      <td>
+        <span class="diff-old-val">${oldDisplay}</span>
+      </td>
+      <td>
+        <span class="diff-new-val">${newDisplay}</span>
+      </td>
+      <td>
+        <span class="badge-clean-type ${typeClass}">${typeLabel}</span>
+      </td>
+      <td style="color:#CBD5E1; font-size:0.8rem; max-width:280px; line-height:1.4;">
+        ${c.reason || ""}
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+async function acceptCleaningChanges() {
+  if (!activeCleaningData) return;
+
+  const btnAccept = document.getElementById("btnAcceptCleanChanges");
+  const origText = btnAccept ? btnAccept.textContent : "";
+  if (btnAccept) {
+    btnAccept.disabled = true;
+    btnAccept.textContent = "⏳ Promoting to Primary...";
+  }
+
+  try {
+    const res = await fetch("/api/clean/apply", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        folder_name: currentFolderName,
+        action: "accept",
+        cleaned_students: activeCleaningData.cleaned_records
+      })
+    });
+    const resText = await res.text();
+    let data;
+    try {
+      data = JSON.parse(resText);
+    } catch (e) {
+      alert(`Server error (${res.status}): ${resText.slice(0, 300)}`);
+      return;
+    }
+
+    if (!data.success) {
+      alert(`Failed to apply changes: ${data.error || "Unknown error"}`);
+      return;
+    }
+
+    if (Array.isArray(currentRecords) && currentRecords.length > 0) {
+      undoSnapshots.push(JSON.parse(JSON.stringify(currentRecords)));
+      const undoBtn = document.getElementById("btnUndoChat");
+      if (undoBtn) undoBtn.disabled = false;
+    }
+
+    currentRecords = data.records;
+    filteredRecords = [...currentRecords];
+    currentPage = 1;
+    displayTablePage();
+    updateMetaCount(currentRecords.length);
+
+    currentEdaData = null;
+
+    const modalBackdrop = document.getElementById("cleanDataModalBackdrop");
+    if (modalBackdrop) modalBackdrop.classList.add("hidden");
+
+    const auditPill = document.getElementById("auditPill");
+    if (auditPill) {
+      auditPill.innerHTML = `✨ <strong>Cleaned &amp; Verified</strong> (${currentRecords.length} records)`;
+      auditPill.style.background = "rgba(16, 185, 129, 0.15)";
+      auditPill.style.borderColor = "rgba(16, 185, 129, 0.4)";
+      auditPill.style.color = "#10B981";
+    }
+
+    alert(`✅ Success: ${data.message}\nYour primary table and subsequent EDA will now use the clean, standardized dataset.`);
+
+  } catch (err) {
+    console.error("Error accepting cleaning changes:", err);
+    alert(`Could not accept cleaning changes: ${err.message}`);
+  } finally {
+    if (btnAccept) {
+      btnAccept.disabled = false;
+      btnAccept.textContent = origText;
+    }
+  }
+}
+
+async function discardCleaningChanges() {
+  try {
+    await fetch("/api/clean/apply", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        folder_name: currentFolderName,
+        action: "discard"
+      })
+    });
+  } catch (err) {
+    console.warn("Could not notify server of discard:", err);
+  }
+
+  activeCleaningData = null;
+  const modalBackdrop = document.getElementById("cleanDataModalBackdrop");
+  if (modalBackdrop) modalBackdrop.classList.add("hidden");
+  alert("Cleaning modifications discarded. Original dataset is unchanged.");
+}

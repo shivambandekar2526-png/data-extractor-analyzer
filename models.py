@@ -31,6 +31,18 @@ class CourseCatalog:
     """Registry of all courses discovered from a document."""
     courses: List[Course] = field(default_factory=list)
 
+    def add_course(self, code: str, name: str = "", heads: Optional[List[str]] = None) -> Course:
+        existing = self.get_by_code(code)
+        if existing:
+            if name and not existing.name:
+                existing.name = name
+            if heads:
+                existing.heads = list(heads)
+            return existing
+        c = Course(code=code, name=name, heads=list(heads or []))
+        self.courses.append(c)
+        return c
+
     def code_to_name(self) -> Dict[str, str]:
         return {c.code: c.name for c in self.courses}
 

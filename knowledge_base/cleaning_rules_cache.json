@@ -1,0 +1,767 @@
+{
+  "f56fb7b368103cfe": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "gender": "Gender",
+      "sgpi": "SGPI",
+      "cgpi": "CGPI",
+      "total_marks": "Total_Marks",
+      "result": "Result_Status",
+      "candidate_type": "Candidate_Type"
+    },
+    "courses": {
+      "CSC801": {
+        "TH": "CSC801_TH",
+        "IA": "CSC801_IA",
+        "TOT": "CSC801_TOT",
+        "GRADE": "CSC801_Grade",
+        "GP": "CSC801_GP",
+        "CREDITS": "CSC801_Credits",
+        "CG": "CSC801_CG"
+      },
+      "CSDO8013": {
+        "TH": "CSDO8013_TH",
+        "IA": "CSDO8013_IA",
+        "TOT": "CSDO8013_TOT",
+        "GRADE": "CSDO8013_Grade",
+        "GP": "CSDO8013_GP",
+        "CREDITS": "CSDO8013_Credits",
+        "CG": "CSDO8013_CG"
+      },
+      "CSDO8023": {
+        "TH": "CSDO8023_TH",
+        "IA": "CSDO8023_IA",
+        "TOT": "CSDO8023_TOT",
+        "GRADE": "CSDO8023_Grade",
+        "GP": "CSDO8023_GP",
+        "CREDITS": "CSDO8023_Credits",
+        "CG": "CSDO8023_CG"
+      },
+      "ILO8021": {
+        "TH": "ILO8021_TH",
+        "IA": "ILO8021_IA",
+        "TOT": "ILO8021_TOT",
+        "GRADE": "ILO8021_Grade",
+        "GP": "ILO8021_GP",
+        "CREDITS": "ILO8021_Credits",
+        "CG": "ILO8021_CG"
+      },
+      "CSL801": {
+        "TW": "CSL801_TW",
+        "PR": "CSL801_PR",
+        "GRADE": "CSL801_Grade",
+        "GP": "CSL801_GP",
+        "CREDITS": "CSL801_Credits",
+        "CG": "CSL801_CG"
+      },
+      "AIDSCSDOL8013": {
+        "TW": "AIDSCSDOL8013_TW",
+        "PR": "AIDSCSDOL8013_PR",
+        "GRADE": "AIDSCSDOL8013_Grade",
+        "GP": "AIDSCSDOL8013_GP",
+        "CREDITS": "AIDSCSDOL8013_Credits",
+        "CG": "AIDSCSDOL8013_CG"
+      },
+      "AIDSCSDOL8023": {
+        "TW": "AIDSCSDOL8023_TW",
+        "PR": "AIDSCSDOL8023_PR",
+        "GRADE": "AIDSCSDOL8023_Grade",
+        "GP": "AIDSCSDOL8023_GP",
+        "CREDITS": "AIDSCSDOL8023_Credits",
+        "CG": "AIDSCSDOL8023_CG"
+      },
+      "AIDSCSP801": {
+        "TW": "AIDSCSP801_TW",
+        "PR": "AIDSCSP801_PR",
+        "GRADE": "AIDSCSP801_Grade",
+        "GP": "AIDSCSP801_GP",
+        "CREDITS": "AIDSCSP801_Credits",
+        "CG": "AIDSCSP801_CG"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "CSC801_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC801_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC801_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSDO8013_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSDO8013_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSDO8013_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSDO8023_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSDO8023_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSDO8023_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "ILO8021_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "ILO8021_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "ILO8021_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL801_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL801_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "AIDSCSDOL8013_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "AIDSCSDOL8013_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "AIDSCSDOL8023_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "AIDSCSDOL8023_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "AIDSCSP801_TW": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "AIDSCSP801_PR": {
+        "min": 0.0,
+        "max": 50.0
+      }
+    },
+    "source": "heuristic_fallback"
+  },
+  "079d8d844a3beabb": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "total_marks": "Total_Marks"
+    },
+    "courses": {},
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      }
+    },
+    "source": "heuristic_fallback"
+  },
+  "b217eb52956117b8": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "gender": "Gender",
+      "sgpi": "SGPI",
+      "total_marks": "Total_Marks",
+      "result": "Result_Status"
+    },
+    "courses": {
+      "CSC801": {
+        "TH": "CSC801_TH",
+        "IA": "CSC801_IA",
+        "TOT": "CSC801_TOT"
+      },
+      "CSC802": {
+        "TH": "CSC802_TH",
+        "IA": "CSC802_IA",
+        "TOT": "CSC802_TOT"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "CSC801_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC801_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC801_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC802_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC802_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC802_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      }
+    },
+    "source": "heuristic_fallback"
+  },
+  "33625d3a7ec53ea3": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "gender": null,
+      "sgpi": null,
+      "cgpi": null,
+      "total_marks": "Total_Marks",
+      "max_marks": null,
+      "result": null,
+      "candidate_type": null
+    },
+    "courses": {
+      "CSC801": {
+        "TH": "CSC801_TH",
+        "IA": "CSC801_IA",
+        "TOT": "CSC801_TOT"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "CSC801_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC801_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC801_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      }
+    },
+    "source": "ai_determined"
+  },
+  "eec47f1da44a4077": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "gender": "Gender",
+      "sgpi": "SGPI",
+      "cgpi": null,
+      "total_marks": "Total_Marks",
+      "max_marks": null,
+      "result": "Result_Status",
+      "candidate_type": null
+    },
+    "courses": {
+      "CSC801": {
+        "TH": "CSC801_TH",
+        "IA": "CSC801_IA",
+        "TOT": "CSC801_TOT"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "CSC801_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC801_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC801_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      }
+    },
+    "source": "ai_determined"
+  },
+  "81e9efc951f6881a": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "gender": "Gender",
+      "sgpi": "SGPI",
+      "cgpi": "CGPI",
+      "total_marks": "Total_Marks",
+      "max_marks": "Max_Marks",
+      "result": "Result_Status",
+      "candidate_type": "Candidate_Type"
+    },
+    "courses": {
+      "CSC801": {
+        "TH": "CSC801_TH",
+        "IA": "CSC801_IA",
+        "TOT": "CSC801_TOT",
+        "GRADE": "CSC801_Grade",
+        "GP": "CSC801_GP",
+        "CREDITS": "CSC801_Credits",
+        "CG": "CSC801_CG"
+      },
+      "CSDO8013": {
+        "TH": "CSDO8013_TH",
+        "IA": "CSDO8013_IA",
+        "TOT": "CSDO8013_TOT",
+        "GRADE": "CSDO8013_Grade",
+        "GP": "CSDO8013_GP",
+        "CREDITS": "CSDO8013_Credits",
+        "CG": "CSDO8013_CG"
+      },
+      "CSDO8023": {
+        "TH": "CSDO8023_TH",
+        "IA": "CSDO8023_IA",
+        "TOT": "CSDO8023_TOT",
+        "GRADE": "CSDO8023_Grade",
+        "GP": "CSDO8023_GP",
+        "CREDITS": "CSDO8023_Credits",
+        "CG": "CSDO8023_CG"
+      },
+      "ILO8021": {
+        "TH": "ILO8021_TH",
+        "IA": "ILO8021_IA",
+        "TOT": "ILO8021_TOT",
+        "GRADE": "ILO8021_Grade",
+        "GP": "ILO8021_GP",
+        "CREDITS": "ILO8021_Credits",
+        "CG": "ILO8021_CG"
+      },
+      "CSL801": {
+        "TW": "CSL801_TW",
+        "PR": "CSL801_PR",
+        "TOT": "CSL801_TOT",
+        "GRADE": "CSL801_Grade",
+        "GP": "CSL801_GP",
+        "CREDITS": "CSL801_Credits",
+        "CG": "CSL801_CG"
+      },
+      "AIDSCSDOL8013": {
+        "TW": "AIDSCSDOL8013_TW",
+        "PR": "AIDSCSDOL8013_PR",
+        "TOT": "AIDSCSDOL8013_TOT",
+        "GRADE": "AIDSCSDOL8013_Grade",
+        "GP": "AIDSCSDOL8013_GP",
+        "CREDITS": "AIDSCSDOL8013_Credits",
+        "CG": "AIDSCSDOL8013_CG"
+      },
+      "AIDSCSDOL8023": {
+        "TW": "AIDSCSDOL8023_TW",
+        "PR": "AIDSCSDOL8023_PR",
+        "TOT": "AIDSCSDOL8023_TOT",
+        "GRADE": "AIDSCSDOL8023_Grade",
+        "GP": "AIDSCSDOL8023_GP",
+        "CREDITS": "AIDSCSDOL8023_Credits",
+        "CG": "AIDSCSDOL8023_CG"
+      },
+      "AIDSCSP801": {
+        "TW": "AIDSCSP801_TW",
+        "PR": "AIDSCSP801_PR",
+        "TOT": "AIDSCSP801_TOT",
+        "GRADE": "AIDSCSP801_Grade",
+        "GP": "AIDSCSP801_GP",
+        "CREDITS": "AIDSCSP801_Credits",
+        "CG": "AIDSCSP801_CG"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "CSC801_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC801_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC801_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSDO8013_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSDO8013_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSDO8013_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSDO8023_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSDO8023_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSDO8023_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "ILO8021_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "ILO8021_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "ILO8021_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL801_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL801_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL801_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "AIDSCSDOL8013_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "AIDSCSDOL8013_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "AIDSCSDOL8013_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "AIDSCSDOL8023_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "AIDSCSDOL8023_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "AIDSCSDOL8023_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "AIDSCSP801_TOT": {
+        "min": 0.0,
+        "max": 150.0
+      },
+      "AIDSCSP801_TW": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "AIDSCSP801_PR": {
+        "min": 0.0,
+        "max": 50.0
+      }
+    },
+    "source": "ai_determined"
+  },
+  "8892908877ddc546": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "gender": "Gender",
+      "sgpi": "SGPI",
+      "cgpi": "CGPI",
+      "total_marks": "Total_Marks",
+      "max_marks": "Max_Marks",
+      "result": "Result_Status",
+      "candidate_type": "Candidate_Type"
+    },
+    "courses": {
+      "42211": {
+        "TH": "42211_TH",
+        "IA": "42211_IA",
+        "TOT": "42211_TOT",
+        "GRADE": "42211_Grade",
+        "GP": "42211_GP",
+        "CREDITS": "42211_Credits",
+        "CG": "42211_CG"
+      },
+      "42212": {
+        "TH": "42212_TH",
+        "IA": "42212_IA",
+        "TOT": "42212_TOT",
+        "GRADE": "42212_Grade",
+        "GP": "42212_GP",
+        "CREDITS": "42212_Credits",
+        "CG": "42212_CG"
+      },
+      "AIDSCSL701": {
+        "TOT": "AIDSCSL701_TOT",
+        "TW": "AIDSCSL701_TW",
+        "PR": "AIDSCSL701_PR",
+        "GRADE": "AIDSCSL701_Grade",
+        "GP": "AIDSCSL701_GP",
+        "CREDITS": "AIDSCSL701_Credits",
+        "CG": "AIDSCSL701_CG"
+      },
+      "AIDSCSL702": {
+        "TOT": "AIDSCSL702_TOT",
+        "TW": "AIDSCSL702_TW",
+        "PR": "AIDSCSL702_PR",
+        "GRADE": "AIDSCSL702_Grade",
+        "GP": "AIDSCSL702_GP",
+        "CREDITS": "AIDSCSL702_Credits",
+        "CG": "AIDSCSL702_CG"
+      },
+      "AIDSCSP701": {
+        "TOT": "AIDSCSP701_TOT",
+        "TW": "AIDSCSP701_TW",
+        "PR": "AIDSCSP701_PR",
+        "GRADE": "AIDSCSP701_Grade",
+        "GP": "AIDSCSP701_GP",
+        "CREDITS": "AIDSCSP701_Credits",
+        "CG": "AIDSCSP701_CG"
+      },
+      "42213": {
+        "TH": "42213_TH",
+        "IA": "42213_IA",
+        "TOT": "42213_TOT",
+        "GRADE": "42213_Grade",
+        "GP": "42213_GP",
+        "CREDITS": "42213_Credits",
+        "CG": "42213_CG"
+      },
+      "42217": {
+        "TH": "42217_TH",
+        "IA": "42217_IA",
+        "TOT": "42217_TOT",
+        "GRADE": "42217_Grade",
+        "GP": "42217_GP",
+        "CREDITS": "42217_Credits",
+        "CG": "42217_CG"
+      },
+      "42225": {
+        "TH": "42225_TH",
+        "IA": "42225_IA",
+        "TOT": "42225_TOT",
+        "GRADE": "42225_Grade",
+        "GP": "42225_GP",
+        "CREDITS": "42225_Credits",
+        "CG": "42225_CG"
+      },
+      "AIDSCSDOL7011": {
+        "TH": "AIDSCSDOL7011_TH",
+        "IA": "AIDSCSDOL7011_IA",
+        "TOT": "AIDSCSDOL7011_TOT",
+        "GRADE": "AIDSCSDOL7011_Grade",
+        "GP": "AIDSCSDOL7011_GP",
+        "CREDITS": "AIDSCSDOL7011_Credits",
+        "CG": "AIDSCSDOL7011_CG"
+      },
+      "AIDSCSDOL7022": {
+        "TH": "AIDSCSDOL7022_TH",
+        "IA": "AIDSCSDOL7022_IA",
+        "TOT": "AIDSCSDOL7022_TOT",
+        "GRADE": "AIDSCSDOL7022_Grade",
+        "GP": "AIDSCSDOL7022_GP",
+        "CREDITS": "AIDSCSDOL7022_Credits",
+        "CG": "AIDSCSDOL7022_CG"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "42211_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "42211_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "42211_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "42212_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "42212_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "42212_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "AIDSCSL701_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "AIDSCSL701_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "AIDSCSL701_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "AIDSCSL702_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "AIDSCSL702_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "AIDSCSL702_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "AIDSCSP701_TOT": {
+        "min": 0.0,
+        "max": 150.0
+      },
+      "AIDSCSP701_TW": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "AIDSCSP701_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "42213_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "42213_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "42213_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "42217_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "42217_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "42217_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "42225_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "42225_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "42225_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "AIDSCSDOL7011_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "AIDSCSDOL7011_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "AIDSCSDOL7011_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "AIDSCSDOL7022_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "AIDSCSDOL7022_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "AIDSCSDOL7022_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      }
+    },
+    "source": "ai_determined"
+  }
+}
