@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Data Extractor AI — Autonomous Document Intelligence</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=3.5">
+  <link rel="stylesheet" href="/static/css/style.css?v=3.6">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
@@ -1853,6 +1853,10 @@
               <div class="ai-stat-num" id="cleanStatFormat" style="color: #818cf8;">0</div>
               <div class="ai-stat-label">Formatting Cleaned</div>
             </div>
+            <div class="ai-stat-card" style="border-color: rgba(225, 29, 72, 0.4);">
+              <div class="ai-stat-num" id="cleanStatDefective" style="color: #fda4af;">0</div>
+              <div class="ai-stat-label">Corrupted / Defective</div>
+            </div>
           </div>
 
           <!-- Filter & Search Bar -->
@@ -1863,6 +1867,7 @@
               <button type="button" class="btn btn-sm btn-outline clean-filter-btn" data-filter="discrepancy_fixed">Discrepancies (<span id="chipDiscrepancyCount">0</span>)</button>
               <button type="button" class="btn btn-sm btn-outline clean-filter-btn" data-filter="format">Formatting (<span id="chipFormatCount">0</span>)</button>
               <button type="button" class="btn btn-sm btn-outline clean-filter-btn" data-filter="outlier_flagged">Outliers (<span id="chipOutlierCount">0</span>)</button>
+              <button type="button" class="btn btn-sm btn-outline clean-filter-btn" data-filter="integrity_defective" style="border-color: rgba(225, 29, 72, 0.4); color: #fda4af;">⚠️ Corrupted (<span id="chipDefectiveCount">0</span>)</button>
             </div>
             <input type="text" id="cleanDiffSearch" class="search-input" placeholder="Search student name, seat no, or field..." style="max-width: 280px; font-size: 0.85rem; padding: 0.4rem 0.75rem;">
           </div>
@@ -2165,6 +2170,6 @@
     <p>Data Extractor AI • Local GPU Acceleration • Independent Standalone Architecture</p>
   </footer>
 
-  <script src="/static/js/app.js?v=3.5"></script>
+  <script src="/static/js/app.js?v=3.6"></script>
 </body>
 </html>

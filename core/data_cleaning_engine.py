@@ -54,7 +54,7 @@ class ChangeEntry:
     column: str
     old_value: Any
     new_value: Any
-    change_type: str  # "format", "missing_imputed", "discrepancy_fixed", "outlier_flagged"
+    change_type: str  # "format", "missing_imputed", "discrepancy_fixed", "outlier_flagged", "integrity_defective"
     reason: str
     confidence: float
     status: str = "proposed"  # "proposed", "accepted", "rejected"
@@ -239,7 +239,7 @@ Respond ONLY with valid JSON in this exact structure:
     ) -> Dict[str, Dict[str, str]]:
         """Maps course codes to their constituent component columns."""
         comp_pattern = re.compile(
-            r"^(?P<code>[A-Za-z0-9]+)[_\s\-]+(?P<comp>TH|SE|ESE|THEORY|IA|IN|ISE|INTERNAL|TOT|TOTAL|TW|TERMWORK|PR|PRA|PO|OR|OR_PR|PRACTICAL|GRADE|GP|CREDITS|CG)$",
+            r"^(?P<code>[A-Za-z0-9]+)[_\s\-]+(?P<comp>TH|SE|ESE|THEORY|IA|IN|ISE|INTERNAL|TOT|TOTAL|TW|TERMWORK|PR|PRA|PRACTICAL|OR|ORAL|VIVA|PO|OR_PR|GRADE|GP|CREDITS|CG)$",
             re.IGNORECASE
         )
         reserved = {"TOTAL", "MAX", "MIN", "CREDITS", "SGPI", "CGPI", "MARKS", "RESULT", "OUT"}
@@ -256,7 +256,7 @@ Respond ONLY with valid JSON in this exact structure:
                     pass
                 comp_raw = m.group("comp").upper()
 
-                # Normalize component head
+                # Normalize component head with distinct TW, PR, OR, and OR_PR
                 if comp_raw in ("SE", "ESE", "THEORY"):
                     comp = "TH"
                 elif comp_raw in ("IN", "ISE", "INTERNAL"):
@@ -265,8 +265,12 @@ Respond ONLY with valid JSON in this exact structure:
                     comp = "TOT"
                 elif comp_raw in ("TERMWORK",):
                     comp = "TW"
-                elif comp_raw in ("PRA", "PO", "OR", "OR_PR", "PRACTICAL"):
+                elif comp_raw in ("PRA", "PRACTICAL"):
                     comp = "PR"
+                elif comp_raw in ("ORAL", "VIVA", "PO"):
+                    comp = "OR"
+                elif comp_raw in ("OR_PR",):
+                    comp = "OR_PR"
                 else:
                     comp = comp_raw
 
@@ -295,6 +299,10 @@ Respond ONLY with valid JSON in this exact structure:
                 bounds[comps["TW"]] = {"min": 0.0, "max": 100.0 if is_project else 50.0}
             if "PR" in comps:
                 bounds[comps["PR"]] = {"min": 0.0, "max": 50.0}
+            if "OR" in comps:
+                bounds[comps["OR"]] = {"min": 0.0, "max": 50.0}
+            if "OR_PR" in comps:
+                bounds[comps["OR_PR"]] = {"min": 0.0, "max": 50.0}
         return bounds
 
     # -------------------------------------------------------------------------
@@ -322,7 +330,7 @@ Respond ONLY with valid JSON in this exact structure:
             }
 
         # Step 1: Discover Rules
-        columns = list(records[0].keys())
+        columns = list(dict.fromkeys([k for r in records for k in r.keys()]))
         if not rules:
             rules = self.determine_rules(columns, sample_record=records[0], force_ai=force_ai_rules)
 
@@ -342,6 +350,62 @@ Respond ONLY with valid JSON in this exact structure:
         changes: List[ChangeEntry] = []
 
         total_cells_checked = len(records) * len(columns)
+
+        # -----------------------------------------------------------------
+        # PASS 0: Row-Level Integrity & Defective Candidate Detection
+        # -----------------------------------------------------------------
+        defective_row_indices: Set[int] = set()
+        meta_col_names = {
+            c.lower() for c in [
+                seat_col, name_col, gender_col, result_col, sgpi_col,
+                canonical.get("cgpi"), total_col, max_col, canonical.get("candidate_type"),
+                "PRN", "ABC_ID", "Semester", "College_Name", "College_Code", "Remark",
+                "seat_no", "student_name", "gender", "result_status", "total_marks"
+            ] if c
+        }
+        score_columns = [
+            c for c in columns
+            if c.lower() not in meta_col_names
+            and not any(c.upper().endswith(sfx) for sfx in ("_GRADE", "_GP", "_CREDITS", "_CG", "_SUBJECT"))
+        ]
+        if not score_columns:
+            score_columns = [c for c in columns if c.lower() not in meta_col_names]
+
+        for i, row in enumerate(cleaned_records):
+            raw_seat = str(row.get(seat_col, "") or "").strip()
+            seat_val = raw_seat if raw_seat else f"Row #{i+1}"
+            name_val = str(row.get(name_col, "Student")).strip()
+            
+            is_seat_missing = not raw_seat or raw_seat.lower() in ("--", "-", "n/a", "null", "none", "nan", "#", "?")
+
+            missing_score_count = 0
+            for sc in score_columns:
+                sc_val = row.get(sc)
+                if sc_val is None or str(sc_val).strip() in ("", "--", "-", "N/A", "null", "nan", "None"):
+                    missing_score_count += 1
+            missing_ratio = (missing_score_count / len(score_columns)) if score_columns else 0.0
+
+            if is_seat_missing or missing_ratio > 0.75:
+                defective_row_indices.add(i)
+                defect_reasons = []
+                if is_seat_missing:
+                    defect_reasons.append("Missing mandatory seat / roll number identifier")
+                if missing_ratio > 0.75:
+                    defect_reasons.append(f"{round(missing_ratio * 100, 1)}% of subject mark components are completely missing")
+                
+                defect_msg = "Corrupted/defective candidate: " + " & ".join(defect_reasons)
+                changes.append(ChangeEntry(
+                    change_id=str(uuid.uuid4()),
+                    row_index=i,
+                    seat_no=seat_val,
+                    student_name=name_val or "Defective Record",
+                    column=seat_col if is_seat_missing else "Row_Integrity",
+                    old_value="Defective Record" if is_seat_missing else f"{round(missing_ratio * 100, 1)}% missing",
+                    new_value="Flagged Candidate (Exclude/Verify)",
+                    change_type="integrity_defective",
+                    reason=defect_msg,
+                    confidence=0.99
+                ))
 
         for i, row in enumerate(cleaned_records):
             seat_val = str(row.get(seat_col, f"#{i+1}")).strip()
@@ -442,6 +506,10 @@ Respond ONLY with valid JSON in this exact structure:
                         # Keep as null or mark absent
                         pass
 
+            # If row is severely corrupted, skip arithmetic deduction and component total reconciliation
+            if i in defective_row_indices:
+                continue
+
             # -------------------------------------------------------------
             # PASS 2 & 3: Course Component Discrepancy & Imputation
             # -------------------------------------------------------------
@@ -450,16 +518,33 @@ Respond ONLY with valid JSON in this exact structure:
             for code, comps in courses.items():
                 th_col = comps.get("TH")
                 ia_col = comps.get("IA")
+                tw_col = comps.get("TW")
+                pr_col = comps.get("PR")
+                or_col = comps.get("OR")
+                or_pr_col = comps.get("OR_PR")
                 tot_col = comps.get("TOT")
 
                 th_num = _safe_float(row.get(th_col)) if th_col else None
                 ia_num = _safe_float(row.get(ia_col)) if ia_col else None
+                tw_num = _safe_float(row.get(tw_col)) if tw_col else None
+                pr_num = _safe_float(row.get(pr_col)) if pr_col else None
+                or_num = _safe_float(row.get(or_col)) if or_col else None
+                or_pr_num = _safe_float(row.get(or_pr_col)) if or_pr_col else None
                 tot_num = _safe_float(row.get(tot_col)) if tot_col else None
 
-                # Imputation: If TOT is missing but TH and IA are present
+                # Calculate expected component sum for this course
+                if th_col or ia_col:
+                    comp_sum = round((th_num or 0.0) + (ia_num or 0.0), 1)
+                    has_comps = (th_num is not None or ia_num is not None)
+                else:
+                    # Pure Lab / Project / Practical course with distinct TW, PR, OR heads
+                    lab_heads = [tw_num, pr_num, or_num, or_pr_num]
+                    comp_sum = round(sum(x for x in lab_heads if x is not None), 1)
+                    has_comps = any(x is not None for x in lab_heads)
+
+                # Imputation: If TOT is missing but components are present
                 if tot_col and tot_col in row:
-                    if (tot_num is None or tot_num == 0.0) and (th_num is not None or ia_num is not None):
-                        calc_tot = round((th_num or 0.0) + (ia_num or 0.0), 1)
+                    if (tot_num is None or tot_num == 0.0) and has_comps and comp_sum > 0:
                         changes.append(ChangeEntry(
                             change_id=str(uuid.uuid4()),
                             row_index=i,
@@ -467,18 +552,17 @@ Respond ONLY with valid JSON in this exact structure:
                             student_name=name_val,
                             column=tot_col,
                             old_value=row.get(tot_col),
-                            new_value=calc_tot,
+                            new_value=comp_sum,
                             change_type="missing_imputed",
-                            reason=f"Imputed missing course total from TH ({th_num or 0}) + IA ({ia_num or 0}) = {calc_tot}",
+                            reason=f"Imputed missing course total for {code} from component sum = {comp_sum}",
                             confidence=0.98
                         ))
-                        row[tot_col] = calc_tot
-                        tot_num = calc_tot
+                        row[tot_col] = comp_sum
+                        tot_num = comp_sum
 
-                    # Discrepancy Check: Printed TOT != TH + IA
-                    elif tot_num is not None and th_num is not None and ia_num is not None:
-                        expected_tot = round(th_num + ia_num, 1)
-                        if abs(tot_num - expected_tot) > 0.01:
+                    # Discrepancy Check: Printed TOT != Component Sum
+                    elif tot_num is not None and has_comps:
+                        if abs(tot_num - comp_sum) > 0.01:
                             changes.append(ChangeEntry(
                                 change_id=str(uuid.uuid4()),
                                 row_index=i,
@@ -486,25 +570,26 @@ Respond ONLY with valid JSON in this exact structure:
                                 student_name=name_val,
                                 column=tot_col,
                                 old_value=tot_num,
-                                new_value=expected_tot,
+                                new_value=comp_sum,
                                 change_type="discrepancy_fixed",
-                                reason=f"Mathematical discrepancy: printed TOT was {tot_num}, but component sum TH ({th_num}) + IA ({ia_num}) = {expected_tot}",
+                                reason=f"Mathematical discrepancy in {code}: printed TOT was {tot_num}, but component sum is {comp_sum}",
                                 confidence=0.95
                             ))
-                            row[tot_col] = expected_tot
-                            tot_num = expected_tot
+                            row[tot_col] = comp_sum
+                            tot_num = comp_sum
 
                 if tot_num is not None:
                     course_tots_list.append(tot_num)
-                elif "TW" in comps or "PR" in comps:
-                    tw_num = _safe_float(row.get(comps.get("TW"))) if comps.get("TW") else None
-                    pr_num = _safe_float(row.get(comps.get("PR"))) if comps.get("PR") else None
-                    lab_tot = (tw_num or 0.0) + (pr_num or 0.0)
-                    if tw_num is not None or pr_num is not None:
-                        course_tots_list.append(lab_tot)
+                    # If this theory course also has a separate lab component not counted in TH+IA TOT
+                    if (th_col or ia_col) and any(x is not None for x in (tw_num, pr_num, or_num, or_pr_num)):
+                        extra_lab = (tw_num or 0.0) + (pr_num or 0.0) + (or_num or 0.0) + (or_pr_num or 0.0)
+                        if extra_lab > 0:
+                            course_tots_list.append(extra_lab)
+                elif has_comps and comp_sum > 0:
+                    course_tots_list.append(comp_sum)
 
             # -------------------------------------------------------------
-            # Grand Total Imputation & Discrepancy Check
+            # Grand Total Imputation & Discrepancy Check with Reconciliation Threshold
             # -------------------------------------------------------------
             if total_col and total_col in row:
                 raw_grand = _safe_float(row.get(total_col))
@@ -525,21 +610,39 @@ Respond ONLY with valid JSON in this exact structure:
                     ))
                     row[total_col] = sum_of_courses
 
-                elif raw_grand is not None and sum_of_courses and abs(raw_grand - sum_of_courses) > 1.0:
-                    # Significant discrepancy in grand total
-                    changes.append(ChangeEntry(
-                        change_id=str(uuid.uuid4()),
-                        row_index=i,
-                        seat_no=seat_val,
-                        student_name=name_val,
-                        column=total_col,
-                        old_value=raw_grand,
-                        new_value=sum_of_courses,
-                        change_type="discrepancy_fixed",
-                        reason=f"Discrepancy in grand total marks: printed total was {raw_grand}, but sum of course components is {sum_of_courses}",
-                        confidence=0.94
-                    ))
-                    row[total_col] = sum_of_courses
+                elif raw_grand is not None and sum_of_courses and sum_of_courses > 0:
+                    diff = abs(raw_grand - sum_of_courses)
+                    if 0.01 < diff <= 15.0:
+                        # Small arithmetic reconciliation (<= 15 marks): correct to component sum
+                        changes.append(ChangeEntry(
+                            change_id=str(uuid.uuid4()),
+                            row_index=i,
+                            seat_no=seat_val,
+                            student_name=name_val,
+                            column=total_col,
+                            old_value=raw_grand,
+                            new_value=sum_of_courses,
+                            change_type="discrepancy_fixed",
+                            reason=f"Small arithmetic reconciliation ({diff:.1f} marks <= 15 limit): printed total was {raw_grand}, but component sum is {sum_of_courses}",
+                            confidence=0.95
+                        ))
+                        row[total_col] = sum_of_courses
+                    elif diff > 15.0:
+                        # Large divergence (> 15 marks, like 650 vs 450):
+                        # Preserve genuine printed university grand total to avoid overriding data where electives/labs were omitted
+                        changes.append(ChangeEntry(
+                            change_id=str(uuid.uuid4()),
+                            row_index=i,
+                            seat_no=seat_val,
+                            student_name=name_val,
+                            column=total_col,
+                            old_value=raw_grand,
+                            new_value=raw_grand,
+                            change_type="outlier_flagged",
+                            reason=f"Large total difference ({diff:.1f} marks > 15 limit: printed {raw_grand} vs component sum {sum_of_courses}). Preserved printed university grand total to avoid overriding elective/lab components.",
+                            confidence=0.90
+                        ))
+                        # row[total_col] is explicitly PRESERVED as raw_grand
 
             # -------------------------------------------------------------
             # Result Status Normalization & Imputation
@@ -634,6 +737,7 @@ Respond ONLY with valid JSON in this exact structure:
         missing_count = sum(1 for c in changes if c.change_type == "missing_imputed")
         discrepancy_count = sum(1 for c in changes if c.change_type == "discrepancy_fixed")
         outlier_count = sum(1 for c in changes if c.change_type == "outlier_flagged")
+        defective_count = sum(1 for c in changes if c.change_type == "integrity_defective")
         affected_rows = len(set(c.row_index for c in changes))
 
         summary = {
@@ -644,6 +748,7 @@ Respond ONLY with valid JSON in this exact structure:
             "imputed_missing": missing_count,
             "fixed_discrepancies": discrepancy_count,
             "outliers_handled": outlier_count,
+            "defective_candidates": defective_count,
             "affected_students": affected_rows,
             "cleaning_rate_pct": round((affected_rows / len(records)) * 100, 1) if records else 0.0
         }
@@ -675,6 +780,11 @@ Respond ONLY with valid JSON in this exact structure:
             cid = str(c.get("change_id") if isinstance(c, dict) else getattr(c, "change_id", ""))
             if acc_set is not None and cid not in acc_set:
                 continue  # Skip rejected/unselected changes
+
+            # Defective row flags are audit warnings; do not overwrite actual cell data
+            ctype = c.get("change_type") if isinstance(c, dict) else getattr(c, "change_type", "")
+            if ctype == "integrity_defective":
+                continue
 
             r_idx = c.get("row_index") if isinstance(c, dict) else getattr(c, "row_index", None)
             col = c.get("column") if isinstance(c, dict) else getattr(c, "column", None)

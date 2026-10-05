@@ -4350,6 +4350,12 @@ body.dark-theme {
   border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
+.badge-clean-type.type-integrity_defective {
+  background: rgba(225, 29, 72, 0.18);
+  color: #FDA4AF;
+  border: 1px solid rgba(225, 29, 72, 0.4);
+}
+
 .btn-clean-data {
   background: rgba(16, 185, 129, 0.12);
   border: 1px solid #10B981;

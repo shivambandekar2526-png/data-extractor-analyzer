@@ -5991,17 +5991,20 @@ function renderCleaningModal(data) {
   setText("cleanStatImputed", summary.imputed_missing || 0);
   setText("cleanStatDiscrepancies", summary.fixed_discrepancies || 0);
   setText("cleanStatFormat", summary.format_changes || 0);
+  setText("cleanStatDefective", summary.defective_candidates || 0);
 
   const imputedCount = changes.filter(c => c.change_type === "missing_imputed").length;
   const discrepancyCount = changes.filter(c => c.change_type === "discrepancy_fixed").length;
   const formatCount = changes.filter(c => c.change_type === "format").length;
   const outlierCount = changes.filter(c => c.change_type === "outlier_flagged").length;
+  const defectiveCount = changes.filter(c => c.change_type === "integrity_defective").length;
 
   setText("chipAllCount", changes.length);
   setText("chipImputedCount", imputedCount);
   setText("chipDiscrepancyCount", discrepancyCount);
   setText("chipFormatCount", formatCount);
   setText("chipOutlierCount", outlierCount);
+  setText("chipDefectiveCount", defectiveCount);
 
   renderCleaningDiffTable();
   updateCleanSelectionUI();
@@ -6094,6 +6097,9 @@ function renderCleaningDiffTable() {
     } else if (c.change_type === "outlier_flagged") {
       typeClass = "type-outlier_flagged";
       typeLabel = "Outlier";
+    } else if (c.change_type === "integrity_defective") {
+      typeClass = "type-integrity_defective";
+      typeLabel = "Corrupted";
     }
 
     const oldDisplay = (c.old_value !== null && c.old_value !== undefined && c.old_value !== "") ? c.old_value : "null / missing";

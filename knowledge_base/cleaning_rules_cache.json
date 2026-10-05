@@ -2666,5 +2666,137 @@
       }
     },
     "source": "ai_determined"
+  },
+  "710232047e08f431": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "total_marks": "Total_Marks"
+    },
+    "courses": {
+      "CS101": {
+        "TH": "CS101_TH",
+        "IA": "CS101_IA"
+      },
+      "CS102": {
+        "TH": "CS102_TH",
+        "IA": "CS102_IA"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "CS101_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CS101_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CS102_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CS102_IA": {
+        "min": 0.0,
+        "max": 20.0
+      }
+    },
+    "source": "heuristic_fallback"
+  },
+  "2da9343adce1ee14": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "total_marks": "Total_Marks"
+    },
+    "courses": {
+      "CS101": {
+        "TH": "CS101_TH",
+        "IA": "CS101_IA",
+        "TOT": "CS101_TOT"
+      },
+      "CS102": {
+        "TH": "CS102_TH",
+        "IA": "CS102_IA",
+        "TOT": "CS102_TOT"
+      },
+      "CS103": {
+        "TH": "CS103_TH",
+        "IA": "CS103_IA"
+      },
+      "CSL101": {
+        "TW": "CSL101_TW",
+        "PR": "CSL101_PR",
+        "OR": "CSL101_OR",
+        "TOT": "CSL101_TOT"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "CS101_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CS101_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CS101_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CS102_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CS102_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CS102_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CS103_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CS103_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSL101_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL101_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL101_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL101_OR": {
+        "min": 0.0,
+        "max": 50.0
+      }
+    },
+    "source": "heuristic_fallback"
   }
 }
