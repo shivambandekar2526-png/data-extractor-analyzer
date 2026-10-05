@@ -1454,6 +1454,23 @@ function initSearch() {
 // Excel Cell Selection, Keyboard Navigation & Inline Editing
 // ==========================================================================
 
+function findExcelCellTd(rowIndex, colKey) {
+  if (rowIndex == null || colKey == null) return null;
+  try {
+    const escapedCol = (typeof CSS !== "undefined" && CSS.escape) ? CSS.escape(String(colKey)) : String(colKey).replace(/["\\]/g, "\\$&");
+    const el = document.querySelector(`.excel-data-table td[data-row-idx="${rowIndex}"][data-col-key="${escapedCol}"]`);
+    if (el) return el;
+  } catch (e) {}
+
+  const tds = document.querySelectorAll(`.excel-data-table td[data-row-idx="${rowIndex}"]`);
+  for (let i = 0; i < tds.length; i++) {
+    if (tds[i].getAttribute("data-col-key") === String(colKey)) {
+      return tds[i];
+    }
+  }
+  return null;
+}
+
 function selectCell(rowIndex, colKey) {
   if (editingCell) {
     commitCellEdit();
@@ -1466,8 +1483,8 @@ function selectCell(rowIndex, colKey) {
     td.classList.remove("excel-cell-selected");
   });
 
-  // Apply selection highlight
-  const targetTd = document.querySelector(`.excel-data-table td[data-row-idx="${rowIndex}"][data-col-key="${colKey}"]`);
+  // Apply selection highlight safely
+  const targetTd = findExcelCellTd(rowIndex, colKey);
   if (targetTd) {
     targetTd.classList.add("excel-cell-selected");
     targetTd.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -5867,7 +5884,12 @@ function initDataCleaningUI() {
   }
 
   if (btnAccept) {
-    btnAccept.addEventListener("click", async () => {
+    btnAccept.onclick = async (e) => {
+      if (e) e.preventDefault();
+      await acceptCleaningChanges();
+    };
+    btnAccept.addEventListener("click", async (e) => {
+      if (e) e.preventDefault();
       await acceptCleaningChanges();
     });
   }
@@ -6017,13 +6039,22 @@ function updateCleanSelectionUI() {
 
   const countText = document.getElementById("cleanSelectedCountText");
   if (countText) {
-    countText.textContent = `${count} of ${total} fixes selected`;
+    if (total === 0) {
+      countText.textContent = "0 issues detected • Dataset clean";
+    } else {
+      countText.textContent = `${count} of ${total} fixes selected`;
+    }
   }
 
   const btnAccept = document.getElementById("btnAcceptCleanChanges");
   if (btnAccept) {
-    btnAccept.innerHTML = `✅ Apply Selected Fixes (${count})`;
-    btnAccept.disabled = count === 0;
+    if (total === 0) {
+      btnAccept.innerHTML = `✅ Dataset Verified (Close)`;
+      btnAccept.disabled = false;
+    } else {
+      btnAccept.innerHTML = `✅ Apply Selected Fixes (${count})`;
+      btnAccept.disabled = count === 0;
+    }
   }
 
   const headerCheck = document.getElementById("cleanDiffSelectAllHeader");
@@ -6152,7 +6183,20 @@ function renderCleaningDiffTable() {
 }
 
 async function acceptCleaningChanges() {
-  if (!activeCleaningData) return;
+  if (!activeCleaningData) {
+    const modalBackdrop = document.getElementById("cleanDataModalBackdrop");
+    if (modalBackdrop) modalBackdrop.classList.add("hidden");
+    return;
+  }
+
+  const allChanges = activeCleaningData.changes || [];
+  if (allChanges.length === 0) {
+    const modalBackdrop = document.getElementById("cleanDataModalBackdrop");
+    if (modalBackdrop) modalBackdrop.classList.add("hidden");
+    activeCleaningData = null;
+    alert("Dataset is already verified clean! Zero formatting discrepancies or missing components detected.");
+    return;
+  }
 
   const acceptedList = Array.from(selectedCleaningChangeIds);
   if (acceptedList.length === 0) {
@@ -6253,7 +6297,7 @@ async function acceptCleaningChanges() {
 
     // 3. Pulse highlight all changed cells visible on the active page
     changedCellKeys.forEach(info => {
-      const td = document.querySelector(`.excel-data-table td[data-row-idx="${info.rowIndex}"][data-col-key="${info.colKey}"]`);
+      const td = findExcelCellTd(info.rowIndex, info.colKey);
       if (td) {
         td.classList.add("cell-cleaned-pulse");
       }
@@ -6261,7 +6305,7 @@ async function acceptCleaningChanges() {
 
     // 4. Scroll to first changed cell and select it
     if (firstChangedCell) {
-      const firstTd = document.querySelector(`.excel-data-table td[data-row-idx="${firstChangedCell.rowIndex}"][data-col-key="${firstChangedCell.colKey}"]`);
+      const firstTd = findExcelCellTd(firstChangedCell.rowIndex, firstChangedCell.colKey);
       if (firstTd) {
         firstTd.scrollIntoView({ block: "nearest", inline: "nearest" });
         selectCell(firstChangedCell.rowIndex, firstChangedCell.colKey);
@@ -6287,9 +6331,8 @@ async function acceptCleaningChanges() {
 
     activeCleaningData = null;
 
-    setTimeout(() => {
-      appendChatMessage("assistant", `✨ <strong>Data Cleaning Applied!</strong> Successfully integrated <strong>${acceptedList.length}</strong> standardized values and mathematical repairs into the active dataset (${currentRecords.length} records). Modified cells are highlighted in green.`);
-    }, 150);
+    appendChatMessage("assistant", `✨ <strong>Data Cleaning Applied!</strong> Successfully integrated <strong>${acceptedList.length}</strong> standardized values and repairs into the active dataset (${currentRecords.length} records). Modified cells are highlighted in green.`);
+    alert(`✅ Successfully applied ${acceptedList.length} fix(es)! The table and ledger have been updated.`);
 
   } catch (err) {
     console.error("Error accepting cleaning changes:", err);
@@ -6297,7 +6340,8 @@ async function acceptCleaningChanges() {
   } finally {
     if (btnAccept) {
       btnAccept.disabled = false;
-      btnAccept.innerHTML = `✅ Apply Selected Fixes (${selectedCleaningChangeIds.size})`;
+      const count = selectedCleaningChangeIds ? selectedCleaningChangeIds.size : 0;
+      btnAccept.innerHTML = `✅ Apply Selected Fixes (${count})`;
     }
   }
 }

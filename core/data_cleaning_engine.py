@@ -630,19 +630,8 @@ Respond ONLY with valid JSON in this exact structure:
                     elif diff > 15.0:
                         # Large divergence (> 15 marks, like 650 vs 450):
                         # Preserve genuine printed university grand total to avoid overriding data where electives/labs were omitted
-                        changes.append(ChangeEntry(
-                            change_id=str(uuid.uuid4()),
-                            row_index=i,
-                            seat_no=seat_val,
-                            student_name=name_val,
-                            column=total_col,
-                            old_value=raw_grand,
-                            new_value=raw_grand,
-                            change_type="outlier_flagged",
-                            reason=f"Large total difference ({diff:.1f} marks > 15 limit: printed {raw_grand} vs component sum {sum_of_courses}). Preserved printed university grand total to avoid overriding elective/lab components.",
-                            confidence=0.90
-                        ))
                         # row[total_col] is explicitly PRESERVED as raw_grand
+                        pass
 
             # -------------------------------------------------------------
             # Result Status Normalization & Imputation
@@ -781,14 +770,10 @@ Respond ONLY with valid JSON in this exact structure:
             if acc_set is not None and cid not in acc_set:
                 continue  # Skip rejected/unselected changes
 
-            # Defective row flags are audit warnings; do not overwrite actual cell data
-            ctype = c.get("change_type") if isinstance(c, dict) else getattr(c, "change_type", "")
-            if ctype == "integrity_defective":
-                continue
-
             r_idx = c.get("row_index") if isinstance(c, dict) else getattr(c, "row_index", None)
             col = c.get("column") if isinstance(c, dict) else getattr(c, "column", None)
             new_val = c.get("new_value") if isinstance(c, dict) else getattr(c, "new_value", None)
+            ctype = c.get("change_type") if isinstance(c, dict) else getattr(c, "change_type", "")
 
             if r_idx is not None and 0 <= r_idx < len(output) and col:
                 target_col = col
@@ -797,7 +782,10 @@ Respond ONLY with valid JSON in this exact structure:
                         if str(existing_col).strip().lower() == str(col).strip().lower():
                             target_col = existing_col
                             break
-                output[r_idx][target_col] = new_val
+                if ctype == "integrity_defective":
+                    output[r_idx][target_col] = "[DEFECTIVE]"
+                else:
+                    output[r_idx][target_col] = new_val
 
         return output
 
