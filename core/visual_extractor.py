@@ -1244,7 +1244,8 @@ def detect_candidate_seat_numbers(text: str) -> List[str]:
 def extract_visual_blueprint(
     pdf_path: str,
     client: CloudClient,
-    audit_cb: Optional[AuditCallback] = None
+    audit_cb: Optional[AuditCallback] = None,
+    preloaded_meta: Optional[ExamMeta] = None
 ) -> Dict[str, Any]:
     """
     Stage 1: Extracts the Visual Blueprint, Course Catalog, Dynamic Column Contract,
@@ -1272,6 +1273,13 @@ def extract_visual_blueprint(
             "\n".join(lines) + "\n"
             "NOTE: In university ledgers with multi-column legends, table columns <Course-I> through <Course-N> correspond "
             "to courses sorted by their legend serial numbers in ascending order. Do NOT read columns vertically!\n\n"
+        )
+    elif preloaded_meta and preloaded_meta.catalog and preloaded_meta.catalog.courses:
+        lines = [f"  Slot {i + 1}: {c.code} - {c.name} [Credits: {c.credits}, Heads: {', '.join(c.heads)}]" for i, c in enumerate(preloaded_meta.catalog.courses)]
+        legend_hint_block = (
+            "DESPOOLED MASTER COURSE CATALOG IN STRICT SEQUENTIAL ORDER:\n" +
+            "\n".join(lines) + "\n"
+            "NOTE: In this despooled ledger layout, each candidate card presents these courses sequentially from left to right.\n\n"
         )
 
     system_instruction = (
@@ -1484,6 +1492,14 @@ def extract_visual_blueprint(
             credits=c_credits
         ))
 
+    # Incorporate preloaded courses if AI did not return complete course catalog
+    if preloaded_meta and preloaded_meta.catalog and preloaded_meta.catalog.courses:
+        for pc in preloaded_meta.catalog.courses:
+            pc_code = normalize_course_code(pc.code)
+            if pc_code not in seen_cc:
+                seen_cc.add(pc_code)
+                catalog_courses.append(pc)
+
     # Ingest / Reconcile Physical Table Column Slots
     raw_slots = blueprint.get("slots", [])
     slot_registry: List[Dict[str, Any]] = []
@@ -1607,12 +1623,22 @@ def extract_visual_blueprint(
         m_sem = re.search(r"\bSEM(?:ESTER)?[\s\.-]*([IVXLCDM]+|\d+)\b", (blueprint.get("exam_title") or "") + " " + p1_text, re.I)
         if m_sem:
             meta_sem = m_sem.group(1).upper()
+    if not meta_sem and preloaded_meta and preloaded_meta.semester:
+        meta_sem = preloaded_meta.semester
+
+    final_exam_title = blueprint.get("exam_title", "")
+    if not final_exam_title and preloaded_meta and preloaded_meta.exam_title:
+        final_exam_title = preloaded_meta.exam_title
+
+    final_college = blueprint.get("college_name", "")
+    if not final_college and preloaded_meta and preloaded_meta.college_name:
+        final_college = preloaded_meta.college_name
 
     master_catalog = CourseCatalog(courses=catalog_courses)
     meta = ExamMeta(
-        exam_title=blueprint.get("exam_title", ""),
+        exam_title=final_exam_title,
         semester=meta_sem,
-        college_name=blueprint.get("college_name", ""),
+        college_name=final_college,
         archetype="visual_blueprint",
         catalog=master_catalog
     )
@@ -2207,7 +2233,9 @@ def run_visual_blueprint_pipeline(
     audit_cb: Optional[AuditCallback] = None,
     client: Optional[CloudClient] = None,
     live_cb: Optional[Callable[[StudentRecord, CourseCatalog], None]] = None,
-    controller: Optional[Any] = None
+    controller: Optional[Any] = None,
+    preloaded_meta: Optional[ExamMeta] = None,
+    despooled_students: Optional[List[StudentRecord]] = None
 ) -> Tuple[ExamMeta, List[StudentRecord], str]:
     """
     100% AI-Heavy, Token-Lean Vision Extraction Pipeline.
@@ -2219,6 +2247,26 @@ def run_visual_blueprint_pipeline(
         client = CloudClient()
 
     if not client.is_configured():
+        if preloaded_meta and despooled_students:
+            logger.info("Cloud AI client is not configured; using verified despooled dataset directly.")
+            if audit_cb:
+                try:
+                    audit_cb({
+                        "timestamp": time.strftime("%H:%M:%S"),
+                        "type": "despool_fallback",
+                        "badge": "DESPOOL FALLBACK",
+                        "title": f"Returning verified despooled dataset: {len(despooled_students)} candidates across {len(preloaded_meta.catalog.courses)} courses",
+                        "details": {"candidates": len(despooled_students), "courses": len(preloaded_meta.catalog.courses)}
+                    })
+                except Exception:
+                    pass
+            for s in despooled_students:
+                if live_cb:
+                    try:
+                        live_cb(s, preloaded_meta.catalog)
+                    except Exception:
+                        pass
+            return preloaded_meta, despooled_students, "visual_blueprint_despooled"
         raise RuntimeError("Cloud AI is not configured. Please add an API key (Gemini or Groq) in settings.")
 
     doc = fitz.open(pdf_path)
@@ -2230,7 +2278,30 @@ def run_visual_blueprint_pipeline(
     # Stage 1: Visual Blueprint Discovery & Column Contract Locking
     if progress_cb:
         progress_cb(5.0, "Stage 1: Discovering visual blueprint & locking column contract from Page 1...")
-    blueprint_res = extract_visual_blueprint(pdf_path, client, audit_cb=audit_cb)
+    try:
+        blueprint_res = extract_visual_blueprint(pdf_path, client, audit_cb=audit_cb, preloaded_meta=preloaded_meta)
+    except Exception as bp_err:
+        if despooled_students and preloaded_meta:
+            logger.warning("Stage 1 visual blueprint discovery failed (%s). Gracefully falling back to verified despooled dataset.", bp_err)
+            if audit_cb:
+                try:
+                    audit_cb({
+                        "timestamp": time.strftime("%H:%M:%S"),
+                        "type": "vision_fallback_despool",
+                        "badge": "DESPOOL FALLBACK",
+                        "title": f"Vision AI blueprint discovery encountered error: {bp_err}. Falling back to verified despooled data.",
+                        "details": {"error": str(bp_err), "candidates_count": len(despooled_students)}
+                    })
+                except Exception:
+                    pass
+            for s in despooled_students:
+                if live_cb:
+                    try:
+                        live_cb(s, preloaded_meta.catalog)
+                    except Exception:
+                        pass
+            return preloaded_meta, despooled_students, "visual_blueprint_despooled"
+        raise
     meta = blueprint_res["meta"]
     blueprint = blueprint_res["blueprint"]
     spec = blueprint_res.get("spec")
@@ -2386,6 +2457,34 @@ def run_visual_blueprint_pipeline(
                             col_sfx = f"{new_course.code}_{sfx}"
                             if col_sfx not in column_contract:
                                 column_contract.append(col_sfx)
+
+    # Stage 2.5: Despooled Candidate Reconciliation & Fallback Guarantee
+    if despooled_students:
+        added_count = 0
+        for ds in despooled_students:
+            if ds.seat_no and ds.seat_no not in seen_seats:
+                seen_seats.add(ds.seat_no)
+                ds.semester = ds.semester or meta.semester
+                if ds.raw_flat_dict and meta.semester:
+                    ds.raw_flat_dict["Semester"] = ds.semester
+                all_students.append(ds)
+                added_count += 1
+                if live_cb:
+                    try:
+                        live_cb(ds, meta.catalog)
+                    except Exception:
+                        pass
+        if added_count > 0 and audit_cb:
+            try:
+                audit_cb({
+                    "timestamp": time.strftime("%H:%M:%S"),
+                    "type": "despool_reconciliation",
+                    "badge": "CANDIDATE RECONCILIATION",
+                    "title": f"Reconciled {added_count} candidates from despool stream for 100% recall (total: {len(all_students)})",
+                    "details": {"reconciled_count": added_count, "total_candidates": len(all_students)}
+                })
+            except Exception:
+                pass
 
     if controller and controller.should_stop():
         return meta, all_students, "visual_blueprint"

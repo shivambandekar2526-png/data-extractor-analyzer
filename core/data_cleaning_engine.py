@@ -377,26 +377,26 @@ Respond ONLY with valid JSON in this exact structure:
                     name_val = cleaned_name
 
                 # Gender: If gender missing/blank, infer from leading slash
-                if gender_col and gender_col in row:
-                    orig_gender = str(row[gender_col] or "").strip().upper()
-                    if not orig_gender and had_leading_slash:
-                        changes.append(ChangeEntry(
-                            change_id=str(uuid.uuid4()),
-                            row_index=i,
-                            seat_no=seat_val,
-                            student_name=name_val,
-                            column=gender_col,
-                            old_value=orig_gender,
-                            new_value="F",
-                            change_type="missing_imputed",
-                            reason="Imputed Female gender ('F') from university gazette leading slash convention",
-                            confidence=0.98
-                        ))
-                        row[gender_col] = "F"
-                    elif orig_gender in ("FEMALE", "WOMAN"):
-                        row[gender_col] = "F"
-                    elif orig_gender in ("MALE", "MAN"):
-                        row[gender_col] = "M"
+                g_col = gender_col if (gender_col and gender_col in row) else "Gender"
+                orig_gender = str(row.get(g_col, "") or "").strip().upper()
+                if not orig_gender and had_leading_slash:
+                    changes.append(ChangeEntry(
+                        change_id=str(uuid.uuid4()),
+                        row_index=i,
+                        seat_no=seat_val,
+                        student_name=name_val,
+                        column=g_col,
+                        old_value=orig_gender,
+                        new_value="F",
+                        change_type="missing_imputed",
+                        reason="Imputed Female gender ('F') from university gazette leading slash convention",
+                        confidence=0.98
+                    ))
+                    row[g_col] = "F"
+                elif orig_gender in ("FEMALE", "WOMAN"):
+                    row[g_col] = "F"
+                elif orig_gender in ("MALE", "MAN"):
+                    row[g_col] = "M"
 
             # Clean Seat No
             if seat_col and seat_col in row:

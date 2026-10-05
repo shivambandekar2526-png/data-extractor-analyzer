@@ -26,6 +26,7 @@ from werkzeug.utils import secure_filename
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(APP_DIR, ".."))
 BATCH_DATA_DIR = os.path.join(PROJECT_ROOT, "Batch Data")
+APP_BATCH_DATA_DIR = os.path.join(APP_DIR, "batch_data")
 INPUT_DIR = os.path.join(APP_DIR, "input")
 OUTPUT_DIR = os.path.join(APP_DIR, "output")
 KB_DIR = os.path.join(APP_DIR, "knowledge_base")
@@ -33,6 +34,9 @@ KB_DIR = os.path.join(APP_DIR, "knowledge_base")
 os.makedirs(INPUT_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(KB_DIR, exist_ok=True)
+os.makedirs(APP_BATCH_DATA_DIR, exist_ok=True)
+
+import shutil
 
 if APP_DIR not in sys.path:
     sys.path.insert(0, APP_DIR)
@@ -49,14 +53,96 @@ from core.semantic_mapper import SemanticMapper
 from core.excel_report_generator import AcademicExcelReportGenerator, get_academic_filename
 from core.ai_cross_checker import run_ai_cross_check, validate_patch_sandbox
 from core.excel_csv_ingester import TabularIngester, sanitize_dict_for_json
-from core.batch_analyzer import BatchAcademicAnalyzer
+from core.batch_analyzer import BatchAcademicAnalyzer, detect_semester_number, normalize_batch_slug
 from core.batch_excel_generator import BatchExcelReportGenerator
 from exporter import export_ai_extracted_data, write_csv_file, write_excel_file
 from core.execution_controller import ExtractionController
 from models import CourseCatalog, ExamMeta
 
 tabular_ingester = TabularIngester(OUTPUT_DIR)
-batch_analyzer = BatchAcademicAnalyzer(OUTPUT_DIR)
+batch_analyzer = BatchAcademicAnalyzer(OUTPUT_DIR, app_batch_dir=APP_BATCH_DATA_DIR, root_batch_dir=BATCH_DATA_DIR)
+
+
+def auto_sort_into_app_batch_store(
+    excel_path: Optional[str] = None,
+    meta: Optional[Any] = None,
+    source_path: Optional[str] = None,
+    students: Optional[List[Dict[str, Any]]] = None,
+    catalog: Optional[Any] = None,
+    folder_name: Optional[str] = None,
+    app_batch_dir: Optional[str] = None
+) -> Optional[str]:
+    """
+    Automatically detects the batch and semester from extraction outputs,
+    and sorts/saves a clean Excel file into data_extractor_AI/batch_data/<batch>/Sem_<N>.xlsx.
+    """
+    try:
+        if folder_name and not source_path:
+            source_path = folder_name
+        if catalog and not meta:
+            meta = catalog
+
+        base_batch_store = app_batch_dir or APP_BATCH_DATA_DIR
+
+        # 1. Deduce semester number
+        sem_num = None
+        if meta:
+            sem_val = getattr(meta, "semester", None) if hasattr(meta, "semester") else (meta.get("semester") if isinstance(meta, dict) else None)
+            if sem_val:
+                m_s = re.search(r"(\d+)", str(sem_val))
+                if m_s:
+                    sem_num = int(m_s.group(1))
+            if not sem_num:
+                ex_name = getattr(meta, "exam_name", None) if hasattr(meta, "exam_name") else (meta.get("exam_name") if isinstance(meta, dict) else None)
+                if ex_name:
+                    sem_num = detect_semester_number(str(ex_name))
+        if not sem_num and source_path:
+            sem_num = detect_semester_number(source_path)
+        if not sem_num and excel_path:
+            sem_num = detect_semester_number(excel_path)
+        if not sem_num or not (1 <= sem_num <= 8):
+            return None
+
+        # 2. Deduce batch slug (e.g. '21-22')
+        batch_slug = None
+        if source_path:
+            parent_dir = os.path.basename(os.path.dirname(os.path.abspath(source_path)))
+            m_batch = re.search(r"(\d{2,4})[\s_\-/]+(\d{2,4})", parent_dir)
+            if m_batch:
+                batch_slug = normalize_batch_slug(parent_dir)
+            else:
+                m_file = re.search(r"(\d{2,4})[\s_\-/]+(\d{2,4})", os.path.basename(source_path))
+                if m_file:
+                    batch_slug = normalize_batch_slug(os.path.basename(source_path))
+
+        if not batch_slug and meta:
+            acad_yr = str(getattr(meta, "academic_year", "") or "") if hasattr(meta, "academic_year") else (meta.get("academic_year", "") if isinstance(meta, dict) else "")
+            ex_title = str(getattr(meta, "exam_title", "") or "") if hasattr(meta, "exam_title") else (meta.get("exam_title", "") if isinstance(meta, dict) else "")
+            m_ay = re.search(r"(\d{2,4})[\s_\-/]+(\d{2,4})", acad_yr or ex_title)
+            if m_ay:
+                batch_slug = normalize_batch_slug(acad_yr or ex_title)
+
+        if not batch_slug and excel_path:
+            batch_slug = normalize_batch_slug(os.path.basename(excel_path))
+
+        if not batch_slug or batch_slug == "batch":
+            batch_slug = "General"
+
+        dest_dir = os.path.join(base_batch_store, batch_slug)
+        os.makedirs(dest_dir, exist_ok=True)
+        dest_excel = os.path.join(dest_dir, f"Sem_{sem_num}.xlsx")
+
+        # Copy existing excel or write from students
+        if excel_path and os.path.isfile(excel_path):
+            shutil.copy2(excel_path, dest_excel)
+        elif students:
+            analyzer = BatchAcademicAnalyzer(output_dir=OUTPUT_DIR, app_batch_dir=base_batch_store)
+            analyzer.save_clean_semester_excel(students, batch_slug, sem_num)
+
+        return dest_excel
+    except Exception as e:
+        logger.warning(f"auto_sort_into_app_batch_store warning: {e}")
+        return None
 
 app = Flask(
     __name__,
@@ -174,8 +260,58 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosschec
         if pipeline_mode == "visual_blueprint":
             from core.visual_extractor import run_visual_blueprint_pipeline
             from core.cloud_client import CloudClient, ORCHESTRATION_CANDIDATES
+            from core.despooler import is_spooled_pdf, despool_gazette_pdf
+
             cc_probe = CloudClient()
             active_cand = cc_probe.get_best_working_model()
+
+            working_pdf_path = target_pdf_path
+            preloaded_meta = None
+            despooled_students = None
+
+            # Detect continuous spool formats (e.g. Mumbai University multi-row candidate blocks with tape stream)
+            if is_spooled_pdf(target_pdf_path):
+                log_audit({
+                    "timestamp": time.strftime("%H:%M:%S"),
+                    "type": "spool_detected",
+                    "badge": "SPOOL DETECTED",
+                    "title": "Continuous Spool Format Detected: Auto-Despooling for Vision AI",
+                    "details": {
+                        "original_pdf": os.path.basename(target_pdf_path),
+                        "reason": "Split multi-row candidate blocks and stream legend detected. Auto-synthesizing unified visual layout..."
+                    }
+                })
+                update_job_progress(job_id, 3.0, "Continuous spool detected. Despooling into unified visual layout...")
+                try:
+                    despooled_pdf_path, despool_meta, despool_students = despool_gazette_pdf(
+                        pdf_path=target_pdf_path,
+                        output_dir=OUTPUT_DIR,
+                        progress_cb=on_progress,
+                        audit_cb=log_audit
+                    )
+                    working_pdf_path = despooled_pdf_path
+                    preloaded_meta = despool_meta
+                    despooled_students = despool_students
+                    log_audit({
+                        "timestamp": time.strftime("%H:%M:%S"),
+                        "type": "spool_despooled",
+                        "badge": "SPOOL UNIFIED",
+                        "title": f"Despooled Gazette Ready for Vision AI: {len(despool_students)} candidates across {len(despool_meta.catalog.courses)} courses",
+                        "details": {
+                            "despooled_pdf": os.path.basename(despooled_pdf_path),
+                            "candidates_count": len(despool_students),
+                            "courses_count": len(despool_meta.catalog.courses)
+                        }
+                    })
+                except Exception as spool_err:
+                    logger.warning("Despooling warning: %s. Continuing with original PDF.", spool_err)
+                    log_audit({
+                        "timestamp": time.strftime("%H:%M:%S"),
+                        "type": "spool_warning",
+                        "badge": "DESPOOL WARNING",
+                        "title": f"Despooling warning: {spool_err}. Continuing with direct vision.",
+                        "details": {"error": str(spool_err)}
+                    })
 
             log_audit({
                 "timestamp": time.strftime("%H:%M:%S"),
@@ -186,18 +322,21 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosschec
                     "provider": active_cand["provider"],
                     "model": active_cand["model"],
                     "pipeline": "visual_blueprint",
+                    "working_pdf": os.path.basename(working_pdf_path),
                     "auto_failover": True,
                     "failover_candidates": [c["label"] for c in ORCHESTRATION_CANDIDATES[:5]]
                 }
             })
 
             meta, students, archetype = run_visual_blueprint_pipeline(
-                pdf_path=target_pdf_path,
+                pdf_path=working_pdf_path,
                 progress_cb=on_progress,
                 audit_cb=log_audit,
                 client=cc_probe,
                 live_cb=on_live_student,
-                controller=ctrl
+                controller=ctrl,
+                preloaded_meta=preloaded_meta,
+                despooled_students=despooled_students
             )
         elif pipeline_mode == "cloud" or cloud_crosscheck:
             # 100% Pure Cloud AI Pipeline: bypass local Ollama neural inference passes entirely
@@ -341,6 +480,15 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosschec
         csv_filename = os.path.basename(csv_path)
         excel_filename = csv_filename.replace("_extracted_data.csv", "_extracted_data.xlsx")
         json_filename = csv_filename.replace("_extracted_data.csv", "_catalog.json")
+
+        full_excel_path = os.path.join(des_dir, excel_filename)
+        # Auto-sort clean Excel into app batch store: data_extractor_AI/batch_data/<batch>/Sem_<N>.xlsx
+        auto_sort_into_app_batch_store(
+            excel_path=full_excel_path,
+            meta=meta,
+            source_path=target_pdf_path,
+            students=flat_records
+        )
 
         # Save AI cross-check audit JSON if executed
         if ai_crosscheck_result:
@@ -546,34 +694,63 @@ def list_batches():
 
 @app.route("/api/batch-analysis/batches", methods=["GET"])
 def get_batch_analysis_batches():
-    """List all available batch folders with detected semester information."""
+    """List all available batch folders across app's designated batch_data and root Batch Data."""
     batch_list = []
+    seen_slugs = set()
+
+    candidate_entries = []
+    # 1. First check app designated batch store: data_extractor_AI/batch_data/
+    if os.path.isdir(APP_BATCH_DATA_DIR):
+        for entry in sorted(os.listdir(APP_BATCH_DATA_DIR)):
+            dir_path = os.path.join(APP_BATCH_DATA_DIR, entry)
+            if os.path.isdir(dir_path):
+                candidate_entries.append((entry, dir_path))
+
+    # 2. Check root Batch Data/
     if os.path.isdir(BATCH_DATA_DIR):
         for entry in sorted(os.listdir(BATCH_DATA_DIR)):
             dir_path = os.path.join(BATCH_DATA_DIR, entry)
             if os.path.isdir(dir_path):
-                try:
-                    info = batch_analyzer.detect_batch_files(dir_path)
-                    batch_list.append(info)
-                except Exception as e:
-                    print(f"[!] Error inspecting batch {entry}: {e}")
+                candidate_entries.append((entry, dir_path))
+
+    for entry_name, dir_path in candidate_entries:
+        slug = normalize_batch_slug(entry_name)
+        if slug in seen_slugs:
+            continue
+        seen_slugs.add(slug)
+        try:
+            info = batch_analyzer.detect_batch_files(dir_path)
+            batch_list.append(info)
+        except Exception as e:
+            print(f"[!] Error inspecting batch {entry_name}: {e}")
+
     return jsonify({"success": True, "batches": batch_list})
 
 
 @app.route("/api/batch-analysis/inspect", methods=["POST"])
 def inspect_batch():
-    """Inspect a specific batch folder or uploaded files."""
+    """Inspect a specific batch folder or uploaded files across app and root stores."""
     data = request.get_json(silent=True) or {}
     batch_name = data.get("batch_name", "").strip()
     target_branch = data.get("target_branch", "AIDS").strip()
 
-    folder_path = os.path.join(BATCH_DATA_DIR, batch_name)
-    if not os.path.isdir(folder_path):
-        alt = os.path.join(INPUT_DIR, batch_name)
-        if os.path.isdir(alt):
-            folder_path = alt
-        else:
-            return jsonify({"success": False, "error": f"Batch folder '{batch_name}' not found."}), 404
+    slug = normalize_batch_slug(batch_name)
+    candidates = [
+        os.path.join(APP_BATCH_DATA_DIR, slug),
+        os.path.join(APP_BATCH_DATA_DIR, batch_name),
+        os.path.join(BATCH_DATA_DIR, batch_name),
+        os.path.join(BATCH_DATA_DIR, slug),
+        os.path.join(BATCH_DATA_DIR, f"{slug} data"),
+        os.path.join(INPUT_DIR, batch_name)
+    ]
+    folder_path = None
+    for cand in candidates:
+        if os.path.isdir(cand):
+            folder_path = cand
+            break
+
+    if not folder_path:
+        return jsonify({"success": False, "error": f"Batch folder '{batch_name}' not found."}), 404
 
     try:
         info = batch_analyzer.detect_batch_files(folder_path, target_branch=target_branch)
@@ -591,13 +768,23 @@ def run_batch_analysis():
     pdf_pipeline = data.get("pdf_pipeline", "local").strip()
     excel_mode = data.get("excel_mode", "direct").strip()
 
-    folder_path = os.path.join(BATCH_DATA_DIR, batch_name)
-    if not os.path.isdir(folder_path):
-        alt = os.path.join(INPUT_DIR, batch_name)
-        if os.path.isdir(alt):
-            folder_path = alt
-        else:
-            return jsonify({"success": False, "error": f"Batch folder '{batch_name}' not found."}), 404
+    slug = normalize_batch_slug(batch_name)
+    candidates = [
+        os.path.join(APP_BATCH_DATA_DIR, slug),
+        os.path.join(APP_BATCH_DATA_DIR, batch_name),
+        os.path.join(BATCH_DATA_DIR, batch_name),
+        os.path.join(BATCH_DATA_DIR, slug),
+        os.path.join(BATCH_DATA_DIR, f"{slug} data"),
+        os.path.join(INPUT_DIR, batch_name)
+    ]
+    folder_path = None
+    for cand in candidates:
+        if os.path.isdir(cand):
+            folder_path = cand
+            break
+
+    if not folder_path:
+        return jsonify({"success": False, "error": f"Batch folder '{batch_name}' not found."}), 404
 
     job_id = uuid.uuid4().hex
     with batch_jobs_lock:
@@ -1067,6 +1254,11 @@ def import_tabular_direct():
             return jsonify({"success": False, "error": f"File '{safe_name}' not found."}), 404
 
     result = tabular_ingester.direct_import(target_path, sheet_name=sheet_name, header_row=header_row)
+    if result.get("success") and result.get("students"):
+        try:
+            auto_sort_into_app_batch_store(source_path=target_path, students=result.get("students"))
+        except Exception:
+            pass
     return jsonify(sanitize_dict_for_json(result))
 
 
@@ -1105,7 +1297,66 @@ def ai_fix_tabular():
         ollama_client=oc,
         cloud_client=cc
     )
+    if result.get("success") and result.get("students"):
+        try:
+            auto_sort_into_app_batch_store(source_path=target_path, students=result.get("students"))
+        except Exception:
+            pass
     return jsonify(sanitize_dict_for_json(result))
+
+
+@app.route("/api/tabular/interactive-fix", methods=["POST"])
+def interactive_fix_tabular():
+    """Auto-repair formulas, totals, SGPI, and formatting for active spreadsheet records."""
+    data = request.get_json(silent=True) or {}
+    records = data.get("records", [])
+    folder_name = data.get("folder_name", "")
+    pipeline_mode = data.get("pipeline_mode", "local")
+
+    if not records or not isinstance(records, list):
+        return jsonify({"success": False, "error": "No records provided for AI fix."}), 400
+
+    try:
+        from core.data_cleaning_engine import DataCleaningEngine
+        oc = OllamaClient() if pipeline_mode == "local" else None
+        cc = CloudClient() if pipeline_mode == "cloud" else None
+        if cc is None:
+            inst_cc = CloudClient()
+            if inst_cc.is_configured():
+                cc = inst_cc
+        cleaner = DataCleaningEngine(ollama_client=oc, cloud_client=cc)
+
+        clean_res = cleaner.clean_dataset(records)
+        cleaned_records = clean_res.get("cleaned_records", records)
+        changes = clean_res.get("changes", [])
+
+        # Re-run normalizer to verify all identifiers & SGPI are clean
+        cleaned_records = tabular_ingester._normalize_student_records(cleaned_records)
+
+        # Re-persist if folder exists on server
+        if folder_name:
+            safe_folder = secure_filename(folder_name)
+            folder_path = os.path.join(OUTPUT_DIR, safe_folder)
+            if os.path.isdir(folder_path):
+                csv_path = os.path.join(folder_path, f"{safe_folder}_extracted_data.csv")
+                excel_path = os.path.join(folder_path, f"{safe_folder}_extracted_data.xlsx")
+                df = pd.DataFrame(cleaned_records)
+                df.to_csv(csv_path, index=False, encoding="utf-8")
+                try:
+                    df.to_excel(excel_path, index=False)
+                except Exception as ex:
+                    logger.warning(f"Could not rewrite excel during interactive fix: {ex}")
+
+        return jsonify(sanitize_dict_for_json({
+            "success": True,
+            "records": cleaned_records,
+            "changes": [c.to_dict() if hasattr(c, "to_dict") else c for c in changes],
+            "changes_count": len(changes),
+            "summary": clean_res.get("summary", {})
+        }))
+    except Exception as e:
+        logger.error(f"Error in interactive fix: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route("/api/download/<folder>/<filename>", methods=["GET"])
@@ -1169,6 +1420,84 @@ def export_academic_analysis(folder):
         return jsonify({"success": False, "error": f"Failed to generate academic analysis report: {str(e)}"}), 500
 
     return send_from_directory(folder_path, academic_filename, as_attachment=True)
+
+
+@app.route("/api/dataset/sync", methods=["POST"])
+def sync_dataset():
+    """
+    Save and synchronize user edits from the interactive Excel grid back to
+    the server's CSV, Excel (.xlsx), and Course Catalog JSON files.
+    """
+    data = request.get_json(silent=True) or {}
+    folder_name = data.get("folder_name", "").strip()
+    students = data.get("students", [])
+    columns = data.get("columns", [])
+    catalog_data = data.get("catalog")
+
+    if not folder_name:
+        folder_name = "live_edited_results"
+
+    clean_folder = secure_filename(folder_name)
+    folder_path = os.path.join(OUTPUT_DIR, clean_folder)
+    os.makedirs(folder_path, exist_ok=True)
+
+    if not columns and students:
+        columns = list(students[0].keys())
+
+    csv_filename = f"{clean_folder}_extracted_data.csv"
+    csv_path = os.path.join(folder_path, csv_filename)
+    try:
+        write_csv_file(students, columns, csv_path)
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Failed writing CSV: {str(e)}"}), 500
+
+    cat_filename = f"{clean_folder}_catalog.json"
+    cat_path = os.path.join(folder_path, cat_filename)
+    existing_cat = {}
+    if os.path.isfile(cat_path):
+        try:
+            with open(cat_path, "r", encoding="utf-8") as f:
+                existing_cat = json.load(f)
+        except Exception:
+            pass
+    if catalog_data and isinstance(catalog_data, dict):
+        existing_cat.update(catalog_data)
+    try:
+        with open(cat_path, "w", encoding="utf-8") as f:
+            json.dump(existing_cat, f, indent=2)
+    except Exception as e:
+        pass
+
+    excel_filename = f"{clean_folder}_extracted_data.xlsx"
+    excel_path = os.path.join(folder_path, excel_filename)
+    try:
+        meta_obj = ExamMeta(exam_title=clean_folder)
+        write_excel_file(students, columns, None, meta_obj, excel_path)
+        meta_sem = existing_cat.get("semester")
+        meta_sync = ExamMeta(exam_title=clean_folder, semester=meta_sem)
+        auto_sort_into_app_batch_store(excel_path=excel_path, meta=meta_sync, source_path=clean_folder, students=students)
+    except Exception as e:
+        print(f"[!] Note: Excel export sync warning: {e}")
+
+    # Synchronize any matching job in memory
+    with jobs_lock:
+        for jid, job in jobs.items():
+            if job.get("folder_name") == clean_folder:
+                job["live_students"] = students
+                if "result" in job and isinstance(job["result"], dict):
+                    job["result"]["students"] = students
+                    job["result"]["total_students"] = len(students)
+
+    return jsonify({
+        "success": True,
+        "folder_name": clean_folder,
+        "csv_file": csv_filename,
+        "excel_file": excel_filename,
+        "json_file": cat_filename,
+        "count": len(students),
+        "columns_count": len(columns),
+        "message": f"Successfully saved {len(students)} records across {len(columns)} columns."
+    })
 
 
 @app.route("/api/chat", methods=["POST"])

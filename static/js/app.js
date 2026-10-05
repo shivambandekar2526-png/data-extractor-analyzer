@@ -6,7 +6,7 @@ let originalRecords = [];
 let undoSnapshots = [];
 let currentFolderName = "";
 let currentPage = 1;
-const pageSize = 25;
+let pageSize = 25;
 let pollInterval = null;
 let currentAuditLogs = [];
 let autoScrollAudit = true;
@@ -19,6 +19,21 @@ let currentJobId = null;
 let currentCatalog = null;
 let previousLiveCount = 0;
 let isPollingActive = false;
+
+// Interactive Excel Grid Variables
+let activeColumns = [];
+let selectedRowIndices = new Set();
+let activeCell = null; // { rowIndex, colKey }
+let editingCell = null; // { rowIndex, colKey, originalVal }
+let dirtyCells = new Set(); // Set of "rowIndex_colKey"
+let excelUndoStack = [];
+let excelRedoStack = [];
+let unsavedEditsCount = 0;
+let columnFilters = {}; // { [colKey]: Set of allowed string values }
+let currentSort = { colKey: null, dir: null }; // 'asc' | 'desc' | null
+let currentFindMatches = [];
+let currentFindMatchIdx = -1;
+let contextMenuTarget = { rowIndex: null, colKey: null };
 
 document.addEventListener("DOMContentLoaded", () => {
   initStatus();
@@ -35,6 +50,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initTabularModal();
   initBatchSuite();
   initDataCleaningUI();
+  initInteractiveExcelGrid();
 });
 
 // 1. Status Polling & Model Switcher
@@ -1069,8 +1085,19 @@ function renderResults(result) {
   }
 
   currentRecords = result.students || [];
+  activeColumns = extractRecordKeys(currentRecords, currentCatalog);
+  selectedRowIndices.clear();
+  dirtyCells.clear();
+  excelUndoStack = [];
+  excelRedoStack = [];
+  columnFilters = {};
+  currentSort = { colKey: null, dir: null };
+  unsavedEditsCount = 0;
+  updateExcelSaveStatus();
+  updateExcelUndoRedoButtons();
   filteredRecords = [...currentRecords];
   currentPage = 1;
+  populateFindColSelect();
   displayTablePage();
 
   currentEdaData = null;
@@ -1082,29 +1109,150 @@ function renderResults(result) {
   sec.scrollIntoView({ behavior: "smooth" });
 }
 
+// ==========================================================================
+// Interactive Excel Spreadsheet Engine
+// ==========================================================================
+
+function applyFiltersAndSearch(resetPage = true) {
+  const searchInput = document.getElementById("searchInput");
+  const term = (searchInput ? searchInput.value : "").toLowerCase().trim();
+
+  let records = [...currentRecords];
+
+  // 1. Text Search Filter across all fields
+  if (term) {
+    records = records.filter(r => {
+      return Object.values(r).some(val => String(val).toLowerCase().includes(term));
+    });
+  }
+
+  // 2. Active Column-Specific Filters
+  Object.keys(columnFilters).forEach(colKey => {
+    const allowed = columnFilters[colKey];
+    if (allowed && allowed.size > 0) {
+      records = records.filter(r => {
+        const val = String(r[colKey] !== undefined && r[colKey] !== null ? r[colKey] : "");
+        return allowed.has(val);
+      });
+    }
+  });
+
+  // 3. Sorting
+  if (currentSort.colKey && currentSort.dir) {
+    const k = currentSort.colKey;
+    const isAsc = currentSort.dir === "asc";
+    records.sort((a, b) => {
+      const valA = a[k] !== undefined && a[k] !== null ? a[k] : "";
+      const valB = b[k] !== undefined && b[k] !== null ? b[k] : "";
+      const numA = parseFloat(valA);
+      const numB = parseFloat(valB);
+      if (!isNaN(numA) && !isNaN(numB)) {
+        return isAsc ? numA - numB : numB - numA;
+      }
+      return isAsc ? String(valA).localeCompare(String(valB)) : String(valB).localeCompare(String(valA));
+    });
+  }
+
+  filteredRecords = records;
+  if (resetPage) {
+    currentPage = 1;
+  }
+  displayTablePage();
+}
+
 function displayTablePage(highlightSeats = null) {
   const tableHeadRow = document.getElementById("tableHeadRow");
   const tableBody = document.getElementById("tableBody");
+  if (!tableHeadRow || !tableBody) return;
+
   tableHeadRow.innerHTML = "";
   tableBody.innerHTML = "";
 
   if (filteredRecords.length === 0) {
-    tableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted);">No student records to display.</td></tr>`;
-    document.getElementById("paginationInfo").textContent = "0 records";
+    tableBody.innerHTML = `<tr><td colspan="12" style="text-align: center; padding: 2rem; color: var(--text-muted);">No student records to display. Click "➕ Add Row" or clear filters.</td></tr>`;
+    const pagInfo = document.getElementById("paginationInfo");
+    if (pagInfo) pagInfo.textContent = "0 records";
+    updateExcelStatusBarStats(null);
     return;
   }
 
-  // Derive columns in consistent and structured order
-  const keys = extractRecordKeys(filteredRecords, currentCatalog);
+  // Derive column order
+  const keys = (activeColumns && activeColumns.length > 0)
+    ? activeColumns
+    : extractRecordKeys(filteredRecords.length > 0 ? filteredRecords : currentRecords, currentCatalog);
+  activeColumns = [...keys];
 
-  // Headers
+  // 1. Render Table Header
+  // Top-left row index / select-all checkbox
+  const thNum = document.createElement("th");
+  thNum.className = "excel-col-num";
+  thNum.innerHTML = `<input type="checkbox" id="excelSelectAllRows" class="excel-row-check" title="Select All Rows on Page">`;
+  tableHeadRow.appendChild(thNum);
+
   keys.forEach(k => {
     const th = document.createElement("th");
-    th.textContent = k;
+    th.className = "excel-th";
+    th.dataset.colKey = k;
+
+    const isSorted = currentSort.colKey === k;
+    const sortIcon = isSorted ? (currentSort.dir === "asc" ? "▲" : "▼") : "";
+    const isFiltered = columnFilters[k] && columnFilters[k].size > 0;
+
+    th.innerHTML = `
+      <div class="excel-th-inner">
+        <span class="excel-th-label" title="Click to sort">
+          ${k}
+          <span class="excel-sort-icon ${isSorted ? 'active' : ''}">${sortIcon}</span>
+          ${isFiltered ? '<span style="color: #38bdf8; font-size: 0.7rem;" title="Filter active">●</span>' : ''}
+        </span>
+        <button type="button" class="excel-th-menu-btn" data-col-menu="${k}" title="Column Options">⋮</button>
+      </div>
+    `;
+
+    // Click label to sort
+    const labelSpan = th.querySelector(".excel-th-label");
+    if (labelSpan) {
+      labelSpan.addEventListener("click", () => {
+        if (currentSort.colKey === k) {
+          if (currentSort.dir === "asc") currentSort.dir = "desc";
+          else if (currentSort.dir === "desc") { currentSort.colKey = null; currentSort.dir = null; }
+        } else {
+          currentSort.colKey = k;
+          currentSort.dir = "asc";
+        }
+        applyFiltersAndSearch(false);
+      });
+    }
+
+    // Click menu button
+    const menuBtn = th.querySelector(".excel-th-menu-btn");
+    if (menuBtn) {
+      menuBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openColumnMenu(k, e.clientX, e.clientY);
+      });
+    }
+
     tableHeadRow.appendChild(th);
   });
 
-  // Rows for current page
+  // Select-All checkbox logic
+  const selectAllCb = thNum.querySelector("#excelSelectAllRows");
+  if (selectAllCb) {
+    selectAllCb.addEventListener("change", (e) => {
+      const checked = e.target.checked;
+      const startIdx = (currentPage - 1) * pageSize;
+      const endIdx = Math.min(startIdx + pageSize, filteredRecords.length);
+      for (let i = startIdx; i < endIdx; i++) {
+        if (checked) selectedRowIndices.add(i);
+        else selectedRowIndices.delete(i);
+      }
+      displayTablePage();
+      updateSelectedRowsState();
+    });
+  }
+
+  // 2. Render Page Rows
   const maxPage = Math.max(1, Math.ceil(filteredRecords.length / pageSize));
   if (currentPage > maxPage) {
     currentPage = maxPage;
@@ -1112,57 +1260,1497 @@ function displayTablePage(highlightSeats = null) {
   const startIdx = (currentPage - 1) * pageSize;
   const pageSlice = filteredRecords.slice(startIdx, startIdx + pageSize);
 
-  pageSlice.forEach(row => {
+  pageSlice.forEach((row, sliceIdx) => {
+    const absIdx = startIdx + sliceIdx;
     const tr = document.createElement("tr");
+    if (selectedRowIndices.has(absIdx)) {
+      tr.classList.add("excel-row-selected");
+    }
+
     const seatVal = String(row["Seat_No"] || row["seat_no"] || "");
     if (highlightSeats && seatVal && highlightSeats.has(seatVal)) {
       tr.classList.add("live-row-highlight");
     }
+
+    // Row Header (#)
+    const tdNum = document.createElement("td");
+    tdNum.className = "excel-row-num";
+    tdNum.dataset.rowIdx = absIdx;
+    tdNum.innerHTML = `
+      <div class="excel-row-header-content">
+        <input type="checkbox" class="excel-row-check" data-row-idx="${absIdx}" ${selectedRowIndices.has(absIdx) ? "checked" : ""}>
+        <span>${absIdx + 1}</span>
+      </div>
+      <div class="excel-row-hover-actions">
+        <button type="button" class="excel-row-action-btn" title="Insert row below" data-row-action="insert-below" data-row-idx="${absIdx}">➕</button>
+        <button type="button" class="excel-row-action-btn" title="Duplicate row" data-row-action="duplicate" data-row-idx="${absIdx}">📄</button>
+        <button type="button" class="excel-row-action-btn" title="Delete row" data-row-action="delete" data-row-idx="${absIdx}" style="color:#f87171;">🗑️</button>
+      </div>
+    `;
+
+    // Row checkbox change
+    const rowCb = tdNum.querySelector(".excel-row-check");
+    if (rowCb) {
+      rowCb.addEventListener("change", (e) => {
+        if (e.target.checked) selectedRowIndices.add(absIdx);
+        else selectedRowIndices.delete(absIdx);
+        if (selectedRowIndices.has(absIdx)) tr.classList.add("excel-row-selected");
+        else tr.classList.remove("excel-row-selected");
+        updateSelectedRowsState();
+      });
+    }
+
+    // Row hover action buttons
+    const btnIns = tdNum.querySelector('[data-row-action="insert-below"]');
+    if (btnIns) {
+      btnIns.addEventListener("click", (e) => {
+        e.stopPropagation();
+        insertRowAt(absIdx + 1);
+      });
+    }
+    const btnDup = tdNum.querySelector('[data-row-action="duplicate"]');
+    if (btnDup) {
+      btnDup.addEventListener("click", (e) => {
+        e.stopPropagation();
+        duplicateRow(absIdx);
+      });
+    }
+    const btnDel = tdNum.querySelector('[data-row-action="delete"]');
+    if (btnDel) {
+      btnDel.addEventListener("click", (e) => {
+        e.stopPropagation();
+        deleteSingleRow(absIdx);
+      });
+    }
+
+    tr.appendChild(tdNum);
+
+    // Data Cells
     keys.forEach(k => {
       const td = document.createElement("td");
-      td.textContent = row[k] !== undefined && row[k] !== null ? row[k] : "";
+      td.dataset.rowIdx = absIdx;
+      td.dataset.colKey = k;
+
+      const rawVal = row[k] !== undefined && row[k] !== null ? row[k] : "";
+      td.textContent = rawVal;
+
+      if (dirtyCells.has(absIdx + "_" + k)) {
+        td.classList.add("cell-dirty");
+      }
+      if (activeCell && activeCell.rowIndex === absIdx && activeCell.colKey === k) {
+        td.classList.add("excel-cell-selected");
+      }
+      if (currentFindMatches.some(m => m.rowIndex === absIdx && m.colKey === k)) {
+        td.classList.add("search-matched-cell");
+      }
+
+      // Single click selects cell
+      td.addEventListener("click", (e) => {
+        e.stopPropagation();
+        selectCell(absIdx, k);
+      });
+
+      // Double click begins inline editing
+      td.addEventListener("dblclick", (e) => {
+        e.stopPropagation();
+        startCellEdit(absIdx, k);
+      });
+
+      // Right-click context menu
+      td.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        selectCell(absIdx, k);
+        openContextMenu(absIdx, k, e.clientX, e.clientY);
+      });
+
       tr.appendChild(td);
     });
+
     tableBody.appendChild(tr);
   });
 
+  // 3. Update Pagination
   const total = filteredRecords.length;
   const endIdx = Math.min(startIdx + pageSize, total);
-  document.getElementById("paginationInfo").textContent = `Showing records ${startIdx + 1} - ${endIdx} of ${total}`;
+  const pagInfo = document.getElementById("paginationInfo");
+  if (pagInfo) {
+    pagInfo.textContent = `Showing records ${startIdx + 1} - ${endIdx} of ${total}`;
+  }
 
-  document.getElementById("prevPageBtn").disabled = currentPage <= 1;
-  document.getElementById("nextPageBtn").disabled = endIdx >= total;
+  const prevBtn = document.getElementById("prevPageBtn");
+  const nextBtn = document.getElementById("nextPageBtn");
+  if (prevBtn) prevBtn.disabled = currentPage <= 1;
+  if (nextBtn) nextBtn.disabled = endIdx >= total;
+
+  updateSelectedRowsState();
+  if (activeCell) {
+    updateExcelStatusBarStats(activeCell.colKey);
+  }
 }
 
-// 7. Search & Pagination
+// 7. Search & Pagination Controls
 function initSearch() {
   const searchInput = document.getElementById("searchInput");
-  searchInput.addEventListener("input", (e) => {
-    const term = e.target.value.toLowerCase().trim();
-    if (!term) {
-      filteredRecords = [...currentRecords];
-    } else {
-      filteredRecords = currentRecords.filter(r => {
-        return Object.values(r).some(val => String(val).toLowerCase().includes(term));
-      });
+  if (searchInput) {
+    searchInput.addEventListener("input", () => {
+      applyFiltersAndSearch(true);
+    });
+  }
+
+  const prevBtn = document.getElementById("prevPageBtn");
+  if (prevBtn) {
+    prevBtn.addEventListener("click", () => {
+      if (currentPage > 1) {
+        currentPage--;
+        displayTablePage();
+      }
+    });
+  }
+
+  const nextBtn = document.getElementById("nextPageBtn");
+  if (nextBtn) {
+    nextBtn.addEventListener("click", () => {
+      if (currentPage * pageSize < filteredRecords.length) {
+        currentPage++;
+        displayTablePage();
+      }
+    });
+  }
+
+  const sizeSelect = document.getElementById("pageSizeSelect");
+  if (sizeSelect) {
+    sizeSelect.addEventListener("change", (e) => {
+      pageSize = parseInt(e.target.value, 10) || 25;
+      currentPage = 1;
+      displayTablePage();
+    });
+  }
+}
+
+// ==========================================================================
+// Excel Cell Selection, Keyboard Navigation & Inline Editing
+// ==========================================================================
+
+function selectCell(rowIndex, colKey) {
+  if (editingCell) {
+    commitCellEdit();
+  }
+
+  activeCell = { rowIndex, colKey };
+
+  // Remove previous selection styling
+  document.querySelectorAll(".excel-data-table td.excel-cell-selected").forEach(td => {
+    td.classList.remove("excel-cell-selected");
+  });
+
+  // Apply selection highlight
+  const targetTd = document.querySelector(`.excel-data-table td[data-row-idx="${rowIndex}"][data-col-key="${colKey}"]`);
+  if (targetTd) {
+    targetTd.classList.add("excel-cell-selected");
+    targetTd.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+
+  // Update active coordinates badge
+  const coordsBadge = document.getElementById("excelActiveCellCoords");
+  if (coordsBadge) {
+    const val = (filteredRecords[rowIndex] && filteredRecords[rowIndex][colKey] !== undefined)
+      ? String(filteredRecords[rowIndex][colKey])
+      : "";
+    coordsBadge.textContent = `Row ${rowIndex + 1}, Col "${colKey}" [${val.substring(0, 15)}]`;
+  }
+
+  // Live Formula / Excel Stats Bar computation
+  updateExcelStatusBarStats(colKey);
+}
+
+function updateExcelStatusBarStats(colKey) {
+  if (!colKey || filteredRecords.length === 0) {
+    const setStat = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    setStat("valStatCount", "0");
+    setStat("valStatSum", "0.00");
+    setStat("valStatAvg", "0.00");
+    setStat("valStatMin", "0.00");
+    setStat("valStatMax", "0.00");
+    return;
+  }
+
+  let count = 0;
+  let numCount = 0;
+  let sum = 0;
+  let min = Infinity;
+  let max = -Infinity;
+
+  filteredRecords.forEach(r => {
+    const raw = r[colKey];
+    if (raw !== undefined && raw !== null && String(raw).trim() !== "") {
+      count++;
+      const num = parseFloat(String(raw).replace(/[^\d.-]/g, ""));
+      if (!isNaN(num) && isFinite(num)) {
+        numCount++;
+        sum += num;
+        if (num < min) min = num;
+        if (num > max) max = num;
+      }
     }
-    currentPage = 1;
+  });
+
+  const avg = numCount > 0 ? sum / numCount : 0;
+  const setStat = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+
+  setStat("valStatCount", count.toString());
+  setStat("valStatSum", numCount > 0 ? (sum % 1 === 0 ? sum.toString() : sum.toFixed(2)) : "N/A");
+  setStat("valStatAvg", numCount > 0 ? avg.toFixed(2) : "N/A");
+  setStat("valStatMin", numCount > 0 ? (min % 1 === 0 ? min.toString() : min.toFixed(2)) : "N/A");
+  setStat("valStatMax", numCount > 0 ? (max % 1 === 0 ? max.toString() : max.toFixed(2)) : "N/A");
+}
+
+function startCellEdit(rowIndex, colKey, initialChar = null) {
+  if (editingCell) {
+    commitCellEdit();
+  }
+
+  const td = document.querySelector(`.excel-data-table td[data-row-idx="${rowIndex}"][data-col-key="${colKey}"]`);
+  if (!td) return;
+
+  const currentVal = (filteredRecords[rowIndex] && filteredRecords[rowIndex][colKey] !== undefined)
+    ? String(filteredRecords[rowIndex][colKey])
+    : "";
+
+  editingCell = { rowIndex, colKey, originalVal: currentVal, tdElement: td };
+
+  td.classList.add("excel-cell-editing");
+  td.innerHTML = "";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "excel-cell-editor";
+  input.value = initialChar !== null ? initialChar : currentVal;
+  td.appendChild(input);
+
+  input.focus();
+  if (initialChar === null) {
+    input.select();
+  }
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      commitCellEdit();
+      // Move down or up
+      const nextRow = e.shiftKey ? Math.max(0, rowIndex - 1) : Math.min(filteredRecords.length - 1, rowIndex + 1);
+      selectCell(nextRow, colKey);
+    } else if (e.key === "Tab") {
+      e.preventDefault();
+      commitCellEdit();
+      // Move right or left
+      const colIdx = activeColumns.indexOf(colKey);
+      if (e.shiftKey) {
+        if (colIdx > 0) selectCell(rowIndex, activeColumns[colIdx - 1]);
+      } else {
+        if (colIdx < activeColumns.length - 1) selectCell(rowIndex, activeColumns[colIdx + 1]);
+      }
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      cancelCellEdit();
+    }
+  });
+
+  input.addEventListener("blur", () => {
+    if (editingCell) {
+      commitCellEdit();
+    }
+  });
+}
+
+function commitCellEdit() {
+  if (!editingCell) return;
+  const { rowIndex, colKey, originalVal, tdElement } = editingCell;
+  const input = tdElement.querySelector(".excel-cell-editor");
+  const newVal = input ? input.value.trim() : originalVal;
+
+  editingCell = null;
+  tdElement.classList.remove("excel-cell-editing");
+  tdElement.textContent = newVal;
+
+  if (newVal !== originalVal) {
+    pushExcelSnapshot();
+    // Update record
+    if (filteredRecords[rowIndex]) {
+      filteredRecords[rowIndex][colKey] = newVal;
+    }
+    dirtyCells.add(rowIndex + "_" + colKey);
+    tdElement.classList.add("cell-dirty");
+
+    unsavedEditsCount++;
+    updateExcelSaveStatus();
+    updateExcelStatusBarStats(colKey);
+  }
+}
+
+function cancelCellEdit() {
+  if (!editingCell) return;
+  const { originalVal, tdElement } = editingCell;
+  editingCell = null;
+  tdElement.classList.remove("excel-cell-editing");
+  tdElement.textContent = originalVal;
+}
+
+// ==========================================================================
+// Undo / Redo & Save System
+// ==========================================================================
+
+function pushExcelSnapshot() {
+  const snapshot = {
+    records: JSON.parse(JSON.stringify(currentRecords)),
+    columns: [...activeColumns]
+  };
+  excelUndoStack.push(snapshot);
+  if (excelUndoStack.length > 50) {
+    excelUndoStack.shift();
+  }
+  excelRedoStack = [];
+  updateExcelUndoRedoButtons();
+}
+
+function excelUndo() {
+  if (excelUndoStack.length === 0) return;
+  if (editingCell) commitCellEdit();
+
+  const currentSnapshot = {
+    records: JSON.parse(JSON.stringify(currentRecords)),
+    columns: [...activeColumns]
+  };
+  excelRedoStack.push(currentSnapshot);
+
+  const prev = excelUndoStack.pop();
+  currentRecords = prev.records;
+  activeColumns = prev.columns;
+
+  unsavedEditsCount = Math.max(0, unsavedEditsCount - 1);
+  updateExcelSaveStatus();
+  updateExcelUndoRedoButtons();
+  applyFiltersAndSearch(false);
+  updateMetaCount(currentRecords.length);
+}
+
+function excelRedo() {
+  if (excelRedoStack.length === 0) return;
+  if (editingCell) commitCellEdit();
+
+  const currentSnapshot = {
+    records: JSON.parse(JSON.stringify(currentRecords)),
+    columns: [...activeColumns]
+  };
+  excelUndoStack.push(currentSnapshot);
+
+  const next = excelRedoStack.pop();
+  currentRecords = next.records;
+  activeColumns = next.columns;
+
+  unsavedEditsCount++;
+  updateExcelSaveStatus();
+  updateExcelUndoRedoButtons();
+  applyFiltersAndSearch(false);
+  updateMetaCount(currentRecords.length);
+}
+
+function updateExcelUndoRedoButtons() {
+  const btnUndo = document.getElementById("btnExcelUndo");
+  const btnRedo = document.getElementById("btnExcelRedo");
+  if (btnUndo) btnUndo.disabled = excelUndoStack.length === 0;
+  if (btnRedo) btnRedo.disabled = excelRedoStack.length === 0;
+}
+
+function updateExcelSaveStatus() {
+  const dot = document.getElementById("excelSaveDot");
+  const text = document.getElementById("excelSaveStatusText");
+  if (!dot || !text) return;
+
+  if (unsavedEditsCount > 0) {
+    dot.className = "status-dot dot-unsaved";
+    text.textContent = `${unsavedEditsCount} unsaved edit${unsavedEditsCount === 1 ? '' : 's'}`;
+  } else {
+    dot.className = "status-dot dot-synced";
+    text.textContent = "All changes saved";
+  }
+}
+
+async function saveDatasetToServer() {
+  if (!currentRecords || currentRecords.length === 0) {
+    alert("No records to save.");
+    return;
+  }
+
+  const saveBtn = document.getElementById("btnExcelSave");
+  const origText = saveBtn ? saveBtn.innerHTML : "";
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = `<span>⏳ Saving...</span>`;
+  }
+
+  try {
+    const res = await fetch("/api/dataset/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        folder_name: currentFolderName || "live_edited_results",
+        students: currentRecords,
+        columns: activeColumns,
+        catalog: currentCatalog
+      })
+    });
+    const data = await res.json();
+
+    if (!data.success) {
+      alert("Save failed: " + (data.error || "Unknown server error"));
+      return;
+    }
+
+    unsavedEditsCount = 0;
+    dirtyCells.clear();
+    updateExcelSaveStatus();
     displayTablePage();
+
+    // Re-enable download links with fresh data
+    const folder = data.folder_name;
+    if (folder) {
+      currentFolderName = folder;
+      const csvBtn = document.getElementById("btnDownloadCsv");
+      if (csvBtn) csvBtn.href = `/api/download/${folder}/${data.csv_file}`;
+      const xlsxBtn = document.getElementById("btnDownloadExcel");
+      if (xlsxBtn) xlsxBtn.href = `/api/download/${folder}/${data.excel_file}`;
+      const jsonBtn = document.getElementById("btnDownloadJson");
+      if (jsonBtn) jsonBtn.href = `/api/download/${folder}/${data.json_file}`;
+      const academicBtn = document.getElementById("btnDownloadAcademicReport");
+      if (academicBtn) academicBtn.href = `/api/export/academic-analysis/${encodeURIComponent(folder)}`;
+    }
+
+    // Inform user cleanly
+    const badge = document.getElementById("excelSaveStatus");
+    if (badge) {
+      badge.style.transform = "scale(1.08)";
+      setTimeout(() => { badge.style.transform = "scale(1)"; }, 300);
+    }
+  } catch (err) {
+    console.error("Error saving dataset:", err);
+    alert("Network error occurred while saving: " + err.message);
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = origText;
+    }
+  }
+}
+
+// ==========================================================================
+// Row & Column Operations (Add, Delete, Rename, Duplicate)
+// ==========================================================================
+
+function insertRowAt(targetIndex, initialData = null) {
+  pushExcelSnapshot();
+
+  const newRow = {};
+  activeColumns.forEach(k => {
+    newRow[k] = "";
   });
 
-  document.getElementById("prevPageBtn").addEventListener("click", () => {
-    if (currentPage > 1) {
-      currentPage--;
-      displayTablePage();
+  if (initialData) {
+    Object.assign(newRow, initialData);
+  } else {
+    // Generate next smart seat number
+    let maxSeat = 522000;
+    currentRecords.forEach(r => {
+      const s = parseInt(r["Seat_No"] || r["seat_no"], 10);
+      if (!isNaN(s) && s > maxSeat) maxSeat = s;
+    });
+    newRow["Seat_No"] = String(maxSeat + 1);
+    newRow["Name"] = "New Student";
+    newRow["Result"] = "Successful";
+  }
+
+  const insertPos = Math.max(0, Math.min(targetIndex, currentRecords.length));
+  currentRecords.splice(insertPos, 0, newRow);
+
+  unsavedEditsCount++;
+  updateExcelSaveStatus();
+  updateMetaCount(currentRecords.length);
+  applyFiltersAndSearch(false);
+
+  // Jump page to newly inserted row and select it
+  currentPage = Math.ceil((insertPos + 1) / pageSize);
+  displayTablePage();
+  selectCell(insertPos, activeColumns[0] || "Seat_No");
+}
+
+function duplicateRow(rowIndex) {
+  const target = filteredRecords[rowIndex];
+  if (!target) return;
+
+  pushExcelSnapshot();
+  const cloned = JSON.parse(JSON.stringify(target));
+
+  // Modify seat or name to avoid exact duplicate collision
+  const originalSeat = parseInt(cloned["Seat_No"] || cloned["seat_no"], 10);
+  if (!isNaN(originalSeat)) {
+    cloned["Seat_No"] = String(originalSeat + 1);
+  }
+  if (cloned["Name"]) {
+    cloned["Name"] = cloned["Name"] + " (Copy)";
+  }
+
+  const originalIdx = currentRecords.indexOf(target);
+  const insertPos = originalIdx >= 0 ? originalIdx + 1 : currentRecords.length;
+  currentRecords.splice(insertPos, 0, cloned);
+
+  unsavedEditsCount++;
+  updateExcelSaveStatus();
+  updateMetaCount(currentRecords.length);
+  applyFiltersAndSearch(false);
+  selectCell(insertPos, activeColumns[0] || "Seat_No");
+}
+
+function deleteSingleRow(rowIndex) {
+  const target = filteredRecords[rowIndex];
+  if (!target) return;
+
+  pushExcelSnapshot();
+  const origIdx = currentRecords.indexOf(target);
+  if (origIdx >= 0) {
+    currentRecords.splice(origIdx, 1);
+  }
+  selectedRowIndices.delete(rowIndex);
+
+  unsavedEditsCount++;
+  updateExcelSaveStatus();
+  updateMetaCount(currentRecords.length);
+  applyFiltersAndSearch(false);
+}
+
+function deleteSelectedRows() {
+  if (selectedRowIndices.size === 0) return;
+
+  if (selectedRowIndices.size > 1) {
+    if (!confirm(`Are you sure you want to delete ${selectedRowIndices.size} selected records?`)) {
+      return;
+    }
+  }
+
+  pushExcelSnapshot();
+  const targets = new Set();
+  selectedRowIndices.forEach(idx => {
+    if (filteredRecords[idx]) {
+      targets.add(filteredRecords[idx]);
     }
   });
 
-  document.getElementById("nextPageBtn").addEventListener("click", () => {
-    if (currentPage * pageSize < filteredRecords.length) {
-      currentPage++;
-      displayTablePage();
+  currentRecords = currentRecords.filter(r => !targets.has(r));
+  selectedRowIndices.clear();
+
+  unsavedEditsCount++;
+  updateExcelSaveStatus();
+  updateMetaCount(currentRecords.length);
+  applyFiltersAndSearch(false);
+}
+
+function updateSelectedRowsState() {
+  const btnDel = document.getElementById("btnExcelDeleteRows");
+  const badge = document.getElementById("excelSelectedBadge");
+  const count = selectedRowIndices.size;
+
+  if (btnDel) {
+    btnDel.disabled = count === 0;
+  }
+  if (badge) {
+    if (count > 0) {
+      badge.textContent = count.toString();
+      badge.classList.remove("hidden");
+    } else {
+      badge.classList.add("hidden");
+    }
+  }
+}
+
+function addColumn(colName, defaultVal = "", position = "end") {
+  const cleanName = colName.trim();
+  if (!cleanName) {
+    alert("Column name cannot be empty.");
+    return;
+  }
+  if (activeColumns.includes(cleanName)) {
+    alert(`Column "${cleanName}" already exists.`);
+    return;
+  }
+
+  pushExcelSnapshot();
+
+  if (position === "after_active" && activeCell && activeCell.colKey) {
+    const idx = activeColumns.indexOf(activeCell.colKey);
+    activeColumns.splice(idx + 1, 0, cleanName);
+  } else {
+    activeColumns.push(cleanName);
+  }
+
+  // Populate default value across all current records
+  currentRecords.forEach(r => {
+    r[cleanName] = defaultVal;
+  });
+
+  unsavedEditsCount++;
+  updateExcelSaveStatus();
+  populateFindColSelect();
+  displayTablePage();
+}
+
+function deleteColumn(colKey) {
+  if (!colKey) return;
+  if (!confirm(`Delete column "${colKey}" across all student records? This cannot be undone without Undo.`)) {
+    return;
+  }
+
+  pushExcelSnapshot();
+  activeColumns = activeColumns.filter(c => c !== colKey);
+  currentRecords.forEach(r => {
+    delete r[colKey];
+  });
+
+  if (activeCell && activeCell.colKey === colKey) {
+    activeCell = null;
+  }
+
+  unsavedEditsCount++;
+  updateExcelSaveStatus();
+  populateFindColSelect();
+  displayTablePage();
+}
+
+function renameColumn(oldKey, newKey) {
+  const cleanNew = newKey.trim();
+  if (!cleanNew) {
+    alert("New column name cannot be empty.");
+    return;
+  }
+  if (cleanNew === oldKey) return;
+  if (activeColumns.includes(cleanNew)) {
+    alert(`Column "${cleanNew}" already exists.`);
+    return;
+  }
+
+  pushExcelSnapshot();
+
+  const idx = activeColumns.indexOf(oldKey);
+  if (idx >= 0) {
+    activeColumns[idx] = cleanNew;
+  }
+
+  currentRecords.forEach(r => {
+    if (r[oldKey] !== undefined) {
+      r[cleanNew] = r[oldKey];
+      delete r[oldKey];
     }
   });
+
+  if (activeCell && activeCell.colKey === oldKey) {
+    activeCell.colKey = cleanNew;
+  }
+
+  unsavedEditsCount++;
+  updateExcelSaveStatus();
+  populateFindColSelect();
+  displayTablePage();
+}
+
+function clearColumn(colKey) {
+  if (!colKey) return;
+  if (!confirm(`Clear all values in column "${colKey}"?`)) return;
+
+  pushExcelSnapshot();
+  currentRecords.forEach(r => {
+    r[colKey] = "";
+  });
+
+  unsavedEditsCount++;
+  updateExcelSaveStatus();
+  displayTablePage();
+}
+
+// ==========================================================================
+// Find & Replace Drawer Implementation
+// ==========================================================================
+
+function populateFindColSelect() {
+  const select = document.getElementById("findColSelect");
+  if (!select) return;
+  const currentVal = select.value;
+  select.innerHTML = `<option value="_all_">All Columns</option>`;
+  activeColumns.forEach(k => {
+    const opt = document.createElement("option");
+    opt.value = k;
+    opt.textContent = k;
+    select.appendChild(opt);
+  });
+  if (activeColumns.includes(currentVal)) {
+    select.value = currentVal;
+  }
+}
+
+function toggleFindReplace(forceShow = null) {
+  const bar = document.getElementById("excelFindReplaceBar");
+  if (!bar) return;
+  const isHidden = bar.classList.contains("hidden");
+  const shouldShow = forceShow !== null ? forceShow : isHidden;
+
+  if (shouldShow) {
+    bar.classList.remove("hidden");
+    populateFindColSelect();
+    const findInp = document.getElementById("findInput");
+    if (findInp) {
+      findInp.focus();
+      findInp.select();
+    }
+  } else {
+    bar.classList.add("hidden");
+    currentFindMatches = [];
+    currentFindMatchIdx = -1;
+    displayTablePage();
+  }
+}
+
+function performFind(direction = "next") {
+  const findInp = document.getElementById("findInput");
+  const query = findInp ? findInp.value : "";
+  if (!query) {
+    currentFindMatches = [];
+    currentFindMatchIdx = -1;
+    updateFindMatchBadge();
+    displayTablePage();
+    return;
+  }
+
+  const colSelect = document.getElementById("findColSelect");
+  const targetCol = colSelect ? colSelect.value : "_all_";
+  const matchCase = document.getElementById("findMatchCase") ? document.getElementById("findMatchCase").checked : false;
+
+  const matches = [];
+  const searchStr = matchCase ? query : query.toLowerCase();
+
+  const colsToSearch = targetCol === "_all_" ? activeColumns : [targetCol];
+
+  filteredRecords.forEach((row, rowIdx) => {
+    colsToSearch.forEach(colKey => {
+      const val = row[colKey] !== undefined && row[colKey] !== null ? String(row[colKey]) : "";
+      const testVal = matchCase ? val : val.toLowerCase();
+      if (testVal.includes(searchStr)) {
+        matches.push({ rowIndex: rowIdx, colKey });
+      }
+    });
+  });
+
+  currentFindMatches = matches;
+
+  if (matches.length === 0) {
+    currentFindMatchIdx = -1;
+    updateFindMatchBadge();
+    displayTablePage();
+    return;
+  }
+
+  if (direction === "next") {
+    currentFindMatchIdx = (currentFindMatchIdx + 1) % matches.length;
+  } else {
+    currentFindMatchIdx = (currentFindMatchIdx - 1 + matches.length) % matches.length;
+  }
+
+  updateFindMatchBadge();
+
+  const match = matches[currentFindMatchIdx];
+  // Ensure the page with match is active
+  currentPage = Math.ceil((match.rowIndex + 1) / pageSize);
+  displayTablePage();
+  selectCell(match.rowIndex, match.colKey);
+}
+
+function updateFindMatchBadge() {
+  const badge = document.getElementById("findMatchCount");
+  if (!badge) return;
+  if (currentFindMatches.length === 0) {
+    badge.textContent = "0 matches";
+  } else {
+    badge.textContent = `${currentFindMatchIdx + 1} of ${currentFindMatches.length} matches`;
+  }
+}
+
+function replaceCurrentMatch() {
+  if (currentFindMatches.length === 0 || currentFindMatchIdx < 0) {
+    performFind("next");
+    if (currentFindMatches.length === 0) return;
+  }
+
+  const match = currentFindMatches[currentFindMatchIdx];
+  const replaceInp = document.getElementById("replaceInput");
+  const findInp = document.getElementById("findInput");
+  const repText = replaceInp ? replaceInp.value : "";
+  const findText = findInp ? findInp.value : "";
+
+  const record = filteredRecords[match.rowIndex];
+  if (!record) return;
+
+  pushExcelSnapshot();
+
+  const curVal = String(record[match.colKey] || "");
+  const matchCase = document.getElementById("findMatchCase") ? document.getElementById("findMatchCase").checked : false;
+
+  let updatedVal;
+  if (matchCase) {
+    updatedVal = curVal.replace(findText, repText);
+  } else {
+    const reg = new RegExp(findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    updatedVal = curVal.replace(reg, repText);
+  }
+
+  record[match.colKey] = updatedVal;
+  dirtyCells.add(match.rowIndex + "_" + match.colKey);
+  unsavedEditsCount++;
+  updateExcelSaveStatus();
+
+  performFind("next");
+}
+
+function replaceAllMatches() {
+  const findInp = document.getElementById("findInput");
+  const replaceInp = document.getElementById("replaceInput");
+  const findText = findInp ? findInp.value : "";
+  const repText = replaceInp ? replaceInp.value : "";
+
+  if (!findText) return;
+
+  const colSelect = document.getElementById("findColSelect");
+  const targetCol = colSelect ? colSelect.value : "_all_";
+  const matchCase = document.getElementById("findMatchCase") ? document.getElementById("findMatchCase").checked : false;
+  const colsToSearch = targetCol === "_all_" ? activeColumns : [targetCol];
+
+  let replaceCount = 0;
+  pushExcelSnapshot();
+
+  const reg = new RegExp(findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), matchCase ? 'g' : 'gi');
+
+  currentRecords.forEach((row, rowIdx) => {
+    colsToSearch.forEach(colKey => {
+      const curVal = String(row[colKey] || "");
+      if (reg.test(curVal)) {
+        row[colKey] = curVal.replace(reg, repText);
+        dirtyCells.add(rowIdx + "_" + colKey);
+        replaceCount++;
+      }
+    });
+  });
+
+  if (replaceCount > 0) {
+    unsavedEditsCount += replaceCount;
+    updateExcelSaveStatus();
+    applyFiltersAndSearch(false);
+    alert(`Successfully replaced ${replaceCount} occurrences.`);
+  } else {
+    alert("No matches found to replace.");
+  }
+}
+
+// ==========================================================================
+// Context Menus & Column Operations
+// ==========================================================================
+
+function openContextMenu(rowIndex, colKey, clientX, clientY) {
+  contextMenuTarget = { rowIndex, colKey };
+  closeColumnMenu();
+
+  const menu = document.getElementById("excelContextMenu");
+  if (!menu) return;
+
+  menu.style.left = `${Math.min(window.innerWidth - 210, clientX)}px`;
+  menu.style.top = `${Math.min(window.innerHeight - 260, clientY)}px`;
+  menu.classList.remove("hidden");
+}
+
+function closeContextMenu() {
+  const menu = document.getElementById("excelContextMenu");
+  if (menu) menu.classList.add("hidden");
+}
+
+function openColumnMenu(colKey, clientX, clientY) {
+  contextMenuTarget = { rowIndex: null, colKey };
+  closeContextMenu();
+
+  const menu = document.getElementById("excelColMenu");
+  if (!menu) return;
+
+  menu.style.left = `${Math.min(window.innerWidth - 230, clientX)}px`;
+  menu.style.top = `${Math.min(window.innerHeight - 280, clientY)}px`;
+  menu.classList.remove("hidden");
+}
+
+function closeColumnMenu() {
+  const menu = document.getElementById("excelColMenu");
+  if (menu) menu.classList.add("hidden");
+}
+
+// ==========================================================================
+// Filter Modal Engine
+// ==========================================================================
+
+let filterModalSelectedValues = new Set();
+let filterModalTargetCol = null;
+
+function openFilterModal(colKey) {
+  filterModalTargetCol = colKey;
+  const modal = document.getElementById("excelFilterModal");
+  const title = document.getElementById("filterModalTitle");
+  const container = document.getElementById("filterValuesList");
+  const searchInp = document.getElementById("filterSearchInput");
+
+  if (!modal || !container) return;
+
+  title.textContent = `Filter "${colKey}"`;
+  if (searchInp) searchInp.value = "";
+
+  // Collect distinct values & frequencies
+  const valCounts = {};
+  currentRecords.forEach(r => {
+    const v = String(r[colKey] !== undefined && r[colKey] !== null ? r[colKey] : "(Blank)");
+    valCounts[v] = (valCounts[v] || 0) + 1;
+  });
+
+  const sortedVals = Object.keys(valCounts).sort();
+
+  // If column already filtered, pre-select those, otherwise pre-select all
+  if (columnFilters[colKey] && columnFilters[colKey].size > 0) {
+    filterModalSelectedValues = new Set(columnFilters[colKey]);
+  } else {
+    filterModalSelectedValues = new Set(sortedVals);
+  }
+
+  renderFilterModalList(sortedVals, valCounts, "");
+
+  if (searchInp) {
+    searchInp.oninput = (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      renderFilterModalList(sortedVals, valCounts, q);
+    };
+  }
+
+  modal.classList.remove("hidden");
+}
+
+function renderFilterModalList(sortedVals, valCounts, query) {
+  const container = document.getElementById("filterValuesList");
+  if (!container) return;
+  container.innerHTML = "";
+
+  const filtered = sortedVals.filter(v => v.toLowerCase().includes(query));
+
+  if (filtered.length === 0) {
+    container.innerHTML = `<div style="color: var(--text-muted); padding: 0.5rem; text-align: center;">No matching values</div>`;
+    return;
+  }
+
+  filtered.forEach(val => {
+    const count = valCounts[val];
+    const row = document.createElement("label");
+    row.style.display = "flex";
+    row.style.alignItems = "center";
+    row.style.gap = "0.5rem";
+    row.style.padding = "0.25rem 0.2rem";
+    row.style.fontSize = "0.8rem";
+    row.style.cursor = "pointer";
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.className = "excel-row-check";
+    cb.checked = filterModalSelectedValues.has(val);
+    cb.addEventListener("change", (e) => {
+      if (e.target.checked) filterModalSelectedValues.add(val);
+      else filterModalSelectedValues.delete(val);
+    });
+
+    const textSpan = document.createElement("span");
+    textSpan.textContent = `${val} (${count})`;
+    textSpan.style.flex = "1";
+
+    row.appendChild(cb);
+    row.appendChild(textSpan);
+    container.appendChild(row);
+  });
+}
+
+// ==========================================================================
+// Initialization of All Interactive Excel Features
+// ==========================================================================
+
+function initInteractiveExcelGrid() {
+  // Global click closes context menus
+  document.addEventListener("click", () => {
+    closeContextMenu();
+    closeColumnMenu();
+  });
+
+  // Table Container Keyboard Listener (Excel Navigation & Shortcuts)
+  const container = document.getElementById("excelTableContainer");
+  if (container) {
+    container.addEventListener("keydown", (e) => {
+      if (editingCell) return; // Managed by cell editor
+      if (!activeCell) return;
+
+      const { rowIndex, colKey } = activeCell;
+      const colIdx = activeColumns.indexOf(colKey);
+
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (rowIndex > 0) selectCell(rowIndex - 1, colKey);
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (rowIndex < filteredRecords.length - 1) selectCell(rowIndex + 1, colKey);
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        if (colIdx > 0) selectCell(rowIndex, activeColumns[colIdx - 1]);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        if (colIdx < activeColumns.length - 1) selectCell(rowIndex, activeColumns[colIdx + 1]);
+      } else if (e.key === "Enter" || e.key === "F2") {
+        e.preventDefault();
+        startCellEdit(rowIndex, colKey);
+      } else if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        pushExcelSnapshot();
+        if (filteredRecords[rowIndex]) {
+          filteredRecords[rowIndex][colKey] = "";
+        }
+        dirtyCells.add(rowIndex + "_" + colKey);
+        unsavedEditsCount++;
+        updateExcelSaveStatus();
+        displayTablePage();
+        selectCell(rowIndex, colKey);
+      } else if (e.ctrlKey && e.key.toLowerCase() === "c") {
+        const val = filteredRecords[rowIndex] ? filteredRecords[rowIndex][colKey] : "";
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(String(val || ""));
+        }
+      } else if (e.ctrlKey && e.key.toLowerCase() === "v") {
+        if (navigator.clipboard) {
+          navigator.clipboard.readText().then(text => {
+            pushExcelSnapshot();
+            filteredRecords[rowIndex][colKey] = text;
+            dirtyCells.add(rowIndex + "_" + colKey);
+            unsavedEditsCount++;
+            updateExcelSaveStatus();
+            displayTablePage();
+            selectCell(rowIndex, colKey);
+          });
+        }
+      } else if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.length === 1) {
+        // Printable character starts edit directly!
+        startCellEdit(rowIndex, colKey, e.key);
+      }
+    });
+  }
+
+  // Global Keydown (Ctrl+Z, Ctrl+Y, Ctrl+S, Ctrl+F)
+  document.addEventListener("keydown", (e) => {
+    if (e.ctrlKey && e.key.toLowerCase() === "z") {
+      e.preventDefault();
+      excelUndo();
+    } else if (e.ctrlKey && (e.key.toLowerCase() === "y" || (e.shiftKey && e.key.toLowerCase() === "z"))) {
+      e.preventDefault();
+      excelRedo();
+    } else if (e.ctrlKey && e.key.toLowerCase() === "s") {
+      e.preventDefault();
+      saveDatasetToServer();
+    } else if (e.ctrlKey && e.key.toLowerCase() === "f") {
+      e.preventDefault();
+      toggleFindReplace();
+    }
+  });
+
+  // Ribbon Action Buttons
+  const btnAddRow = document.getElementById("btnExcelAddRow");
+  if (btnAddRow) {
+    btnAddRow.addEventListener("click", () => {
+      const modal = document.getElementById("excelAddRowModal");
+      if (modal) modal.classList.remove("hidden");
+    });
+  }
+
+  const btnAddCol = document.getElementById("btnExcelAddCol");
+  if (btnAddCol) {
+    btnAddCol.addEventListener("click", () => {
+      const modal = document.getElementById("excelAddColModal");
+      if (modal) modal.classList.remove("hidden");
+    });
+  }
+
+  const btnDelRows = document.getElementById("btnExcelDeleteRows");
+  if (btnDelRows) {
+    btnDelRows.addEventListener("click", deleteSelectedRows);
+  }
+
+  const btnUndo = document.getElementById("btnExcelUndo");
+  if (btnUndo) {
+    btnUndo.addEventListener("click", excelUndo);
+  }
+
+  const btnRedo = document.getElementById("btnExcelRedo");
+  if (btnRedo) {
+    btnRedo.addEventListener("click", excelRedo);
+  }
+
+  const btnAiFix = document.getElementById("btnExcelAiFix");
+  if (btnAiFix) {
+    btnAiFix.addEventListener("click", async () => {
+      if (!currentRecords || currentRecords.length === 0) {
+        showToast("No active records to fix.", "error");
+        return;
+      }
+      const origHtml = btnAiFix.innerHTML;
+      btnAiFix.disabled = true;
+      btnAiFix.innerHTML = '<span>⏳ Fixing with AI...</span>';
+      pushExcelSnapshot();
+      try {
+        const resp = await fetch("/api/tabular/interactive-fix", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            records: currentRecords,
+            folder_name: currentFolderName || ""
+          })
+        });
+        const data = await resp.json();
+        if (data.success && data.records) {
+          currentRecords = data.records;
+          activeColumns = extractRecordKeys(currentRecords, currentCatalog);
+          markExcelDirty();
+          applyFiltersAndSearch(true);
+          const chgCount = data.changes_count || 0;
+          showToast(`🪄 AI Fix Complete! ${chgCount} cell(s) repaired & reconciled.`, "success");
+        } else {
+          showToast(data.error || "AI Fix encountered an issue.", "error");
+        }
+      } catch (err) {
+        showToast("Network error during AI Fix: " + err.message, "error");
+      } finally {
+        btnAiFix.disabled = false;
+        btnAiFix.innerHTML = origHtml;
+      }
+    });
+  }
+
+  const btnToggleFR = document.getElementById("btnToggleFindReplace");
+  if (btnToggleFR) {
+    btnToggleFR.addEventListener("click", () => toggleFindReplace());
+  }
+
+  const btnSave = document.getElementById("btnExcelSave");
+  if (btnSave) {
+    btnSave.addEventListener("click", saveDatasetToServer);
+  }
+
+  const btnReset = document.getElementById("btnExcelReset");
+  if (btnReset) {
+    btnReset.addEventListener("click", () => {
+      if (originalRecords.length === 0) return;
+      if (!confirm("Reset dataset back to original extracted state? All unsaved manual edits will be reverted.")) {
+        return;
+      }
+      pushExcelSnapshot();
+      currentRecords = JSON.parse(JSON.stringify(originalRecords));
+      activeColumns = extractRecordKeys(currentRecords, currentCatalog);
+      dirtyCells.clear();
+      selectedRowIndices.clear();
+      unsavedEditsCount = 0;
+      updateExcelSaveStatus();
+      applyFiltersAndSearch(true);
+      updateMetaCount(currentRecords.length);
+    });
+  }
+
+  const btnHelp = document.getElementById("btnExcelShortcutsHelp");
+  if (btnHelp) {
+    btnHelp.addEventListener("click", () => {
+      const modal = document.getElementById("excelShortcutsModal");
+      if (modal) modal.classList.remove("hidden");
+    });
+  }
+
+  // Find & Replace Buttons
+  const btnFindNext = document.getElementById("btnFindNext");
+  if (btnFindNext) btnFindNext.addEventListener("click", () => performFind("next"));
+
+  const btnFindPrev = document.getElementById("btnFindPrev");
+  if (btnFindPrev) btnFindPrev.addEventListener("click", () => performFind("prev"));
+
+  const btnRepOne = document.getElementById("btnReplaceOne");
+  if (btnRepOne) btnRepOne.addEventListener("click", replaceCurrentMatch);
+
+  const btnRepAll = document.getElementById("btnReplaceAll");
+  if (btnRepAll) btnRepAll.addEventListener("click", replaceAllMatches);
+
+  const btnCloseFR = document.getElementById("btnCloseFindReplace");
+  if (btnCloseFR) btnCloseFR.addEventListener("click", () => toggleFindReplace(false));
+
+  // Context Menu Item Actions
+  const ctxMenu = document.getElementById("excelContextMenu");
+  if (ctxMenu) {
+    ctxMenu.addEventListener("click", (e) => {
+      const item = e.target.closest(".ctx-item");
+      if (!item) return;
+      const action = item.dataset.action;
+      const { rowIndex, colKey } = contextMenuTarget;
+
+      if (action === "edit_cell" && rowIndex !== null && colKey) {
+        startCellEdit(rowIndex, colKey);
+      } else if (action === "copy_cell" && rowIndex !== null && colKey) {
+        const val = filteredRecords[rowIndex] ? filteredRecords[rowIndex][colKey] : "";
+        if (navigator.clipboard) navigator.clipboard.writeText(String(val || ""));
+      } else if (action === "clear_cell" && rowIndex !== null && colKey) {
+        pushExcelSnapshot();
+        if (filteredRecords[rowIndex]) filteredRecords[rowIndex][colKey] = "";
+        dirtyCells.add(rowIndex + "_" + colKey);
+        unsavedEditsCount++;
+        updateExcelSaveStatus();
+        displayTablePage();
+      } else if (action === "insert_row_above" && rowIndex !== null) {
+        insertRowAt(rowIndex);
+      } else if (action === "insert_row_below" && rowIndex !== null) {
+        insertRowAt(rowIndex + 1);
+      } else if (action === "duplicate_row" && rowIndex !== null) {
+        duplicateRow(rowIndex);
+      } else if (action === "delete_row" && rowIndex !== null) {
+        deleteSingleRow(rowIndex);
+      } else if (action === "add_column") {
+        const modal = document.getElementById("excelAddColModal");
+        if (modal) modal.classList.remove("hidden");
+      } else if (action === "rename_column" && colKey) {
+        openRenameColModal(colKey);
+      } else if (action === "delete_column" && colKey) {
+        deleteColumn(colKey);
+      }
+    });
+  }
+
+  // Column Menu Item Actions
+  const colMenu = document.getElementById("excelColMenu");
+  if (colMenu) {
+    colMenu.addEventListener("click", (e) => {
+      const item = e.target.closest(".ctx-item");
+      if (!item) return;
+      const action = item.dataset.colAction;
+      const colKey = contextMenuTarget.colKey;
+      if (!colKey) return;
+
+      if (action === "sort_asc") {
+        currentSort = { colKey, dir: "asc" };
+        applyFiltersAndSearch(false);
+      } else if (action === "sort_desc") {
+        currentSort = { colKey, dir: "desc" };
+        applyFiltersAndSearch(false);
+      } else if (action === "filter_col") {
+        openFilterModal(colKey);
+      } else if (action === "add_col_right") {
+        const modal = document.getElementById("excelAddColModal");
+        if (modal) {
+          const pos = document.getElementById("newColPositionSelect");
+          if (pos) pos.value = "after_active";
+          activeCell = { rowIndex: 0, colKey };
+          modal.classList.remove("hidden");
+        }
+      } else if (action === "rename_col") {
+        openRenameColModal(colKey);
+      } else if (action === "clear_col") {
+        clearColumn(colKey);
+      } else if (action === "delete_col") {
+        deleteColumn(colKey);
+      }
+    });
+  }
+
+  // Add Column Modal Handlers
+  const btnCloseAddCol = document.getElementById("btnCloseAddColModal");
+  const btnCancelAddCol = document.getElementById("btnCancelAddCol");
+  const btnSubmitAddCol = document.getElementById("btnSubmitAddCol");
+  const modalAddCol = document.getElementById("excelAddColModal");
+
+  [btnCloseAddCol, btnCancelAddCol].forEach(btn => {
+    if (btn) btn.addEventListener("click", () => modalAddCol.classList.add("hidden"));
+  });
+
+  if (btnSubmitAddCol) {
+    btnSubmitAddCol.addEventListener("click", () => {
+      const nameInp = document.getElementById("newColNameInput");
+      const defInp = document.getElementById("newColDefaultValInput");
+      const posSelect = document.getElementById("newColPositionSelect");
+      const name = nameInp ? nameInp.value : "";
+      const defVal = defInp ? defInp.value : "";
+      const pos = posSelect ? posSelect.value : "end";
+
+      if (!name.trim()) {
+        alert("Please enter a column name.");
+        return;
+      }
+      addColumn(name, defVal, pos);
+      modalAddCol.classList.add("hidden");
+      if (nameInp) nameInp.value = "";
+      if (defInp) defInp.value = "";
+    });
+  }
+
+  // Add Row Modal Handlers
+  const btnCloseAddRow = document.getElementById("btnCloseAddRowModal");
+  const btnCancelAddRow = document.getElementById("btnCancelAddRow");
+  const btnSubmitAddRow = document.getElementById("btnSubmitAddRow");
+  const modalAddRow = document.getElementById("excelAddRowModal");
+
+  [btnCloseAddRow, btnCancelAddRow].forEach(btn => {
+    if (btn) btn.addEventListener("click", () => modalAddRow.classList.add("hidden"));
+  });
+
+  if (btnSubmitAddRow) {
+    btnSubmitAddRow.addEventListener("click", () => {
+      const seat = document.getElementById("addRowSeat").value.trim();
+      const name = document.getElementById("addRowName").value.trim();
+      const prn = document.getElementById("addRowPrn").value.trim();
+      const candType = document.getElementById("addRowCandidateType").value;
+      const sgpi = document.getElementById("addRowSgpi").value.trim();
+      const resVal = document.getElementById("addRowResult").value;
+      const pos = document.getElementById("addRowPositionSelect").value;
+
+      if (!seat || !name) {
+        alert("Seat Number and Student Name are required.");
+        return;
+      }
+
+      const rowObj = {
+        Seat_No: seat,
+        Name: name,
+        PRN: prn,
+        Candidate_Type: candType,
+        SGPI: sgpi,
+        Result: resVal
+      };
+
+      let insertIdx = currentRecords.length;
+      if (pos === "beginning") insertIdx = 0;
+      else if (pos === "after_selected" && activeCell) insertIdx = activeCell.rowIndex + 1;
+
+      insertRowAt(insertIdx, rowObj);
+      modalAddRow.classList.add("hidden");
+
+      // Reset form
+      document.getElementById("addRowSeat").value = "";
+      document.getElementById("addRowName").value = "";
+      document.getElementById("addRowPrn").value = "";
+      document.getElementById("addRowSgpi").value = "";
+    });
+  }
+
+  // Rename Column Modal Handlers
+  const btnCloseRename = document.getElementById("btnCloseRenameColModal");
+  const btnCancelRename = document.getElementById("btnCancelRenameCol");
+  const btnSubmitRename = document.getElementById("btnSubmitRenameCol");
+  const modalRename = document.getElementById("excelRenameColModal");
+
+  [btnCloseRename, btnCancelRename].forEach(btn => {
+    if (btn) btn.addEventListener("click", () => modalRename.classList.add("hidden"));
+  });
+
+  if (btnSubmitRename) {
+    btnSubmitRename.addEventListener("click", () => {
+      const oldKey = document.getElementById("renameColOldKey").value;
+      const newKey = document.getElementById("renameColNewInput").value.trim();
+      if (!newKey) {
+        alert("New column name cannot be empty.");
+        return;
+      }
+      renameColumn(oldKey, newKey);
+      modalRename.classList.add("hidden");
+    });
+  }
+
+  // Filter Modal Handlers
+  const btnCloseFilter = document.getElementById("btnCloseFilterModal");
+  const btnCancelFilter = document.getElementById("btnCancelFilterModal");
+  const btnApplyFilter = document.getElementById("btnApplyFilterModal");
+  const btnClearFilter = document.getElementById("btnClearCurrentColFilter");
+  const modalFilter = document.getElementById("excelFilterModal");
+
+  [btnCloseFilter, btnCancelFilter].forEach(btn => {
+    if (btn) btn.addEventListener("click", () => modalFilter.classList.add("hidden"));
+  });
+
+  const linkSelectAll = document.getElementById("filterSelectAllLink");
+  if (linkSelectAll) {
+    linkSelectAll.addEventListener("click", (e) => {
+      e.preventDefault();
+      document.querySelectorAll("#filterValuesList input[type='checkbox']").forEach(cb => {
+        cb.checked = true;
+      });
+      // Add all
+      currentRecords.forEach(r => {
+        const v = String(r[filterModalTargetCol] !== undefined && r[filterModalTargetCol] !== null ? r[filterModalTargetCol] : "(Blank)");
+        filterModalSelectedValues.add(v);
+      });
+    });
+  }
+
+  const linkClearAll = document.getElementById("filterClearAllLink");
+  if (linkClearAll) {
+    linkClearAll.addEventListener("click", (e) => {
+      e.preventDefault();
+      document.querySelectorAll("#filterValuesList input[type='checkbox']").forEach(cb => {
+        cb.checked = false;
+      });
+      filterModalSelectedValues.clear();
+    });
+  }
+
+  if (btnApplyFilter) {
+    btnApplyFilter.addEventListener("click", () => {
+      if (filterModalTargetCol) {
+        columnFilters[filterModalTargetCol] = new Set(filterModalSelectedValues);
+        applyFiltersAndSearch(true);
+      }
+      modalFilter.classList.add("hidden");
+    });
+  }
+
+  if (btnClearFilter) {
+    btnClearFilter.addEventListener("click", () => {
+      if (filterModalTargetCol) {
+        delete columnFilters[filterModalTargetCol];
+        applyFiltersAndSearch(true);
+      }
+      modalFilter.classList.add("hidden");
+    });
+  }
+
+  // Shortcuts Guide Modal Handlers
+  const btnDismissShortcuts = document.getElementById("btnDismissShortcutsModal");
+  const btnCloseShortcuts = document.getElementById("btnCloseShortcutsModal");
+  const modalShortcuts = document.getElementById("excelShortcutsModal");
+
+  [btnDismissShortcuts, btnCloseShortcuts].forEach(btn => {
+    if (btn) btn.addEventListener("click", () => modalShortcuts.classList.add("hidden"));
+  });
+}
+
+function openRenameColModal(colKey) {
+  const modal = document.getElementById("excelRenameColModal");
+  const oldLabel = document.getElementById("renameColOldLabel");
+  const oldKeyInp = document.getElementById("renameColOldKey");
+  const newKeyInp = document.getElementById("renameColNewInput");
+
+  if (!modal) return;
+  oldLabel.textContent = colKey;
+  oldKeyInp.value = colKey;
+  newKeyInp.value = colKey;
+  modal.classList.remove("hidden");
+  newKeyInp.focus();
+  newKeyInp.select();
 }
 
 // 8. History Drawer
@@ -3395,6 +4983,19 @@ function initBatchSuite() {
     });
   }
 
+  // 5b. Success Rate Roster Search Filter
+  const successSearch = document.getElementById("batchSuccessRosterSearch");
+  if (successSearch) {
+    successSearch.addEventListener("input", (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      const rows = document.querySelectorAll("#batchSuccessRosterBody tr");
+      rows.forEach(r => {
+        const text = r.textContent.toLowerCase();
+        r.style.display = text.includes(q) ? "" : "none";
+      });
+    });
+  }
+
   // 6. Raw Data Semester Dropdown
   const rawSemSelect = document.getElementById("batchRawSemSelect");
   if (rawSemSelect) {
@@ -3616,7 +5217,86 @@ function renderBatchDashboard(analytics, jobId) {
     btnJson.setAttribute("download", `${batchMeta.batch_name || "Batch"}_analysis.json`);
   }
 
-  // 1. KPI Strip
+  // 0. Success Rate & Intake Analysis (Tab 1)
+  const sr = analytics.success_rate_analysis || {};
+  const setEl = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+  };
+  setEl("kpiBatchN1", sr.regular_intake_n1 || 0);
+  setEl("kpiBatchN3", sr.lateral_entry_n3 || 0);
+  setEl("kpiBatchIntake", sr.total_admitted_n1_n3 || 0);
+  setEl("kpiBatchPassedFinal", sr.passed_final_sem || 0);
+  setEl("kpiBatchSuccessRate", `${sr.success_rate_percentage !== undefined ? sr.success_rate_percentage : 0}%`);
+  setEl("kpiBatchSuccessRateNoKt", `${sr.success_rate_no_backlog_percentage !== undefined ? sr.success_rate_no_backlog_percentage : 0}%`);
+  setEl("kpiBatchNoKtSub", `${sr.passed_without_backlogs || 0} Cleared Zero KT`);
+  setEl("kpiBatchSuccessRateWithKt", `${sr.success_rate_with_backlog_percentage !== undefined ? sr.success_rate_with_backlog_percentage : 0}%`);
+  setEl("kpiBatchWithKtSub", `${sr.passed_with_backlogs || 0} Cleared Backlogs`);
+
+  // Cohort Breakdown Table
+  const breakdownBody = document.getElementById("batchSuccessBreakdownBody");
+  if (breakdownBody) {
+    breakdownBody.innerHTML = "";
+    (sr.breakdown || []).forEach(b => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><strong>${b.category || ""}</strong></td>
+        <td>${b.entry_sem || ""}</td>
+        <td style="text-align:right;">${b.admitted !== undefined ? b.admitted : 0}</td>
+        <td style="text-align:right;"><span class="badge-pass">${b.passed_final !== undefined ? b.passed_final : 0}</span></td>
+        <td style="text-align:right;">${b.passed_no_kt !== undefined ? b.passed_no_kt : 0}</td>
+        <td style="text-align:right;">${b.passed_with_kt !== undefined ? b.passed_with_kt : 0}</td>
+        <td style="text-align:right;"><strong>${b.success_rate !== undefined ? b.success_rate.toFixed(2) : 0}%</strong></td>
+      `;
+      breakdownBody.appendChild(tr);
+    });
+  }
+
+  // Student Cross-Checking & Success Verification Roster
+  const rosterBody = document.getElementById("batchSuccessRosterBody");
+  if (rosterBody) {
+    rosterBody.innerHTML = "";
+    (sr.student_roster || []).forEach(r => {
+      const tr = document.createElement("tr");
+      let semsHtml = "";
+      for (let s = 1; s <= 8; s++) {
+        const status = r.sem_records ? r.sem_records[s] : "—";
+        if (status === "PASS") {
+          semsHtml += `<td><span class="badge-pass" style="font-size:0.72rem; padding:2px 6px;">P</span></td>`;
+        } else if (status === "FAIL") {
+          semsHtml += `<td><span class="badge-fail" style="font-size:0.72rem; padding:2px 6px;">F</span></td>`;
+        } else if (status === "ABSENT") {
+          semsHtml += `<td><span class="badge-na" style="font-size:0.72rem; padding:2px 6px;">AB</span></td>`;
+        } else {
+          semsHtml += `<td style="color:#64748B; text-align:center;">—</td>`;
+        }
+      }
+
+      const zeroKtBadge = r.zero_kt
+        ? '<span class="badge-pass" style="font-size:0.72rem; padding:2px 6px;">YES</span>'
+        : '<span class="badge-fail" style="font-size:0.72rem; padding:2px 6px;">NO</span>';
+
+      const finalBadge = r.final_status === "PASS"
+        ? '<span class="badge-pass">PASS</span>'
+        : (r.final_status === "FAIL" ? '<span class="badge-fail">FAIL</span>' : `<span class="badge-na">${r.final_status || "N/A"}</span>`);
+
+      tr.innerHTML = `
+        <td>${r.sr_no || ""}</td>
+        <td><strong>${r.student_id || ""}</strong></td>
+        <td>${r.name || ""}</td>
+        <td style="font-family: monospace; font-size:0.75rem;">${r.prn || "N/A"}</td>
+        <td><span class="sem-file-type ${r.entry_type && r.entry_type.includes('Lateral') ? 'pdf' : 'excel'}">${r.entry_type || "Regular"}</span></td>
+        <td style="text-align:center;">${r.entry_sem ? `Sem ${r.entry_sem}` : "—"}</td>
+        ${semsHtml}
+        <td>${finalBadge}</td>
+        <td style="text-align:center;">${zeroKtBadge}</td>
+        <td style="text-align:right; font-weight:700;">${r.average_sgpi !== null && r.average_sgpi !== undefined ? r.average_sgpi.toFixed(2) : "N/A"}</td>
+      `;
+      rosterBody.appendChild(tr);
+    });
+  }
+
+  // 1. KPI Strip (Tab 3: Overall Summary)
   document.getElementById("kpiBatchTotalStudents").textContent = overall.total_students || 0;
   document.getElementById("kpiBatchClearedAll").textContent = overall.cleared_all_available_semesters || 0;
   document.getElementById("kpiBatchClearedPct").textContent = `${overall.cleared_all_percentage || 0}% Zero Backlogs`;
@@ -3639,24 +5319,33 @@ function renderBatchDashboard(analytics, jobId) {
     `;
   }
 
-  // 2. Semester Analysis Table
+  // 2. Enhanced Semester-Wise Analysis Table (Tab 2)
   const semBody = document.getElementById("batchSemesterBody");
   if (semBody) {
     semBody.innerHTML = "";
-    (analytics.semester_analysis || []).forEach(s => {
+    const semList = analytics.semester_wise_analysis || analytics.semester_analysis || [];
+    semList.forEach(s => {
+      const g = s.grade_distribution || {};
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td><strong>${s.semester_name}</strong></td>
-        <td><span class="sem-file-type ${s.input_type.toLowerCase()}">${s.input_type}</span></td>
-        <td style="text-align:right;">${s.total_students}</td>
-        <td style="text-align:right;"><span class="badge-pass">${s.passed}</span></td>
-        <td style="text-align:right;"><span class="badge-fail">${s.failed}</span></td>
-        <td style="text-align:right;"><strong>${s.pass_percentage.toFixed(1)}%</strong></td>
-        <td style="text-align:right;">${s.average_sgpi !== null ? s.average_sgpi.toFixed(2) : "N/A"}</td>
-        <td style="text-align:right;"><strong style="color:#FBBF24;">${s.highest_sgpi !== null ? s.highest_sgpi.toFixed(2) : "N/A"}</strong></td>
-        <td style="text-align:right;">${s.lowest_sgpi !== null ? s.lowest_sgpi.toFixed(2) : "N/A"}</td>
-        <td style="text-align:right;">${s.kt_students_count}</td>
-        <td style="text-align:right;">${s.total_kt_subjects !== null ? s.total_kt_subjects : "N/A"}</td>
+        <td><span class="sem-file-type ${(s.input_type || 'EXCEL').toLowerCase()}">${s.input_type || 'EXCEL'}</span></td>
+        <td style="text-align:right;"><strong>${s.total_students || 0}</strong></td>
+        <td style="text-align:right;">${s.regular_students !== undefined ? s.regular_students : "—"}</td>
+        <td style="text-align:right;">${s.lateral_students !== undefined ? s.lateral_students : "—"}</td>
+        <td style="text-align:right;"><span class="badge-pass">${s.passed || 0}</span></td>
+        <td style="text-align:right;"><span class="badge-fail">${s.failed || 0}</span></td>
+        <td style="text-align:right;"><strong>${s.pass_percentage !== undefined ? s.pass_percentage.toFixed(1) : 0}%</strong></td>
+        <td style="text-align:right; color:#EF4444;">${s.fail_percentage !== undefined ? s.fail_percentage.toFixed(1) : (100 - (s.pass_percentage || 0)).toFixed(1)}%</td>
+        <td style="text-align:right;">${s.average_sgpi !== null && s.average_sgpi !== undefined ? s.average_sgpi.toFixed(2) : "N/A"}</td>
+        <td style="text-align:right;"><strong style="color:#FBBF24;">${s.highest_sgpi !== null && s.highest_sgpi !== undefined ? s.highest_sgpi.toFixed(2) : "N/A"}</strong></td>
+        <td style="text-align:right;">${s.lowest_sgpi !== null && s.lowest_sgpi !== undefined ? s.lowest_sgpi.toFixed(2) : "N/A"}</td>
+        <td style="text-align:right;">${g.distinction || 0}</td>
+        <td style="text-align:right;">${g.first_class || 0}</td>
+        <td style="text-align:right;">${g.second_class || 0}</td>
+        <td style="text-align:right;">${g.pass_class || 0}</td>
+        <td style="text-align:right;">${s.kt_students_count || 0}</td>
+        <td style="text-align:right;">${s.total_kt_subjects !== null && s.total_kt_subjects !== undefined ? s.total_kt_subjects : "N/A"}</td>
       `;
       semBody.appendChild(tr);
     });

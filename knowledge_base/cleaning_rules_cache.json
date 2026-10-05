@@ -763,5 +763,1382 @@
       }
     },
     "source": "ai_determined"
+  },
+  "acd2c2d3825d8cb8": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "gender": null,
+      "sgpi": "SGPI",
+      "cgpi": null,
+      "total_marks": null,
+      "max_marks": null,
+      "result": "Result_Status",
+      "candidate_type": null
+    },
+    "courses": {
+      "AOA": {
+        "TH": "AOA_TH",
+        "IA": "AOA_IA",
+        "TOT": "AOA_Total",
+        "GP": "AOA_GP"
+      },
+      "OR": {
+        "PR": "OR_PR"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "AOA_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "AOA_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "AOA_Total": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "OR_PR": {
+        "min": 0.0,
+        "max": 50.0
+      }
+    },
+    "source": "ai_determined"
+  },
+  "155a6f79022c3670": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "gender": "Gender",
+      "sgpi": "SGPI",
+      "cgpi": "CGPI",
+      "total_marks": "Total_Marks",
+      "max_marks": "Max_Marks",
+      "result": "Result_Status",
+      "candidate_type": "Candidate_Type"
+    },
+    "courses": {
+      "42211": {
+        "TH": "42211_TH",
+        "IA": "42211_IA",
+        "TOT": "42211_TOT",
+        "GRADE": "42211_Grade",
+        "GP": "42211_GP",
+        "CREDITS": "42211_Credits",
+        "CG": "42211_CG"
+      },
+      "42212": {
+        "TH": "42212_TH",
+        "IA": "42212_IA",
+        "TOT": "42212_TOT",
+        "GRADE": "42212_Grade",
+        "GP": "42212_GP",
+        "CREDITS": "42212_Credits",
+        "CG": "42212_CG"
+      },
+      "AIDSCSL701": {
+        "TOT": "AIDSCSL701_TOT",
+        "GRADE": "AIDSCSL701_Grade",
+        "GP": "AIDSCSL701_GP",
+        "CREDITS": "AIDSCSL701_Credits",
+        "CG": "AIDSCSL701_CG"
+      },
+      "AIDSCSL702": {
+        "TOT": "AIDSCSL702_TOT",
+        "GRADE": "AIDSCSL702_Grade",
+        "GP": "AIDSCSL702_GP",
+        "CREDITS": "AIDSCSL702_Credits",
+        "CG": "AIDSCSL702_CG"
+      },
+      "AIDSCSP701": {
+        "TOT": "AIDSCSP701_TOT",
+        "GRADE": "AIDSCSP701_Grade",
+        "GP": "AIDSCSP701_GP",
+        "CREDITS": "AIDSCSP701_Credits",
+        "CG": "AIDSCSP701_CG"
+      },
+      "42213": {
+        "TH": "42213_TH",
+        "IA": "42213_IA",
+        "TOT": "42213_TOT",
+        "GRADE": "42213_Grade",
+        "GP": "42213_GP",
+        "CREDITS": "42213_Credits",
+        "CG": "42213_CG"
+      },
+      "42217": {
+        "TH": "42217_TH",
+        "IA": "42217_IA",
+        "TOT": "42217_TOT",
+        "GRADE": "42217_Grade",
+        "GP": "42217_GP",
+        "CREDITS": "42217_Credits",
+        "CG": "42217_CG"
+      },
+      "42225": {
+        "TH": "42225_TH",
+        "IA": "42225_IA",
+        "TOT": "42225_TOT",
+        "GRADE": "42225_Grade",
+        "GP": "42225_GP",
+        "CREDITS": "42225_Credits",
+        "CG": "42225_CG"
+      },
+      "AIDSCSDOL701": {
+        "TOT": "AIDSCSDOL701_TOT",
+        "GRADE": "AIDSCSDOL701_Grade",
+        "GP": "AIDSCSDOL701_GP",
+        "CREDITS": "AIDSCSDOL701_Credits",
+        "CG": "AIDSCSDOL701_CG"
+      },
+      "AIDSCSDOL702": {
+        "TOT": "AIDSCSDOL702_TOT",
+        "GRADE": "AIDSCSDOL702_Grade",
+        "GP": "AIDSCSDOL702_GP",
+        "CREDITS": "AIDSCSDOL702_Credits",
+        "CG": "AIDSCSDOL702_CG"
+      },
+      "42221": {
+        "GRADE": "42221_Grade",
+        "GP": "42221_GP",
+        "CREDITS": "42221_Credits",
+        "CG": "42221_CG"
+      },
+      "42214": {
+        "GRADE": "42214_Grade",
+        "GP": "42214_GP",
+        "CREDITS": "42214_Credits",
+        "CG": "42214_CG"
+      },
+      "42215": {
+        "GRADE": "42215_Grade",
+        "GP": "42215_GP",
+        "CREDITS": "42215_Credits",
+        "CG": "42215_CG"
+      },
+      "42216": {
+        "GRADE": "42216_Grade",
+        "GP": "42216_GP",
+        "CREDITS": "42216_Credits",
+        "CG": "42216_CG"
+      },
+      "42218": {
+        "GRADE": "42218_Grade",
+        "GP": "42218_GP",
+        "CREDITS": "42218_Credits",
+        "CG": "42218_CG"
+      },
+      "42219": {
+        "GRADE": "42219_Grade",
+        "GP": "42219_GP",
+        "CREDITS": "42219_Credits",
+        "CG": "42219_CG"
+      },
+      "42220": {
+        "GRADE": "42220_Grade",
+        "GP": "42220_GP",
+        "CREDITS": "42220_Credits",
+        "CG": "42220_CG"
+      },
+      "42222": {
+        "GRADE": "42222_Grade",
+        "GP": "42222_GP",
+        "CREDITS": "42222_Credits",
+        "CG": "42222_CG"
+      },
+      "42223": {
+        "GRADE": "42223_Grade",
+        "GP": "42223_GP",
+        "CREDITS": "42223_Credits",
+        "CG": "42223_CG"
+      },
+      "42224": {
+        "GRADE": "42224_Grade",
+        "GP": "42224_GP",
+        "CREDITS": "42224_Credits",
+        "CG": "42224_CG"
+      },
+      "42226": {
+        "GRADE": "42226_Grade",
+        "GP": "42226_GP",
+        "CREDITS": "42226_Credits",
+        "CG": "42226_CG"
+      },
+      "42227": {
+        "GRADE": "42227_Grade",
+        "GP": "42227_GP",
+        "CREDITS": "42227_Credits",
+        "CG": "42227_CG"
+      },
+      "AIDSCSDOL7011": {
+        "GRADE": "AIDSCSDOL7011_Grade",
+        "GP": "AIDSCSDOL7011_GP",
+        "CREDITS": "AIDSCSDOL7011_Credits",
+        "CG": "AIDSCSDOL7011_CG"
+      },
+      "AIDSCSDOL7012": {
+        "GRADE": "AIDSCSDOL7012_Grade",
+        "GP": "AIDSCSDOL7012_GP",
+        "CREDITS": "AIDSCSDOL7012_Credits",
+        "CG": "AIDSCSDOL7012_CG"
+      },
+      "AIDSCSDOL7013": {
+        "GRADE": "AIDSCSDOL7013_Grade",
+        "GP": "AIDSCSDOL7013_GP",
+        "CREDITS": "AIDSCSDOL7013_Credits",
+        "CG": "AIDSCSDOL7013_CG"
+      },
+      "AIDSCSDOL7021": {
+        "GRADE": "AIDSCSDOL7021_Grade",
+        "GP": "AIDSCSDOL7021_GP",
+        "CREDITS": "AIDSCSDOL7021_Credits",
+        "CG": "AIDSCSDOL7021_CG"
+      },
+      "AIDSCSDOL7022": {
+        "GRADE": "AIDSCSDOL7022_Grade",
+        "GP": "AIDSCSDOL7022_GP",
+        "CREDITS": "AIDSCSDOL7022_Credits",
+        "CG": "AIDSCSDOL7022_CG"
+      },
+      "AIDSCSDOL7023": {
+        "GRADE": "AIDSCSDOL7023_Grade",
+        "GP": "AIDSCSDOL7023_GP",
+        "CREDITS": "AIDSCSDOL7023_Credits",
+        "CG": "AIDSCSDOL7023_CG"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "42211_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "42211_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "42211_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "42212_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "42212_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "42212_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "AIDSCSL701_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "AIDSCSL702_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "AIDSCSP701_TOT": {
+        "min": 0.0,
+        "max": 150.0
+      },
+      "42213_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "42213_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "42213_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "42217_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "42217_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "42217_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "42225_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "42225_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "42225_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "AIDSCSDOL701_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "AIDSCSDOL702_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      }
+    },
+    "source": "ai_determined"
+  },
+  "793d1085dcf86999": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "sgpi": "SGPI",
+      "result": "Result_Status"
+    },
+    "courses": {
+      "COURSE": {
+        "TH": "Course_TH",
+        "IA": "Course_IA",
+        "TOT": "Course_TOT",
+        "GP": "Course_GP",
+        "CREDITS": "Course_Credits",
+        "CG": "Course_CG"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "Course_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "Course_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "Course_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      }
+    },
+    "source": "heuristic_fallback"
+  },
+  "d4e5b852f0ab11fa": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "sgpi": "SGPI",
+      "result": "Result_Status"
+    },
+    "courses": {
+      "COURSE": {
+        "TH": "Course_TH",
+        "IA": "Course_IA",
+        "TOT": "Course_TOT",
+        "CG": "Course_CG",
+        "CREDITS": "Course_Credits",
+        "GP": "Course_GP"
+      },
+      "C": {
+        "PR": "C_PR",
+        "TW": "C_TW"
+      },
+      "PROFESSIONAL": {
+        "TH": "Professional_TH",
+        "IA": "Professional_IA",
+        "TW": "Professional_TW",
+        "TOT": "Professional_TOT"
+      },
+      "BASIC": {
+        "TW": "Basic_TW"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "Course_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "Course_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "Course_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "C_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "C_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "Professional_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "Professional_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "Professional_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "Professional_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "Basic_TW": {
+        "min": 0.0,
+        "max": 50.0
+      }
+    },
+    "source": "heuristic_fallback"
+  },
+  "ff7d07649f8e1684": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "sgpi": "SGPI",
+      "total_marks": "Total_Marks",
+      "result": "Result_Status"
+    },
+    "courses": {
+      "CSC301": {
+        "CREDITS": "CSC301_Credits",
+        "TH": "CSC301_TH",
+        "IA": "CSC301_IA",
+        "TOT": "CSC301_TOT",
+        "GP": "CSC301_GP",
+        "TW": "CSC301_TW",
+        "CG": "CSC301_CG"
+      },
+      "CSC302": {
+        "CREDITS": "CSC302_Credits",
+        "TH": "CSC302_TH",
+        "IA": "CSC302_IA",
+        "TOT": "CSC302_TOT",
+        "GP": "CSC302_GP",
+        "TW": "CSC302_TW",
+        "CG": "CSC302_CG"
+      },
+      "CSC303": {
+        "CREDITS": "CSC303_Credits",
+        "TH": "CSC303_TH",
+        "IA": "CSC303_IA",
+        "TOT": "CSC303_TOT",
+        "GP": "CSC303_GP",
+        "CG": "CSC303_CG"
+      },
+      "CSC304": {
+        "CREDITS": "CSC304_Credits",
+        "TH": "CSC304_TH",
+        "IA": "CSC304_IA",
+        "TOT": "CSC304_TOT",
+        "GP": "CSC304_GP",
+        "CG": "CSC304_CG"
+      },
+      "CSC305": {
+        "TH": "CSC305_TH",
+        "IA": "CSC305_IA",
+        "TOT": "CSC305_TOT",
+        "GP": "CSC305_GP"
+      },
+      "CSL301": {
+        "CREDITS": "CSL301_Credits",
+        "TW": "CSL301_TW",
+        "PR": "CSL301_PR",
+        "TOT": "CSL301_TOT",
+        "GP": "CSL301_GP",
+        "CG": "CSL301_CG"
+      },
+      "CSL303": {
+        "CREDITS": "CSL303_Credits",
+        "TW": "CSL303_TW",
+        "PR": "CSL303_PR",
+        "TOT": "CSL303_TOT",
+        "GP": "CSL303_GP",
+        "CG": "CSL303_CG"
+      },
+      "CSL304": {
+        "CREDITS": "CSL304_Credits",
+        "TW": "CSL304_TW",
+        "PR": "CSL304_PR",
+        "TOT": "CSL304_TOT",
+        "GP": "CSL304_GP",
+        "CG": "CSL304_CG"
+      },
+      "CSM301": {
+        "CREDITS": "CSM301_Credits",
+        "TW": "CSM301_TW",
+        "PR": "CSM301_PR",
+        "TOT": "CSM301_TOT",
+        "GP": "CSM301_GP",
+        "CG": "CSM301_CG"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "CSC301_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC301_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC301_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC301_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSC302_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC302_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC302_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC302_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSC303_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC303_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC303_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC304_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC304_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC304_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC305_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC305_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC305_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL301_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL301_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL301_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL303_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL303_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL303_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL304_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL304_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL304_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSM301_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSM301_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSM301_PR": {
+        "min": 0.0,
+        "max": 50.0
+      }
+    },
+    "source": "heuristic_fallback"
+  },
+  "1891ff82c8c67c65": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "sgpi": "SGPI",
+      "result": "Result_Status"
+    },
+    "courses": {
+      "ENGINEERING": {
+        "TH": "Engineering_TH",
+        "IA": "Engineering_IA",
+        "TW": "Engineering_TW",
+        "PR": "Engineering_PR",
+        "TOT": "Engineering_TOT"
+      },
+      "C": {
+        "TH": "C_TH",
+        "IA": "C_IA",
+        "PR": "C_PR",
+        "TW": "C_TW",
+        "TOT": "C_TOT"
+      },
+      "PROFESSIONAL": {
+        "TH": "Professional_TH",
+        "IA": "Professional_IA",
+        "TW": "Professional_TW",
+        "TOT": "Professional_TOT"
+      },
+      "BASIC": {
+        "TW": "Basic_TW"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "Engineering_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "Engineering_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "Engineering_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "Engineering_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "Engineering_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "C_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "C_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "C_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "C_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "C_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "Professional_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "Professional_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "Professional_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "Professional_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "Basic_TW": {
+        "min": 0.0,
+        "max": 50.0
+      }
+    },
+    "source": "heuristic_fallback"
+  },
+  "3f13619b2d8bcaac": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "sgpi": "SGPI",
+      "total_marks": "Total_Marks",
+      "result": "Result_Status"
+    },
+    "courses": {
+      "CSC401": {
+        "CREDITS": "CSC401_Credits",
+        "TH": "CSC401_TH",
+        "IA": "CSC401_IA",
+        "TOT": "CSC401_TOT",
+        "GP": "CSC401_GP",
+        "CG": "CSC401_CG",
+        "TW": "CSC401_TW"
+      },
+      "CSC402": {
+        "CREDITS": "CSC402_Credits",
+        "TH": "CSC402_TH",
+        "IA": "CSC402_IA",
+        "TOT": "CSC402_TOT",
+        "GP": "CSC402_GP",
+        "CG": "CSC402_CG"
+      },
+      "CSC403": {
+        "CREDITS": "CSC403_Credits",
+        "TH": "CSC403_TH",
+        "IA": "CSC403_IA",
+        "TOT": "CSC403_TOT",
+        "GP": "CSC403_GP",
+        "CG": "CSC403_CG"
+      },
+      "CSC404": {
+        "CREDITS": "CSC404_Credits",
+        "TH": "CSC404_TH",
+        "IA": "CSC404_IA",
+        "TOT": "CSC404_TOT",
+        "GP": "CSC404_GP",
+        "CG": "CSC404_CG"
+      },
+      "CSC405": {
+        "TH": "CSC405_TH",
+        "IA": "CSC405_IA",
+        "TOT": "CSC405_TOT",
+        "GP": "CSC405_GP",
+        "CG": "CSC405_CG"
+      },
+      "CSL401": {
+        "CREDITS": "CSL401_Credits",
+        "TW": "CSL401_TW",
+        "PR": "CSL401_PR",
+        "TOT": "CSL401_TOT",
+        "GP": "CSL401_GP",
+        "CG": "CSL401_CG"
+      },
+      "CSL402": {
+        "CREDITS": "CSL402_Credits",
+        "TW": "CSL402_TW",
+        "PR": "CSL402_PR",
+        "TOT": "CSL402_TOT",
+        "GP": "CSL402_GP",
+        "CG": "CSL402_CG"
+      },
+      "CSL403": {
+        "CREDITS": "CSL403_Credits",
+        "TW": "CSL403_TW",
+        "PR": "CSL403_PR",
+        "TOT": "CSL403_TOT",
+        "GP": "CSL403_GP",
+        "CG": "CSL403_CG"
+      },
+      "CSL404": {
+        "CREDITS": "CSL404_Credits",
+        "TW": "CSL404_TW",
+        "GP": "CSL404_GP",
+        "CG": "CSL404_CG"
+      },
+      "CSL405": {
+        "CREDITS": "CSL405_Credits",
+        "TW": "CSL405_TW",
+        "GP": "CSL405_GP",
+        "CG": "CSL405_CG"
+      },
+      "CSM401": {
+        "CREDITS": "CSM401_Credits",
+        "TW": "CSM401_TW",
+        "PR": "CSM401_PR",
+        "TOT": "CSM401_TOT",
+        "GP": "CSM401_GP",
+        "CG": "CSM401_CG"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "CSC401_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC401_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC401_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC401_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSC402_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC402_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC402_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC403_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC403_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC403_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC404_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC404_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC404_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC405_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC405_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC405_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL401_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL401_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL401_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL402_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL402_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL402_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL403_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL403_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL403_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL404_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL405_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSM401_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSM401_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSM401_PR": {
+        "min": 0.0,
+        "max": 50.0
+      }
+    },
+    "source": "heuristic_fallback"
+  },
+  "ddf07959d5c343a9": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "gender": null,
+      "sgpi": "SGPI",
+      "cgpi": null,
+      "total_marks": null,
+      "max_marks": null,
+      "result": null,
+      "candidate_type": null
+    },
+    "courses": {
+      "CS401": {
+        "TH": "CS401_TH",
+        "IA": "CS401_IA",
+        "TOT": "CS401_TOT",
+        "CREDITS": "CS401_Credits",
+        "GP": "CS401_GP",
+        "CG": "CS401_CG"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "CS401_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CS401_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CS401_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      }
+    },
+    "source": "ai_determined"
+  },
+  "1684ebaf29195169": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "sgpi": "SGPI",
+      "result": "Result_Status"
+    },
+    "courses": {
+      "ENGINEERING": {
+        "TH": "Engineering_TH",
+        "IA": "Engineering_IA",
+        "TW": "Engineering_TW",
+        "PR": "Engineering_PR",
+        "TOT": "Engineering_TOT"
+      },
+      "C": {
+        "TH": "C_TH",
+        "IA": "C_IA",
+        "PR": "C_PR",
+        "TW": "C_TW",
+        "TOT": "C_TOT"
+      },
+      "PROFESSIONAL": {
+        "TH": "Professional_TH",
+        "IA": "Professional_IA",
+        "TW": "Professional_TW",
+        "TOT": "Professional_TOT"
+      },
+      "BASIC": {
+        "TW": "Basic_TW"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "Engineering_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "Engineering_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "Engineering_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "Engineering_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "Engineering_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "C_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "C_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "C_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "C_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "C_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "Professional_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "Professional_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "Professional_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "Professional_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "Basic_TW": {
+        "min": 0.0,
+        "max": 50.0
+      }
+    },
+    "source": "heuristic_fallback"
+  },
+  "024d46ba7a35d465": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "gender": null,
+      "sgpi": null,
+      "cgpi": null,
+      "total_marks": null,
+      "max_marks": null,
+      "result": null,
+      "candidate_type": null
+    },
+    "courses": {
+      "COURSE": {
+        "CREDITS": "Course_Credits",
+        "TH": "Course_TH",
+        "IA": "Course_IA",
+        "TOT": "Course_TOT",
+        "GP": "Course_GP",
+        "CG": "Course_CG"
+      },
+      "CSC301": {
+        "CREDITS": "CSC301_Credits",
+        "TW": "CSC301_TW",
+        "GP": "CSC301_GP",
+        "CG": "CSC301_CG"
+      },
+      "CSC302": {
+        "CREDITS": "CSC302_Credits",
+        "TH": "CSC302_TH",
+        "IA": "CSC302_IA",
+        "TOT": "CSC302_TOT",
+        "GP": "CSC302_GP",
+        "TW": "CSC302_TW",
+        "CG": "CSC302_CG"
+      },
+      "CSC303": {
+        "CREDITS": "CSC303_Credits",
+        "TH": "CSC303_TH",
+        "IA": "CSC303_IA",
+        "TOT": "CSC303_TOT",
+        "GP": "CSC303_GP",
+        "CG": "CSC303_CG"
+      },
+      "CSC304": {
+        "CREDITS": "CSC304_Credits",
+        "TH": "CSC304_TH",
+        "IA": "CSC304_IA",
+        "TOT": "CSC304_TOT",
+        "GP": "CSC304_GP",
+        "CG": "CSC304_CG"
+      },
+      "CSC305": {
+        "TH": "CSC305_TH",
+        "IA": "CSC305_IA",
+        "TOT": "CSC305_TOT",
+        "GP": "CSC305_GP"
+      },
+      "CSL301": {
+        "CREDITS": "CSL301_Credits",
+        "TW": "CSL301_TW",
+        "PR": "CSL301_PR",
+        "TOT": "CSL301_TOT",
+        "GP": "CSL301_GP",
+        "CG": "CSL301_CG"
+      },
+      "CSL303": {
+        "CREDITS": "CSL303_Credits",
+        "TW": "CSL303_TW",
+        "PR": "CSL303_PR",
+        "TOT": "CSL303_TOT",
+        "GP": "CSL303_GP",
+        "CG": "CSL303_CG"
+      },
+      "CSL304": {
+        "CREDITS": "CSL304_Credits",
+        "TW": "CSL304_TW",
+        "PR": "CSL304_PR",
+        "TOT": "CSL304_TOT",
+        "GP": "CSL304_GP",
+        "CG": "CSL304_CG"
+      },
+      "CSM301": {
+        "CREDITS": "CSM301_Credits",
+        "TW": "CSM301_TW",
+        "PR": "CSM301_PR",
+        "TOT": "CSM301_TOT",
+        "GP": "CSM301_GP",
+        "CG": "CSM301_CG"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "Course_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "Course_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "Course_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC301_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSC302_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC302_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC302_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC302_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSC303_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC303_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC303_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC304_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC304_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC304_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC305_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC305_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC305_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL301_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL301_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL301_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL303_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL303_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL303_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL304_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL304_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL304_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSM301_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSM301_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSM301_PR": {
+        "min": 0.0,
+        "max": 50.0
+      }
+    },
+    "source": "ai_determined"
   }
 }

@@ -103,6 +103,7 @@ class BatchExcelReportGenerator:
         self.batch_meta = self.data.get("batch_metadata", {})
         self.available_sems = self.data.get("available_semesters", [])
         self.overall_summary = self.data.get("overall_summary", {})
+        self.success_rate = self.data.get("success_rate_analysis", {})
         self.semester_analysis = self.data.get("semester_analysis", [])
         self.student_progression = self.data.get("student_progression", [])
         self.kt_analysis = self.data.get("kt_analysis", [])
@@ -116,15 +117,16 @@ class BatchExcelReportGenerator:
         self.semester_raw = self.data.get("semester_raw_data", {})
 
     def generate_workbook(self, target_filepath: str) -> str:
-        """Construct all 10 sheets and save to target_filepath."""
+        """Construct all official analysis sheets and save to target_filepath."""
         wb = openpyxl.Workbook()
         # Remove default sheet
         default_sheet = wb.active
 
-        # Build each of the 10 sheets
+        # Build each of the analysis sheets
         self._build_sheet_1_readme(wb.create_sheet("Read Me"))
-        self._build_sheet_2_overall_summary(wb.create_sheet("Overall Summary"))
+        self._build_sheet_success_rate(wb.create_sheet("Success Rate & Intake"))
         self._build_sheet_3_semester_analysis(wb.create_sheet("Semester Analysis"))
+        self._build_sheet_2_overall_summary(wb.create_sheet("Overall Summary"))
         self._build_sheet_4_student_progression(wb.create_sheet("Student Progression"))
         self._build_sheet_5_kt_analysis(wb.create_sheet("KT Analysis"))
         self._build_sheet_6_topper_analysis(wb.create_sheet("Topper Analysis"))
@@ -245,6 +247,215 @@ class BatchExcelReportGenerator:
         c_note.font = ITALIC_NOTE_FONT
 
         auto_fit_columns(ws, min_width=15, max_width=60)
+
+    # -----------------------------------------------------------------
+    # SHEET: SUCCESS RATE & INTAKE AUDIT
+    # -----------------------------------------------------------------
+    def _build_sheet_success_rate(self, ws):
+        ws.title = "Success Rate & Intake"
+        ws.views.sheetView[0].showGridLines = True
+
+        ws.cell(row=2, column=2, value="OFFICIAL ACADEMIC SUCCESS RATE & COHORT INTAKE AUDIT").font = TITLE_FONT
+        ws.cell(row=3, column=2, value=f"Comprehensive University Success Rate Audit for {self.batch_meta.get('batch_name', 'Degree Cohort')}").font = SUBTITLE_FONT
+
+        # Formula & Accreditation Methodology Banner (Row 5 - 7)
+        ws.cell(row=5, column=2, value="ACCREDITATION SUCCESS RATE FORMULA:").font = BOLD_DATA_FONT
+        formula_box = ws.cell(row=5, column=4, value="Success Rate = [ P_final / (N1 + N3) ] * 100%")
+        formula_box.font = Font(name="Calibri", size=12, bold=True, color="1F4E78")
+        formula_box.fill = TABLE_HEADER_FILL
+        formula_box.alignment = ALIGN_CENTER
+
+        desc_text = (
+            "N1 = Regular Students Admitted in 1st Semester | "
+            "N3 = Lateral Entry / Direct Second Year Students Admitted in 3rd Semester | "
+            "P_final = Total Students Successfully Passed in Final Semester"
+        )
+        ws.cell(row=6, column=2, value=desc_text).font = ITALIC_NOTE_FONT
+
+        sr_data = self.success_rate or {}
+        n1 = sr_data.get("N1_regular_admitted", 0)
+        n3 = sr_data.get("N3_lateral_entry", 0)
+        tot_intake = sr_data.get("total_cohort_intake", n1 + n3)
+        p_final = sr_data.get("P_final_passed", 0)
+        p_no_kt = sr_data.get("P_no_kt_passed", 0)
+        p_with_kt = sr_data.get("P_with_kt_passed", 0)
+        sr_pct = sr_data.get("success_rate_percentage", 0.0)
+        sr_no_kt_pct = sr_data.get("success_rate_without_backlog_percentage", 0.0)
+        sr_with_kt_pct = sr_data.get("success_rate_with_backlog_percentage", 0.0)
+
+        # Top KPI Cards (Row 8 - 10)
+        cards = [
+            ("REGULAR INTAKE (N1)", n1, "Admitted Sem 1"),
+            ("LATERAL ENTRY (N3)", n3, "Admitted Sem 3 (DSE)"),
+            ("TOTAL COHORT (N1+N3)", tot_intake, "Accreditation Base"),
+            ("FINAL SEM PASSED (P)", p_final, "Graduated Candidates"),
+            ("OFFICIAL SUCCESS RATE", f"{sr_pct:.1f}%", "P / (N1 + N3)"),
+            ("WITHOUT BACKLOG (P_no_kt)", f"{sr_no_kt_pct:.1f}%", f"{p_no_kt} Cleared Zero KT"),
+            ("WITH BACKLOG (P_with_kt)", f"{sr_with_kt_pct:.1f}%", f"{p_with_kt} Cleared Backlogs"),
+        ]
+
+        col_curr = 2
+        for title, val, sub in cards:
+            c1 = ws.cell(row=8, column=col_curr, value=title)
+            c1.font = CARD_LABEL_FONT
+            c1.alignment = ALIGN_CENTER
+            c1.fill = CARD_BG_FILL
+            c1.border = CELL_BORDER
+
+            c2 = ws.cell(row=9, column=col_curr, value=val)
+            c2.font = CARD_VAL_FONT
+            c2.alignment = ALIGN_CENTER
+            c2.fill = GOLD_FILL if "SUCCESS RATE" in title else CARD_BG_FILL
+            c2.border = CELL_BORDER
+
+            c3 = ws.cell(row=10, column=col_curr, value=sub)
+            c3.font = ITALIC_NOTE_FONT
+            c3.alignment = ALIGN_CENTER
+            c3.fill = CARD_BG_FILL
+            c3.border = CELL_BORDER
+
+            col_curr += 1
+
+        # Table 1: Regular vs Lateral Progression Breakdown (Row 12)
+        ws.cell(row=12, column=2, value="1. ADMISSION COHORT BREAKDOWN & COMPLETION AUDIT").font = SECTION_FONT
+
+        tbl1_headers = [
+            "Cohort Intake Category", "Entry Semester", "Admitted Intake Count",
+            "Passed Final Semester", "Cleared Without KT", "Cleared With KT", "Category Success Rate (%)"
+        ]
+        for c_idx, h in enumerate(tbl1_headers, start=2):
+            c = ws.cell(row=13, column=c_idx, value=h)
+            c.font = NAVY_HEADER_FONT
+            c.fill = NAVY_HEADER_FILL
+            c.alignment = ALIGN_CENTER
+            c.border = HEADER_BORDER
+
+        reg_p = sr_data.get("P_final_regular", 0)
+        reg_no_kt = sr_data.get("P_no_kt_regular", 0)
+        reg_with_kt = max(0, reg_p - reg_no_kt)
+        reg_sr = sr_data.get("regular_success_rate", 0.0)
+
+        lat_p = sr_data.get("P_final_lateral", 0)
+        lat_no_kt = sr_data.get("P_no_kt_lateral", 0)
+        lat_with_kt = max(0, lat_p - lat_no_kt)
+        lat_sr = sr_data.get("lateral_success_rate", 0.0)
+
+        cohort_rows = [
+            ("Regular Intake Students", "Semester 1", n1, reg_p, reg_no_kt, reg_with_kt, reg_sr),
+            ("Lateral Entry / DSE Students", "Semester 3", n3, lat_p, lat_no_kt, lat_with_kt, lat_sr),
+            ("Total Degree Cohort", "Sem 1 + Sem 3", tot_intake, p_final, p_no_kt, p_with_kt, sr_pct),
+        ]
+
+        r_curr = 14
+        for cat_name, sem_lbl, adm_cnt, pass_cnt, nok_cnt, withk_cnt, cat_pct in cohort_rows:
+            ws.cell(row=r_curr, column=2, value=cat_name).font = BOLD_DATA_FONT
+            ws.cell(row=r_curr, column=3, value=sem_lbl).font = DATA_FONT
+            ws.cell(row=r_curr, column=3).alignment = ALIGN_CENTER
+
+            ws.cell(row=r_curr, column=4, value=adm_cnt).font = BOLD_DATA_FONT
+            ws.cell(row=r_curr, column=4).alignment = ALIGN_RIGHT
+            ws.cell(row=r_curr, column=4).number_format = "#,##0"
+
+            ws.cell(row=r_curr, column=5, value=pass_cnt).font = DATA_FONT
+            ws.cell(row=r_curr, column=5).alignment = ALIGN_RIGHT
+            ws.cell(row=r_curr, column=5).number_format = "#,##0"
+
+            ws.cell(row=r_curr, column=6, value=nok_cnt).font = DATA_FONT
+            ws.cell(row=r_curr, column=6).alignment = ALIGN_RIGHT
+            ws.cell(row=r_curr, column=6).number_format = "#,##0"
+
+            ws.cell(row=r_curr, column=7, value=withk_cnt).font = DATA_FONT
+            ws.cell(row=r_curr, column=7).alignment = ALIGN_RIGHT
+            ws.cell(row=r_curr, column=7).number_format = "#,##0"
+
+            c_rate = ws.cell(row=r_curr, column=8, value=cat_pct / 100.0)
+            c_rate.font = BOLD_DATA_FONT
+            c_rate.alignment = ALIGN_RIGHT
+            c_rate.number_format = "0.0%"
+            c_rate.fill = PASS_FILL
+
+            for c in range(2, 9):
+                ws.cell(row=r_curr, column=c).border = CELL_BORDER
+                if "Total" in cat_name:
+                    ws.cell(row=r_curr, column=c).fill = GOLD_FILL
+            r_curr += 1
+
+        # Table 2: Student Cross-Checking Progression & Verification Roster (Row 18)
+        r_curr += 2
+        ws.cell(row=r_curr, column=2, value="2. INDIVIDUAL STUDENT PROGRESSION & SUCCESS RATE VERIFICATION ROSTER").font = SECTION_FONT
+        r_curr += 1
+
+        roster_headers = [
+            "Sr No", "Student ID", "Student Name", "PRN", "Admission Category", "Entry Sem",
+            "Sem 1", "Sem 2", "Sem 3", "Sem 4", "Sem 5", "Sem 6", "Sem 7", "Sem 8",
+            "Final Status", "Zero Backlog?", "Avg SGPI"
+        ]
+        for c_idx, h in enumerate(roster_headers, start=2):
+            c = ws.cell(row=r_curr, column=c_idx, value=h)
+            c.font = NAVY_HEADER_FONT
+            c.fill = NAVY_HEADER_FILL
+            c.alignment = ALIGN_CENTER
+            c.border = HEADER_BORDER
+
+        r_curr += 1
+        roster = sr_data.get("student_roster", [])
+        for idx, st in enumerate(roster, start=1):
+            ws.cell(row=r_curr, column=2, value=idx).font = DATA_FONT
+            ws.cell(row=r_curr, column=2).alignment = ALIGN_CENTER
+
+            ws.cell(row=r_curr, column=3, value=st.get("student_id", "")).font = DATA_FONT
+            ws.cell(row=r_curr, column=4, value=st.get("canonical_name", "")).font = BOLD_DATA_FONT
+            ws.cell(row=r_curr, column=5, value=st.get("prn", "") or "N/A").font = DATA_FONT
+            ws.cell(row=r_curr, column=5).alignment = ALIGN_CENTER
+
+            ws.cell(row=r_curr, column=6, value=st.get("entry_type", "")).font = DATA_FONT
+            ws.cell(row=r_curr, column=7, value=f"Sem {st.get('first_appeared_sem', 1)}").font = DATA_FONT
+            ws.cell(row=r_curr, column=7).alignment = ALIGN_CENTER
+
+            # Sems 1 to 8 results
+            for s_idx in range(1, 9):
+                res_val = st.get(f"sem_{s_idx}_result", "-")
+                c_sem = ws.cell(row=r_curr, column=7 + s_idx, value=res_val)
+                c_sem.font = DATA_FONT
+                c_sem.alignment = ALIGN_CENTER
+                if res_val == "PASS":
+                    c_sem.fill = PASS_FILL
+                elif res_val == "FAIL":
+                    c_sem.fill = FAIL_FILL
+
+            # Final status
+            f_stat = st.get("final_status", "-")
+            c_f = ws.cell(row=r_curr, column=16, value=f_stat)
+            c_f.font = BOLD_DATA_FONT
+            c_f.alignment = ALIGN_CENTER
+            if f_stat == "PASSED":
+                c_f.fill = PASS_FILL
+            elif f_stat == "FAILED":
+                c_f.fill = FAIL_FILL
+
+            # Zero backlog
+            z_bk = "YES" if st.get("passed_without_backlog") else ("NO" if f_stat == "PASSED" else "-")
+            c_z = ws.cell(row=r_curr, column=17, value=z_bk)
+            c_z.font = DATA_FONT
+            c_z.alignment = ALIGN_CENTER
+            if z_bk == "YES":
+                c_z.fill = PASS_FILL
+
+            # Avg SGPI
+            avg_s = st.get("cumulative_avg_sgpi")
+            c_avg = ws.cell(row=r_curr, column=18, value=avg_s if avg_s is not None else "N/A")
+            c_avg.font = DATA_FONT
+            c_avg.alignment = ALIGN_RIGHT
+            if avg_s is not None:
+                c_avg.number_format = "0.00"
+
+            for c in range(2, 19):
+                ws.cell(row=r_curr, column=c).border = CELL_BORDER
+                if r_curr % 2 == 1 and not ws.cell(row=r_curr, column=c).fill.start_color.rgb:
+                    ws.cell(row=r_curr, column=c).fill = ZEBRA_FILL
+            r_curr += 1
+
+        auto_fit_columns(ws, min_width=12, max_width=45)
 
     # -----------------------------------------------------------------
     # SHEET 2: OVERALL SUMMARY
@@ -384,9 +595,10 @@ class BatchExcelReportGenerator:
         ws.cell(row=3, column=2, value="Detailed Pass/Fail, SGPI Range, and KT Counts per Semester").font = SUBTITLE_FONT
 
         headers = [
-            "Semester", "Input Type", "Total Students", "Passed", "Failed / KT",
-            "Pass Rate (%)", "Fail Rate (%)", "Average SGPI", "Highest SGPI",
-            "Lowest Passing SGPI", "KT Students", "Total KT Subjects"
+            "Semester", "Input Format", "Total Enrolled", "Regular Students", "Lateral Students",
+            "Passed", "Failed / KT", "Pass Rate (%)", "Fail Rate (%)", "Average SGPI",
+            "Highest SGPI", "Lowest Passing SGPI", "Distinction (≥7.5)", "First Class (6.75-7.5)",
+            "Second Class", "Pass Class", "KT Students", "Total KT Subjects"
         ]
 
         r_hdr = 5
@@ -401,36 +613,44 @@ class BatchExcelReportGenerator:
         r_curr = 6
         for s_item in self.semester_analysis:
             ws.cell(row=r_curr, column=2, value=s_item["semester_name"]).font = BOLD_DATA_FONT
-            ws.cell(row=r_curr, column=3, value=s_item["input_type"]).font = DATA_FONT
+            ws.cell(row=r_curr, column=3, value=s_item.get("input_type", "EXCEL")).font = DATA_FONT
             ws.cell(row=r_curr, column=3).alignment = ALIGN_CENTER
 
             # Counts
-            ws.cell(row=r_curr, column=4, value=s_item["total_students"]).font = DATA_FONT
+            ws.cell(row=r_curr, column=4, value=s_item["total_students"]).font = BOLD_DATA_FONT
             ws.cell(row=r_curr, column=4).alignment = ALIGN_RIGHT
             ws.cell(row=r_curr, column=4).number_format = "#,##0"
 
-            ws.cell(row=r_curr, column=5, value=s_item["passed"]).font = DATA_FONT
+            ws.cell(row=r_curr, column=5, value=s_item.get("regular_students", 0)).font = DATA_FONT
             ws.cell(row=r_curr, column=5).alignment = ALIGN_RIGHT
             ws.cell(row=r_curr, column=5).number_format = "#,##0"
 
-            ws.cell(row=r_curr, column=6, value=s_item["failed"]).font = DATA_FONT
+            ws.cell(row=r_curr, column=6, value=s_item.get("lateral_students", 0)).font = DATA_FONT
             ws.cell(row=r_curr, column=6).alignment = ALIGN_RIGHT
             ws.cell(row=r_curr, column=6).number_format = "#,##0"
 
-            # Percentages
-            ws.cell(row=r_curr, column=7, value=s_item["pass_percentage"] / 100.0).font = BOLD_DATA_FONT
+            ws.cell(row=r_curr, column=7, value=s_item["passed"]).font = DATA_FONT
             ws.cell(row=r_curr, column=7).alignment = ALIGN_RIGHT
-            ws.cell(row=r_curr, column=7).number_format = "0.0%"
-            ws.cell(row=r_curr, column=7).fill = PASS_FILL
+            ws.cell(row=r_curr, column=7).number_format = "#,##0"
 
-            ws.cell(row=r_curr, column=8, value=s_item["fail_percentage"] / 100.0).font = DATA_FONT
+            ws.cell(row=r_curr, column=8, value=s_item["failed"]).font = DATA_FONT
             ws.cell(row=r_curr, column=8).alignment = ALIGN_RIGHT
-            ws.cell(row=r_curr, column=8).number_format = "0.0%"
+            ws.cell(row=r_curr, column=8).number_format = "#,##0"
+
+            # Percentages
+            ws.cell(row=r_curr, column=9, value=s_item["pass_percentage"] / 100.0).font = BOLD_DATA_FONT
+            ws.cell(row=r_curr, column=9).alignment = ALIGN_RIGHT
+            ws.cell(row=r_curr, column=9).number_format = "0.0%"
+            ws.cell(row=r_curr, column=9).fill = PASS_FILL
+
+            ws.cell(row=r_curr, column=10, value=s_item["fail_percentage"] / 100.0).font = DATA_FONT
+            ws.cell(row=r_curr, column=10).alignment = ALIGN_RIGHT
+            ws.cell(row=r_curr, column=10).number_format = "0.0%"
             if s_item["fail_percentage"] > 25.0:
-                ws.cell(row=r_curr, column=8).fill = FAIL_FILL
+                ws.cell(row=r_curr, column=10).fill = FAIL_FILL
 
             # SGPIs
-            for c_pos, key in [(9, "average_sgpi"), (10, "highest_sgpi"), (11, "lowest_sgpi")]:
+            for c_pos, key in [(11, "average_sgpi"), (12, "highest_sgpi"), (13, "lowest_sgpi")]:
                 val = s_item.get(key)
                 c_cell = ws.cell(row=r_curr, column=c_pos)
                 if val is not None:
@@ -442,16 +662,26 @@ class BatchExcelReportGenerator:
                     c_cell.alignment = ALIGN_CENTER
                 c_cell.font = DATA_FONT
 
+            # Grade distributions
+            ws.cell(row=r_curr, column=14, value=s_item.get("distinction_count", 0)).font = DATA_FONT
+            ws.cell(row=r_curr, column=14).alignment = ALIGN_RIGHT
+            ws.cell(row=r_curr, column=15, value=s_item.get("first_class_count", 0)).font = DATA_FONT
+            ws.cell(row=r_curr, column=15).alignment = ALIGN_RIGHT
+            ws.cell(row=r_curr, column=16, value=s_item.get("second_class_count", 0)).font = DATA_FONT
+            ws.cell(row=r_curr, column=16).alignment = ALIGN_RIGHT
+            ws.cell(row=r_curr, column=17, value=s_item.get("pass_class_count", 0)).font = DATA_FONT
+            ws.cell(row=r_curr, column=17).alignment = ALIGN_RIGHT
+
             # KT info
-            ws.cell(row=r_curr, column=12, value=s_item["kt_students_count"]).font = DATA_FONT
-            ws.cell(row=r_curr, column=12).alignment = ALIGN_RIGHT
+            ws.cell(row=r_curr, column=18, value=s_item["kt_students_count"]).font = DATA_FONT
+            ws.cell(row=r_curr, column=18).alignment = ALIGN_RIGHT
 
             kt_sub = s_item.get("total_kt_subjects")
-            c_sub = ws.cell(row=r_curr, column=13, value=kt_sub if kt_sub is not None else "N/A")
+            c_sub = ws.cell(row=r_curr, column=19, value=kt_sub if kt_sub is not None else "N/A")
             c_sub.font = DATA_FONT
             c_sub.alignment = ALIGN_RIGHT if kt_sub is not None else ALIGN_CENTER
 
-            for col in range(2, 14):
+            for col in range(2, 20):
                 ws.cell(row=r_curr, column=col).border = CELL_BORDER
 
             r_curr += 1

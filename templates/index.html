@@ -352,10 +352,95 @@
           </button>
         </div>
 
-        <!-- TAB 1: Data Table View -->
+        <!-- TAB 1: Data Table View (Interactive Excel Grid) -->
         <div id="tabViewTable" class="tab-content active">
-          <div class="results-toolbar">
-            <input type="text" id="searchInput" class="search-input" placeholder="Search by seat number, student name, or grade...">
+          <!-- Excel Ribbon / Action Toolbar -->
+          <div class="excel-toolbar-wrapper">
+            <div class="excel-ribbon">
+              <!-- Left Group: Search & Structure -->
+              <div class="excel-ribbon-group">
+                <input type="text" id="searchInput" class="search-input excel-search-input" placeholder="🔍 Search records...">
+                <button type="button" id="btnExcelAddRow" class="excel-btn excel-btn-primary" title="Add a new row to table">
+                  <span>➕ Add Row</span>
+                </button>
+                <button type="button" id="btnExcelAddCol" class="excel-btn excel-btn-outline" title="Add a new column to dataset">
+                  <span>➕ Add Column</span>
+                </button>
+                <button type="button" id="btnExcelDeleteRows" class="excel-btn excel-btn-danger" title="Delete selected rows" disabled>
+                  <span>🗑️ Delete <span id="excelSelectedBadge" class="excel-count-badge hidden">0</span></span>
+                </button>
+              </div>
+
+              <!-- Middle Group: History, AI Fix & Search/Replace -->
+              <div class="excel-ribbon-group">
+                <button type="button" id="btnExcelUndo" class="excel-btn excel-btn-icon" title="Undo (Ctrl+Z)" disabled>
+                  <span>↩ Undo</span>
+                </button>
+                <button type="button" id="btnExcelRedo" class="excel-btn excel-btn-icon" title="Redo (Ctrl+Y)" disabled>
+                  <span>↪ Redo</span>
+                </button>
+                <button type="button" id="btnExcelAiFix" class="excel-btn excel-btn-ai" title="Auto-repair formulas, course totals, SGPI discrepancies, and formatting issues with AI">
+                  <span>🪄 Fix with AI</span>
+                </button>
+                <button type="button" id="btnToggleFindReplace" class="excel-btn excel-btn-outline" title="Find and Replace (Ctrl+F)">
+                  <span>🔍 Find / Replace</span>
+                </button>
+              </div>
+
+              <!-- Right Group: Persistence & Assistance -->
+              <div class="excel-ribbon-group excel-ribbon-right">
+                <div class="excel-save-status-pill" id="excelSaveStatus">
+                  <span class="status-dot dot-synced" id="excelSaveDot"></span>
+                  <span id="excelSaveStatusText">All changes saved</span>
+                </div>
+                <button type="button" id="btnExcelSave" class="excel-btn excel-btn-success" title="Save and sync modifications to server CSV/Excel">
+                  <span>💾 Save</span>
+                </button>
+                <button type="button" id="btnExcelReset" class="excel-btn excel-btn-outline" title="Reset dataset to original extracted state">
+                  <span>↺ Reset</span>
+                </button>
+                <button type="button" id="btnExcelShortcutsHelp" class="excel-btn excel-btn-icon" title="View Excel Keyboard Shortcuts">
+                  <span>⌨️ Guide</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Expandable Find & Replace Bar -->
+            <div id="excelFindReplaceBar" class="excel-find-replace-bar hidden">
+              <div class="find-replace-inner">
+                <div class="find-replace-field">
+                  <label for="findInput">Find:</label>
+                  <input type="text" id="findInput" class="excel-mini-input" placeholder="Text to find...">
+                </div>
+                <div class="find-replace-field">
+                  <label for="replaceInput">Replace:</label>
+                  <input type="text" id="replaceInput" class="excel-mini-input" placeholder="Replacement text...">
+                </div>
+                <div class="find-replace-field">
+                  <label for="findColSelect">Column:</label>
+                  <select id="findColSelect" class="excel-mini-select">
+                    <option value="_all_">All Columns</option>
+                  </select>
+                </div>
+                <div class="find-replace-checks">
+                  <label class="excel-checkbox-label">
+                    <input type="checkbox" id="findMatchCase"> Match Case
+                  </label>
+                </div>
+                <div class="find-replace-actions">
+                  <button type="button" id="btnFindPrev" class="btn btn-sm btn-outline">▲ Prev</button>
+                  <button type="button" id="btnFindNext" class="btn btn-sm btn-outline">▼ Next</button>
+                  <button type="button" id="btnReplaceOne" class="btn btn-sm btn-primary">Replace</button>
+                  <button type="button" id="btnReplaceAll" class="btn btn-sm btn-primary">Replace All</button>
+                  <span id="findMatchCount" class="find-match-badge">0 matches</span>
+                  <button type="button" id="btnCloseFindReplace" class="btn-close-sm" title="Close Find/Replace">✕</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Active Metadata Pill Strip -->
+          <div class="results-toolbar-sub">
             <div class="audit-summary-pill" id="auditPill">
               <span id="auditPassedCount">0</span> Verified Records
             </div>
@@ -367,19 +452,56 @@
             </div>
           </div>
 
-          <div class="table-container">
-            <table class="data-table" id="dataTable">
+          <!-- Excel Interactive Table Container -->
+          <div class="table-container excel-table-container" id="excelTableContainer" tabindex="0">
+            <table class="data-table excel-data-table" id="dataTable">
               <thead>
                 <tr id="tableHeadRow"></tr>
               </thead>
               <tbody id="tableBody"></tbody>
             </table>
           </div>
-          <div class="pagination-footer">
-            <span id="paginationInfo">Showing records 1 - 25</span>
-            <div class="pagination-btns">
-              <button id="prevPageBtn" class="btn btn-sm">Previous</button>
-              <button id="nextPageBtn" class="btn btn-sm">Next</button>
+
+          <!-- Excel Real-Time Status & Formula Summary Bar -->
+          <div class="excel-status-bar" id="excelStatusBar">
+            <div class="excel-status-left">
+              <span id="paginationInfo">Showing records 1 - 25</span>
+              <div class="excel-page-size-picker">
+                <label for="pageSizeSelect">Page Size:</label>
+                <select id="pageSizeSelect" class="excel-mini-select">
+                  <option value="25" selected>25</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                  <option value="250">250</option>
+                  <option value="1000">All</option>
+                </select>
+              </div>
+              <div class="pagination-btns">
+                <button id="prevPageBtn" class="btn btn-sm">Previous</button>
+                <button id="nextPageBtn" class="btn btn-sm">Next</button>
+              </div>
+            </div>
+
+            <div class="excel-status-center">
+              <span id="excelActiveCellCoords" class="excel-coord-badge">Ready</span>
+            </div>
+
+            <div class="excel-status-right" id="excelStatsStrip">
+              <div class="excel-stat-chip" id="statChipCount" title="Count of non-empty cells in active column">
+                <span class="stat-name">COUNT:</span> <strong id="valStatCount">0</strong>
+              </div>
+              <div class="excel-stat-chip" id="statChipSum" title="Sum of numeric values">
+                <span class="stat-name">SUM:</span> <strong id="valStatSum">0.00</strong>
+              </div>
+              <div class="excel-stat-chip" id="statChipAvg" title="Average of numeric values">
+                <span class="stat-name">AVG:</span> <strong id="valStatAvg">0.00</strong>
+              </div>
+              <div class="excel-stat-chip" id="statChipMin" title="Minimum numeric value">
+                <span class="stat-name">MIN:</span> <strong id="valStatMin">0.00</strong>
+              </div>
+              <div class="excel-stat-chip" id="statChipMax" title="Maximum numeric value">
+                <span class="stat-name">MAX:</span> <strong id="valStatMax">0.00</strong>
+              </div>
             </div>
           </div>
         </div>
@@ -753,21 +875,169 @@
           </div>
         </div>
 
-        <!-- Navigation Tabs for 9 Showcase Views -->
+        <!-- Navigation Tabs for 10 Showcase Views -->
         <div class="batch-nav-tabs">
-          <button type="button" class="batch-tab-btn active" data-batch-tab="tabBatchSummary">📋 1. Overall Summary</button>
-          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchSemester">📊 2. Semester Analysis</button>
-          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchProgression">🎓 3. Student Progression (Sem 1-8)</button>
-          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchKt">⚠️ 4. KT &amp; Backlog Analysis</button>
-          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchTopper">🏆 5. Topper Analysis</button>
-          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchRetention">👥 6. Retention &amp; Progression</button>
-          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchPerformance">📈 7. Student Performance</button>
-          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchQuality">🛡️ 8. Data Quality Log</button>
-          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchData">📑 9. Semester Data Trace</button>
+          <button type="button" class="batch-tab-btn active" data-batch-tab="tabBatchSuccessRate">🎯 1. Success Rate &amp; Intake</button>
+          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchSemester">📊 2. Semester-Wise Analysis</button>
+          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchSummary">📋 3. Overall Summary</button>
+          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchProgression">🎓 4. Student Progression (Sem 1-8)</button>
+          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchKt">⚠️ 5. KT &amp; Backlog Analysis</button>
+          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchTopper">🏆 6. Topper Analysis</button>
+          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchRetention">👥 7. Retention &amp; Progression</button>
+          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchPerformance">📈 8. Student Performance</button>
+          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchQuality">🛡️ 9. Data Quality Log</button>
+          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchData">📑 10. Semester Data Trace</button>
         </div>
 
-        <!-- TAB 1: Overall Summary -->
-        <div id="tabBatchSummary" class="batch-tab-content active">
+        <!-- TAB 1: Official Success Rate & Intake Audit -->
+        <div id="tabBatchSuccessRate" class="batch-tab-content active">
+          <!-- Formula & Accreditation Methodology Banner -->
+          <div class="success-rate-formula-card" style="background: rgba(31, 78, 120, 0.08); border: 1px solid rgba(31, 78, 120, 0.25); border-radius: 8px; padding: 1.2rem; margin-bottom: 1.5rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem;">
+              <div>
+                <span style="font-size: 0.78rem; font-weight: 700; color: #1F4E78; text-transform: uppercase; letter-spacing: 0.05em;">University Accreditation Success Rate Standard</span>
+                <h3 style="margin: 0.2rem 0; font-size: 1.15rem; color: #1F4E78;">Formula: Success Rate = [ P<sub>final</sub> / (N<sub>1</sub> + N<sub>3</sub>) ] × 100%</h3>
+              </div>
+              <div style="background: #1F4E78; color: #fff; padding: 0.4rem 0.9rem; border-radius: 6px; font-weight: 700; font-size: 0.85rem;">
+                Official NBA / NAAC Formula
+              </div>
+            </div>
+            <p style="margin: 0.6rem 0 0; font-size: 0.85rem; color: #475569;">
+              <strong>N<sub>1</sub></strong>: Regular intake admitted in 1st Semester &bull; 
+              <strong>N<sub>3</sub></strong>: Lateral Entry (DSE) admitted in 3rd Semester &bull; 
+              <strong>P<sub>final</sub></strong>: Students successfully cleared/graduated in final semester &bull; 
+              <strong>P<sub>no_kt</sub></strong>: Passed final semester with zero backlogs throughout.
+            </p>
+          </div>
+
+          <!-- Success Rate KPI Cards -->
+          <div class="eda-kpi-grid">
+            <div class="eda-kpi-card">
+              <span class="eda-kpi-label">REGULAR INTAKE (N1)</span>
+              <strong class="eda-kpi-value" id="kpiBatchN1">0</strong>
+              <span class="eda-kpi-sub">Admitted Semester 1</span>
+            </div>
+            <div class="eda-kpi-card">
+              <span class="eda-kpi-label">LATERAL ENTRY (N3)</span>
+              <strong class="eda-kpi-value text-accent" id="kpiBatchN3">0</strong>
+              <span class="eda-kpi-sub">Direct 2nd Year (Sem 3)</span>
+            </div>
+            <div class="eda-kpi-card">
+              <span class="eda-kpi-label">TOTAL COHORT INTAKE</span>
+              <strong class="eda-kpi-value" id="kpiBatchIntake">0</strong>
+              <span class="eda-kpi-sub">Base: N1 + N3</span>
+            </div>
+            <div class="eda-kpi-card kpi-success">
+              <span class="eda-kpi-label">FINAL SEM PASSED (P)</span>
+              <strong class="eda-kpi-value text-success" id="kpiBatchPassedFinal">0</strong>
+              <span class="eda-kpi-sub">Graduated Candidates</span>
+            </div>
+            <div class="eda-kpi-card kpi-accent" style="border: 2px solid #1F4E78;">
+              <span class="eda-kpi-label" style="color: #1F4E78;">OFFICIAL SUCCESS RATE</span>
+              <strong class="eda-kpi-value" id="kpiBatchSuccessRate" style="color: #1F4E78; font-size: 1.8rem;">0%</strong>
+              <span class="eda-kpi-sub">P / (N1 + N3)</span>
+            </div>
+            <div class="eda-kpi-card kpi-success">
+              <span class="eda-kpi-label">WITHOUT BACKLOG (P_no_kt)</span>
+              <strong class="eda-kpi-value text-success" id="kpiBatchSuccessRateNoKt">0%</strong>
+              <span class="eda-kpi-sub" id="kpiBatchNoKtSub">0 Cleared Zero KT</span>
+            </div>
+            <div class="eda-kpi-card">
+              <span class="eda-kpi-label">WITH BACKLOG (P_with_kt)</span>
+              <strong class="eda-kpi-value text-warning" id="kpiBatchSuccessRateWithKt">0%</strong>
+              <span class="eda-kpi-sub" id="kpiBatchWithKtSub">0 Cleared Backlogs</span>
+            </div>
+          </div>
+
+          <!-- Regular vs Lateral Entry Progression Table -->
+          <div style="margin-top: 1.8rem;">
+            <h4 style="margin-bottom: 0.8rem;">👥 Admission Category Breakdown &amp; Completion Audit</h4>
+            <div class="batch-table-container">
+              <table id="batchSuccessBreakdownTable">
+                <thead>
+                  <tr>
+                    <th>Cohort Category</th>
+                    <th>Entry Semester</th>
+                    <th>Admitted Students</th>
+                    <th>Passed Final Sem</th>
+                    <th>Passed Without KT</th>
+                    <th>Passed With KT</th>
+                    <th>Category Success Rate (%)</th>
+                  </tr>
+                </thead>
+                <tbody id="batchSuccessBreakdownBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Student Progression & Verification Roster -->
+          <div style="margin-top: 2rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem; flex-wrap: wrap; gap: 0.5rem;">
+              <h4 style="margin: 0;">🎓 Student Cross-Checking &amp; Success Verification Roster</h4>
+              <input type="text" id="batchSuccessRosterSearch" class="batch-search-input" style="max-width: 320px;" placeholder="🔍 Filter student roster by name, seat, or PRN...">
+            </div>
+            <div class="batch-table-container">
+              <table id="batchSuccessRosterTable">
+                <thead>
+                  <tr id="batchSuccessRosterHead">
+                    <th>Sr No</th>
+                    <th>Student ID</th>
+                    <th>Student Name</th>
+                    <th>PRN</th>
+                    <th>Entry Category</th>
+                    <th>Entry Sem</th>
+                    <th>Sem 1</th>
+                    <th>Sem 2</th>
+                    <th>Sem 3</th>
+                    <th>Sem 4</th>
+                    <th>Sem 5</th>
+                    <th>Sem 6</th>
+                    <th>Sem 7</th>
+                    <th>Sem 8</th>
+                    <th>Final Status</th>
+                    <th>Zero KT?</th>
+                    <th>Avg SGPI</th>
+                  </tr>
+                </thead>
+                <tbody id="batchSuccessRosterBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 2: Semester-Wise Result Analysis -->
+        <div id="tabBatchSemester" class="batch-tab-content hidden">
+          <div class="batch-table-container">
+            <table id="batchSemesterTable">
+              <thead>
+                <tr>
+                  <th>Semester</th>
+                  <th>Format</th>
+                  <th>Total Enrolled</th>
+                  <th>Regular (N1)</th>
+                  <th>Lateral (N3)</th>
+                  <th>Passed</th>
+                  <th>Failed / KT</th>
+                  <th>Pass Rate (%)</th>
+                  <th>Fail Rate (%)</th>
+                  <th>Average SGPI</th>
+                  <th>Highest SGPI</th>
+                  <th>Lowest SGPI</th>
+                  <th>Distinction (≥7.5)</th>
+                  <th>First Class</th>
+                  <th>Second Class</th>
+                  <th>Pass Class</th>
+                  <th>KT Students</th>
+                  <th>Total KT Subjects</th>
+                </tr>
+              </thead>
+              <tbody id="batchSemesterBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- TAB 3: Overall Summary -->
+        <div id="tabBatchSummary" class="batch-tab-content hidden">
           <div class="eda-kpi-grid">
             <div class="eda-kpi-card">
               <span class="eda-kpi-label">TOTAL STUDENTS</span>
@@ -816,30 +1086,6 @@
                 <tbody id="batchGradeDistBody"></tbody>
               </table>
             </div>
-          </div>
-        </div>
-
-        <!-- TAB 2: Semester Analysis -->
-        <div id="tabBatchSemester" class="batch-tab-content hidden">
-          <div class="batch-table-container">
-            <table id="batchSemesterTable">
-              <thead>
-                <tr>
-                  <th>Semester</th>
-                  <th>Format</th>
-                  <th>Total Enrolled</th>
-                  <th>Passed</th>
-                  <th>Failed / KT</th>
-                  <th>Pass Rate (%)</th>
-                  <th>Average SGPI</th>
-                  <th>Highest SGPI</th>
-                  <th>Lowest Passing SGPI</th>
-                  <th>KT Students</th>
-                  <th>Total KT Subjects</th>
-                </tr>
-              </thead>
-              <tbody id="batchSemesterBody"></tbody>
-            </table>
           </div>
         </div>
 
@@ -1628,6 +1874,247 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- Excel Add Column Modal -->
+    <div class="modal-backdrop hidden" id="excelAddColModal">
+      <div class="modal-card" style="max-width: 480px;">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <div class="tabular-modal-icon" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8;">➕</div>
+            <div>
+              <h3>Add New Column</h3>
+              <p class="modal-subtitle">Insert a new field into the dataset structure</p>
+            </div>
+          </div>
+          <button type="button" class="btn-close" id="btnCloseAddColModal">&times;</button>
+        </div>
+        <div class="modal-body" style="padding: 1.25rem;">
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label for="newColNameInput" style="display: block; font-weight: 600; margin-bottom: 0.35rem; font-size: 0.85rem;">Column Name / Header:</label>
+            <input type="text" id="newColNameInput" class="form-input" placeholder="e.g. Grace_Marks, Remarks, Project_Title" style="width: 100%;">
+          </div>
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label for="newColDefaultValInput" style="display: block; font-weight: 600; margin-bottom: 0.35rem; font-size: 0.85rem;">Default Value (Optional):</label>
+            <input type="text" id="newColDefaultValInput" class="form-input" placeholder="Empty, 0, or text..." style="width: 100%;">
+          </div>
+          <div class="form-group">
+            <label for="newColPositionSelect" style="display: block; font-weight: 600; margin-bottom: 0.35rem; font-size: 0.85rem;">Position:</label>
+            <select id="newColPositionSelect" class="form-select" style="width: 100%;">
+              <option value="end">At End of Table</option>
+              <option value="after_active">After Selected Column</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-foot" style="justify-content: flex-end; gap: 0.5rem;">
+          <button type="button" class="btn btn-secondary" id="btnCancelAddCol">Cancel</button>
+          <button type="button" class="btn btn-primary" id="btnSubmitAddCol">Add Column</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Excel Add Row Modal -->
+    <div class="modal-backdrop hidden" id="excelAddRowModal">
+      <div class="modal-card" style="max-width: 540px;">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <div class="tabular-modal-icon" style="background: rgba(16, 185, 129, 0.15); color: #10B981;">➕</div>
+            <div>
+              <h3>Add New Student Record</h3>
+              <p class="modal-subtitle">Insert a row into the current active dataset</p>
+            </div>
+          </div>
+          <button type="button" class="btn-close" id="btnCloseAddRowModal">&times;</button>
+        </div>
+        <div class="modal-body" style="padding: 1.25rem;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+            <div class="form-group">
+              <label for="addRowSeat" style="display: block; font-weight: 600; font-size: 0.82rem; margin-bottom: 0.25rem;">Seat Number *</label>
+              <input type="text" id="addRowSeat" class="form-input" placeholder="e.g. 522001">
+            </div>
+            <div class="form-group">
+              <label for="addRowName" style="display: block; font-weight: 600; font-size: 0.82rem; margin-bottom: 0.25rem;">Student Name *</label>
+              <input type="text" id="addRowName" class="form-input" placeholder="e.g. Jane Doe">
+            </div>
+            <div class="form-group">
+              <label for="addRowPrn" style="display: block; font-weight: 600; font-size: 0.82rem; margin-bottom: 0.25rem;">PRN (Optional)</label>
+              <input type="text" id="addRowPrn" class="form-input" placeholder="e.g. 2021016400...">
+            </div>
+            <div class="form-group">
+              <label for="addRowCandidateType" style="display: block; font-weight: 600; font-size: 0.82rem; margin-bottom: 0.25rem;">Candidate Type</label>
+              <select id="addRowCandidateType" class="form-select">
+                <option value="Regular">Regular</option>
+                <option value="Diploma">Diploma / DSE</option>
+                <option value="Repeater">Repeater</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="addRowSgpi" style="display: block; font-weight: 600; font-size: 0.82rem; margin-bottom: 0.25rem;">SGPI</label>
+              <input type="number" step="0.01" min="0" max="10" id="addRowSgpi" class="form-input" placeholder="e.g. 8.75">
+            </div>
+            <div class="form-group">
+              <label for="addRowResult" style="display: block; font-weight: 600; font-size: 0.82rem; margin-bottom: 0.25rem;">Result Status</label>
+              <select id="addRowResult" class="form-select">
+                <option value="Successful">Successful (P)</option>
+                <option value="Unsuccessful">Unsuccessful (F)</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group" style="margin-top: 0.75rem;">
+            <label for="addRowPositionSelect" style="display: block; font-weight: 600; font-size: 0.82rem; margin-bottom: 0.25rem;">Insert Position:</label>
+            <select id="addRowPositionSelect" class="form-select" style="width: 100%;">
+              <option value="end">At End of Dataset</option>
+              <option value="beginning">At Top / Beginning</option>
+              <option value="after_selected">After Currently Selected Row</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-foot" style="justify-content: flex-end; gap: 0.5rem;">
+          <button type="button" class="btn btn-secondary" id="btnCancelAddRow">Cancel</button>
+          <button type="button" class="btn btn-primary" id="btnSubmitAddRow">Insert Record</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Excel Rename Column Modal -->
+    <div class="modal-backdrop hidden" id="excelRenameColModal">
+      <div class="modal-card" style="max-width: 440px;">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <div class="tabular-modal-icon" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b;">✏️</div>
+            <div>
+              <h3>Rename Column</h3>
+              <p class="modal-subtitle">Change field header across entire dataset</p>
+            </div>
+          </div>
+          <button type="button" class="btn-close" id="btnCloseRenameColModal">&times;</button>
+        </div>
+        <div class="modal-body" style="padding: 1.25rem;">
+          <input type="hidden" id="renameColOldKey">
+          <div class="form-group">
+            <label style="display: block; font-weight: 600; margin-bottom: 0.35rem; font-size: 0.85rem;">Current Name:</label>
+            <div id="renameColOldLabel" style="font-family: monospace; font-size: 0.9rem; padding: 0.5rem; background: rgba(255,255,255,0.05); border-radius: 4px; margin-bottom: 1rem; color: #94A3B8;"></div>
+          </div>
+          <div class="form-group">
+            <label for="renameColNewInput" style="display: block; font-weight: 600; margin-bottom: 0.35rem; font-size: 0.85rem;">New Column Name:</label>
+            <input type="text" id="renameColNewInput" class="form-input" placeholder="e.g. CGPA, Grade, Rank" style="width: 100%;">
+          </div>
+        </div>
+        <div class="modal-foot" style="justify-content: flex-end; gap: 0.5rem;">
+          <button type="button" class="btn btn-secondary" id="btnCancelRenameCol">Cancel</button>
+          <button type="button" class="btn btn-primary" id="btnSubmitRenameCol">Save Rename</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Excel Column Filter Popover / Modal -->
+    <div class="modal-backdrop hidden" id="excelFilterModal">
+      <div class="modal-card" style="max-width: 420px; max-height: 85vh; display: flex; flex-direction: column;">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <div class="tabular-modal-icon" style="background: rgba(99, 102, 241, 0.15); color: #818cf8;">⚡</div>
+            <div>
+              <h3 id="filterModalTitle">Filter Column</h3>
+              <p class="modal-subtitle">Select values to display</p>
+            </div>
+          </div>
+          <button type="button" class="btn-close" id="btnCloseFilterModal">&times;</button>
+        </div>
+        <div class="modal-body" style="padding: 1rem 1.25rem; flex: 1; overflow: hidden; display: flex; flex-direction: column;">
+          <input type="hidden" id="filterActiveColKey">
+          <input type="text" id="filterSearchInput" class="search-input" placeholder="Search filter values..." style="margin-bottom: 0.75rem; width: 100%;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-size: 0.8rem;">
+            <a href="#" id="filterSelectAllLink" style="color: var(--accent);">Select All</a>
+            <a href="#" id="filterClearAllLink" style="color: var(--text-muted);">Clear All</a>
+          </div>
+          <div id="filterValuesList" style="flex: 1; overflow-y: auto; max-height: 280px; border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 0.5rem;"></div>
+        </div>
+        <div class="modal-foot" style="justify-content: space-between;">
+          <button type="button" class="btn btn-sm btn-outline" id="btnClearCurrentColFilter">Reset Filter</button>
+          <div style="display: flex; gap: 0.5rem;">
+            <button type="button" class="btn btn-secondary btn-sm" id="btnCancelFilterModal">Cancel</button>
+            <button type="button" class="btn btn-primary btn-sm" id="btnApplyFilterModal">Apply Filter</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Excel Shortcuts Guide Modal -->
+    <div class="modal-backdrop hidden" id="excelShortcutsModal">
+      <div class="modal-card" style="max-width: 620px;">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <div class="tabular-modal-icon" style="background: rgba(16, 185, 129, 0.15); color: #10B981;">⌨️</div>
+            <div>
+              <h3>Excel Keyboard &amp; Grid Guide</h3>
+              <p class="modal-subtitle">Work with the result ledger just like Microsoft Excel or Google Sheets</p>
+            </div>
+          </div>
+          <button type="button" class="btn-close" id="btnCloseShortcutsModal">&times;</button>
+        </div>
+        <div class="modal-body" style="padding: 1.25rem; font-size: 0.85rem;">
+          <div class="shortcuts-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div>
+              <h4 style="color: var(--accent); margin-bottom: 0.5rem; font-size: 0.88rem;">Navigation &amp; Selection</h4>
+              <ul style="list-style: none; padding: 0; line-height: 1.8; color: #CBD5E1;">
+                <li><kbd>Click</kbd> Select cell</li>
+                <li><kbd>↑ ↓ ← →</kbd> Move cell selection</li>
+                <li><kbd>Tab</kbd> Move to right cell</li>
+                <li><kbd>Shift</kbd> + <kbd>Tab</kbd> Move to left cell</li>
+                <li><kbd>Enter</kbd> Move to cell below</li>
+                <li><kbd>Shift</kbd> + <kbd>Enter</kbd> Move to cell above</li>
+              </ul>
+            </div>
+            <div>
+              <h4 style="color: var(--accent); margin-bottom: 0.5rem; font-size: 0.88rem;">Editing &amp; Operations</h4>
+              <ul style="list-style: none; padding: 0; line-height: 1.8; color: #CBD5E1;">
+                <li><kbd>Double Click</kbd> or <kbd>F2</kbd> Edit cell</li>
+                <li><kbd>Type Any Key</kbd> Start typing to edit</li>
+                <li><kbd>Esc</kbd> Cancel cell edit</li>
+                <li><kbd>Del</kbd> / <kbd>Backspace</kbd> Clear cell value</li>
+                <li><kbd>Ctrl</kbd> + <kbd>Z</kbd> Undo table change</li>
+                <li><kbd>Ctrl</kbd> + <kbd>Y</kbd> Redo table change</li>
+                <li><kbd>Ctrl</kbd> + <kbd>F</kbd> Find &amp; Replace</li>
+                <li><kbd>Ctrl</kbd> + <kbd>S</kbd> Save to Server</li>
+              </ul>
+            </div>
+          </div>
+          <div style="margin-top: 1rem; padding: 0.75rem; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 6px; font-size: 0.82rem; color: #94A3B8;">
+            💡 <strong>Right-Click Menu:</strong> Right-click on any row or cell to quickly insert rows above/below, duplicate rows, delete rows, or add/delete columns.
+          </div>
+        </div>
+        <div class="modal-foot" style="justify-content: flex-end;">
+          <button type="button" class="btn btn-primary" id="btnDismissShortcutsModal">Got it!</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Floating Context Menu (Right-Click) -->
+    <div id="excelContextMenu" class="excel-context-menu hidden">
+      <div class="ctx-item" data-action="edit_cell"><span>✏️ Edit Cell</span><span class="ctx-kbd">F2</span></div>
+      <div class="ctx-item" data-action="copy_cell"><span>📋 Copy Cell Value</span><span class="ctx-kbd">Ctrl+C</span></div>
+      <div class="ctx-item" data-action="clear_cell"><span>🧹 Clear Cell</span><span class="ctx-kbd">Del</span></div>
+      <div class="ctx-divider"></div>
+      <div class="ctx-item" data-action="insert_row_above"><span>⬆️ Insert Row Above</span></div>
+      <div class="ctx-item" data-action="insert_row_below"><span>⬇️ Insert Row Below</span></div>
+      <div class="ctx-item" data-action="duplicate_row"><span>📄 Duplicate Row</span></div>
+      <div class="ctx-item text-danger" data-action="delete_row"><span>🗑️ Delete Row</span></div>
+      <div class="ctx-divider"></div>
+      <div class="ctx-item" data-action="add_column"><span>➕ Add Column...</span></div>
+      <div class="ctx-item" data-action="rename_column"><span>✏️ Rename Column...</span></div>
+      <div class="ctx-item text-danger" data-action="delete_column"><span>❌ Delete Column</span></div>
+    </div>
+
+    <!-- Column Header Menu Dropdown -->
+    <div id="excelColMenu" class="excel-context-menu hidden">
+      <div class="ctx-item" data-col-action="sort_asc"><span>▲ Sort Ascending (A-Z / Min-Max)</span></div>
+      <div class="ctx-item" data-col-action="sort_desc"><span>▼ Sort Descending (Z-A / Max-Min)</span></div>
+      <div class="ctx-item" data-col-action="filter_col"><span>⚡ Filter by Value...</span></div>
+      <div class="ctx-divider"></div>
+      <div class="ctx-item" data-col-action="add_col_right"><span>➕ Insert Column Right</span></div>
+      <div class="ctx-item" data-col-action="rename_col"><span>✏️ Rename Column...</span></div>
+      <div class="ctx-item" data-col-action="clear_col"><span>🧹 Clear All Values in Column</span></div>
+      <div class="ctx-item text-danger" data-col-action="delete_col"><span>❌ Delete Column</span></div>
     </div>
   </main>
 
