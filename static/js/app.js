@@ -177,6 +177,17 @@ async function initBatches() {
         document.getElementById("fileInput").value = "";
         window.currentSelectedFile = null;
         resetFileUploadDisplay();
+
+        const val = e.target.value.trim();
+        const ext = val.split('.').pop().toLowerCase();
+        if (["xlsx", "xls", "csv"].includes(ext)) {
+          btn.innerHTML = `<span>✨ Ingest &amp; Fix Spreadsheet</span>`;
+          inspectTabularBatchFile(val);
+        } else {
+          btn.innerHTML = `<span>⚡ Extract Data</span>`;
+        }
+      } else {
+        btn.innerHTML = `<span>⚡ Extract Data</span>`;
       }
     });
   } catch (e) {
@@ -333,7 +344,13 @@ async function startExtraction() {
     }
     formData.append("pdf_file", selectedFile);
   } else if (batchSelect && batchSelect.value) {
-    formData.append("batch_file", batchSelect.value);
+    const batchVal = batchSelect.value.trim();
+    const ext = batchVal.split('.').pop().toLowerCase();
+    if (["xlsx", "xls", "csv"].includes(ext)) {
+      inspectTabularBatchFile(batchVal);
+      return;
+    }
+    formData.append("batch_file", batchVal);
   } else {
     alert("Please choose or upload an academic document or spreadsheet.");
     return;
@@ -4813,6 +4830,53 @@ function initTabularModal() {
   }
 }
 
+async function inspectTabularBatchFile(batchRelPath) {
+  const modalBackdrop = document.getElementById("tabularModalBackdrop");
+  if (!modalBackdrop) return;
+
+  const baseName = batchRelPath.split("/").pop().split("\\").pop();
+  currentTabularFile = { name: baseName, rel_path: batchRelPath };
+  modalBackdrop.classList.remove("hidden");
+
+  const filenameEl = document.getElementById("tabModalFilename");
+  const subEl = document.getElementById("tabModalSubtitle");
+  const statusTitle = document.getElementById("tabStatusTitle");
+  const msgEl = document.getElementById("tabAssessmentMsg");
+  const issuesContainer = document.getElementById("tabIssuesContainer");
+  const thead = document.getElementById("tabPreviewHeadRow");
+  const tbody = document.getElementById("tabPreviewBody");
+  const sheetBar = document.getElementById("tabSheetBar");
+
+  if (filenameEl) filenameEl.textContent = baseName;
+  if (subEl) subEl.textContent = `Historical Batch: ${batchRelPath} • Ingesting...`;
+  if (statusTitle) statusTitle.textContent = "Analyzing historical spreadsheet formatting & layout...";
+  if (msgEl) msgEl.textContent = "Inspecting headers, row offsets, composite sub-components, and student markers...";
+  if (issuesContainer) issuesContainer.classList.add("hidden");
+  if (thead) thead.innerHTML = "";
+  if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1rem;">Reading table preview...</td></tr>`;
+  if (sheetBar) sheetBar.classList.add("hidden");
+
+  try {
+    const res = await fetch("/api/tabular/inspect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: batchRelPath, batch_file: batchRelPath })
+    });
+    const data = await safeParseJson(res);
+    if (!data.success) {
+      alert(`Inspection failed: ${data.error || "Unknown error"}`);
+      modalBackdrop.classList.add("hidden");
+      return;
+    }
+
+    renderInspectionData(data);
+  } catch (err) {
+    console.error("Historical tabular inspection failed:", err);
+    alert(`Could not inspect tabular batch file: ${err.message}`);
+    modalBackdrop.classList.add("hidden");
+  }
+}
+
 async function inspectTabularFile(file) {
   const modalBackdrop = document.getElementById("tabularModalBackdrop");
   if (!modalBackdrop) return;
@@ -5769,6 +5833,7 @@ function renderRawSemesterTable(sem) {
 // ==========================================================================
 let activeCleaningData = null;
 let activeCleaningFilter = "all";
+let selectedCleaningChangeIds = new Set();
 
 function initDataCleaningUI() {
   const btnOpenCleaner = document.getElementById("btnOpenDataCleaner");
@@ -5777,6 +5842,9 @@ function initDataCleaningUI() {
   const btnDiscard = document.getElementById("btnDiscardCleanChanges");
   const btnAccept = document.getElementById("btnAcceptCleanChanges");
   const searchInput = document.getElementById("cleanDiffSearch");
+  const btnSelectAll = document.getElementById("btnCleanSelectAll");
+  const btnDeselectAll = document.getElementById("btnCleanDeselectAll");
+  const headerCheck = document.getElementById("cleanDiffSelectAllHeader");
 
   if (btnOpenCleaner) {
     btnOpenCleaner.addEventListener("click", () => {
@@ -5801,6 +5869,50 @@ function initDataCleaningUI() {
   if (btnAccept) {
     btnAccept.addEventListener("click", async () => {
       await acceptCleaningChanges();
+    });
+  }
+
+  if (btnSelectAll) {
+    btnSelectAll.addEventListener("click", () => {
+      const allChanges = activeCleaningData?.changes || [];
+      allChanges.forEach(c => selectedCleaningChangeIds.add(String(c.change_id)));
+      document.querySelectorAll(".clean-row-check").forEach(chk => {
+        chk.checked = true;
+        const row = chk.closest("tr");
+        if (row) row.style.opacity = "1";
+      });
+      updateCleanSelectionUI();
+    });
+  }
+
+  if (btnDeselectAll) {
+    btnDeselectAll.addEventListener("click", () => {
+      selectedCleaningChangeIds.clear();
+      document.querySelectorAll(".clean-row-check").forEach(chk => {
+        chk.checked = false;
+        const row = chk.closest("tr");
+        if (row) row.style.opacity = "0.55";
+      });
+      updateCleanSelectionUI();
+    });
+  }
+
+  if (headerCheck) {
+    headerCheck.addEventListener("change", (e) => {
+      const checked = e.target.checked;
+      const visibleRowChecks = document.querySelectorAll(".clean-row-check");
+      visibleRowChecks.forEach(chk => {
+        chk.checked = checked;
+        const cid = chk.getAttribute("data-cid");
+        if (checked) {
+          selectedCleaningChangeIds.add(cid);
+        } else {
+          selectedCleaningChangeIds.delete(cid);
+        }
+        const row = chk.closest("tr");
+        if (row) row.style.opacity = checked ? "1" : "0.55";
+      });
+      updateCleanSelectionUI();
     });
   }
 
@@ -5871,6 +5983,9 @@ function renderCleaningModal(data) {
   const summary = data.summary || {};
   const changes = data.changes || [];
 
+  // Default: All proposed fixes selected
+  selectedCleaningChangeIds = new Set(changes.map(c => String(c.change_id)));
+
   setText("cleanStatTotalRows", summary.total_rows || 0);
   setText("cleanStatTotalChanges", summary.total_changes || 0);
   setText("cleanStatImputed", summary.imputed_missing || 0);
@@ -5889,6 +6004,38 @@ function renderCleaningModal(data) {
   setText("chipOutlierCount", outlierCount);
 
   renderCleaningDiffTable();
+  updateCleanSelectionUI();
+}
+
+function updateCleanSelectionUI() {
+  const allChanges = activeCleaningData?.changes || [];
+  const total = allChanges.length;
+  const count = selectedCleaningChangeIds.size;
+
+  const countText = document.getElementById("cleanSelectedCountText");
+  if (countText) {
+    countText.textContent = `${count} of ${total} fixes selected`;
+  }
+
+  const btnAccept = document.getElementById("btnAcceptCleanChanges");
+  if (btnAccept) {
+    btnAccept.innerHTML = `✅ Apply Selected Fixes (${count})`;
+    btnAccept.disabled = count === 0;
+  }
+
+  const headerCheck = document.getElementById("cleanDiffSelectAllHeader");
+  if (headerCheck) {
+    const visibleRowChecks = document.querySelectorAll(".clean-row-check");
+    if (visibleRowChecks.length > 0) {
+      const allVisibleChecked = Array.from(visibleRowChecks).every(ch => ch.checked);
+      const someVisibleChecked = Array.from(visibleRowChecks).some(ch => ch.checked);
+      headerCheck.checked = allVisibleChecked;
+      headerCheck.indeterminate = !allVisibleChecked && someVisibleChecked;
+    } else {
+      headerCheck.checked = false;
+      headerCheck.indeterminate = false;
+    }
+  }
 }
 
 function renderCleaningDiffTable() {
@@ -5921,14 +6068,20 @@ function renderCleaningDiffTable() {
   if (filtered.length === 0) {
     if (emptyMsg) emptyMsg.classList.remove("hidden");
     if (table) table.classList.add("hidden");
+    updateCleanSelectionUI();
     return;
   }
 
   if (emptyMsg) emptyMsg.classList.add("hidden");
   if (table) table.classList.remove("hidden");
 
-  filtered.slice(0, 150).forEach((c, idx) => {
+  filtered.slice(0, 200).forEach((c) => {
     const tr = document.createElement("tr");
+    const cid = String(c.change_id);
+    const isChecked = selectedCleaningChangeIds.has(cid);
+    if (!isChecked) {
+      tr.style.opacity = "0.55";
+    }
 
     let typeClass = "type-format";
     let typeLabel = "Format";
@@ -5947,39 +6100,65 @@ function renderCleaningDiffTable() {
     const newDisplay = (c.new_value !== null && c.new_value !== undefined && c.new_value !== "") ? c.new_value : "--";
 
     tr.innerHTML = `
-      <td style="color:#64748B; font-weight:600; text-align:center;">${c.row_index + 1}</td>
+      <td style="text-align: center; vertical-align: middle;">
+        <input type="checkbox" class="clean-row-check" data-cid="${cid}" ${isChecked ? "checked" : ""} style="cursor: pointer; width: 15px; height: 15px;">
+      </td>
+      <td style="color:#64748B; font-weight:600; text-align:center; vertical-align: middle;">${c.row_index + 1}</td>
       <td>
-        <strong style="color:#F8FAFC;">${c.student_name || "Student"}</strong>
-        <div style="font-size:0.75rem; color:#94A3B8; font-family:monospace;">Seat: ${c.seat_no || "N/A"}</div>
+        <strong style="color:#F8FAFC;">${escapeHtml(c.student_name || "Student")}</strong>
+        <div style="font-size:0.75rem; color:#94A3B8; font-family:monospace;">Seat: ${escapeHtml(c.seat_no || "N/A")}</div>
       </td>
       <td>
-        <span style="font-family:monospace; font-weight:600; color:#38BDF8;">${c.column || ""}</span>
+        <span style="font-family:monospace; font-weight:600; color:#38BDF8;">${escapeHtml(c.column || "")}</span>
       </td>
       <td>
-        <span class="diff-old-val">${oldDisplay}</span>
+        <span class="diff-old-val">${escapeHtml(String(oldDisplay))}</span>
       </td>
       <td>
-        <span class="diff-new-val">${newDisplay}</span>
+        <span class="diff-new-val">${escapeHtml(String(newDisplay))}</span>
       </td>
       <td>
         <span class="badge-clean-type ${typeClass}">${typeLabel}</span>
       </td>
       <td style="color:#CBD5E1; font-size:0.8rem; max-width:280px; line-height:1.4;">
-        ${c.reason || ""}
+        ${escapeHtml(c.reason || "")}
       </td>
     `;
+
+    const chk = tr.querySelector(".clean-row-check");
+    if (chk) {
+      chk.addEventListener("change", (e) => {
+        if (e.target.checked) {
+          selectedCleaningChangeIds.add(cid);
+          tr.style.opacity = "1";
+        } else {
+          selectedCleaningChangeIds.delete(cid);
+          tr.style.opacity = "0.55";
+        }
+        updateCleanSelectionUI();
+      });
+    }
+
     tbody.appendChild(tr);
   });
+
+  updateCleanSelectionUI();
 }
 
 async function acceptCleaningChanges() {
   if (!activeCleaningData) return;
 
+  const acceptedList = Array.from(selectedCleaningChangeIds);
+  if (acceptedList.length === 0) {
+    alert("Please select at least one fix to apply, or click 'Discard Changes'.");
+    return;
+  }
+
   const btnAccept = document.getElementById("btnAcceptCleanChanges");
   const origText = btnAccept ? btnAccept.textContent : "";
   if (btnAccept) {
     btnAccept.disabled = true;
-    btnAccept.textContent = "⏳ Promoting to Primary...";
+    btnAccept.textContent = "⏳ Applying Selected Fixes...";
   }
 
   try {
@@ -5989,6 +6168,9 @@ async function acceptCleaningChanges() {
       body: JSON.stringify({
         folder_name: currentFolderName,
         action: "accept",
+        accepted_ids: acceptedList,
+        original_records: activeCleaningData.original_records || currentRecords,
+        changes: activeCleaningData.changes,
         cleaned_students: activeCleaningData.cleaned_records
       })
     });
@@ -6013,25 +6195,95 @@ async function acceptCleaningChanges() {
     }
 
     currentRecords = data.records;
+    if (currentResultObj) {
+      currentResultObj.students = currentRecords;
+      currentResultObj.total_students = currentRecords.length;
+    }
+    originalRecords = JSON.parse(JSON.stringify(currentRecords));
+
+    // 1. Re-extract columns so any newly imputed or standardized headers appear immediately
+    activeColumns = extractRecordKeys(currentRecords, currentCatalog);
+
+    // 2. Identify changed cells to mark dirty indicators and pulse them
+    const acceptedChangeSet = new Set(acceptedList);
+    dirtyCells.clear();
+    selectedRowIndices.clear();
+    excelUndoStack = [];
+    excelRedoStack = [];
+    columnFilters = {};
+    currentSort = { colKey: null, dir: null };
+    const searchInput = document.getElementById("searchInput");
+    if (searchInput) searchInput.value = "";
+
+    const changedCellKeys = [];
+    let firstChangedCell = null;
+    (activeCleaningData?.changes || []).forEach(c => {
+      if (acceptedChangeSet.has(String(c.change_id))) {
+        const cellKey = `${c.row_index}_${c.column}`;
+        dirtyCells.add(cellKey);
+        changedCellKeys.push({ rowIndex: c.row_index, colKey: c.column });
+        if (!firstChangedCell) {
+          firstChangedCell = { rowIndex: c.row_index, colKey: c.column };
+        }
+      }
+    });
+
+    unsavedEditsCount = 0;
+    updateExcelSaveStatus();
+    updateExcelUndoRedoButtons();
+
     filteredRecords = [...currentRecords];
-    currentPage = 1;
+
+    // Navigate to page containing the first changed row
+    if (firstChangedCell && pageSize > 0) {
+      currentPage = Math.floor(firstChangedCell.rowIndex / pageSize) + 1;
+    } else {
+      currentPage = 1;
+    }
+
+    populateFindColSelect();
     displayTablePage();
     updateMetaCount(currentRecords.length);
 
+    // 3. Pulse highlight all changed cells visible on the active page
+    changedCellKeys.forEach(info => {
+      const td = document.querySelector(`.excel-data-table td[data-row-idx="${info.rowIndex}"][data-col-key="${info.colKey}"]`);
+      if (td) {
+        td.classList.add("cell-cleaned-pulse");
+      }
+    });
+
+    // 4. Scroll to first changed cell and select it
+    if (firstChangedCell) {
+      const firstTd = document.querySelector(`.excel-data-table td[data-row-idx="${firstChangedCell.rowIndex}"][data-col-key="${firstChangedCell.colKey}"]`);
+      if (firstTd) {
+        firstTd.scrollIntoView({ block: "nearest", inline: "nearest" });
+        selectCell(firstChangedCell.rowIndex, firstChangedCell.colKey);
+      }
+    }
+
     currentEdaData = null;
+    const viewAnalytics = document.getElementById("tabViewAnalytics");
+    if (viewAnalytics && !viewAnalytics.classList.contains("hidden")) {
+      computeEdaDashboard();
+    }
 
     const modalBackdrop = document.getElementById("cleanDataModalBackdrop");
     if (modalBackdrop) modalBackdrop.classList.add("hidden");
 
     const auditPill = document.getElementById("auditPill");
     if (auditPill) {
-      auditPill.innerHTML = `✨ <strong>Cleaned &amp; Verified</strong> (${currentRecords.length} records)`;
+      auditPill.innerHTML = `✨ <strong>Cleaned &amp; Verified</strong> (${currentRecords.length} records, ${acceptedList.length} fixes)`;
       auditPill.style.background = "rgba(16, 185, 129, 0.15)";
       auditPill.style.borderColor = "rgba(16, 185, 129, 0.4)";
       auditPill.style.color = "#10B981";
     }
 
-    alert(`✅ Success: ${data.message}\nYour primary table and subsequent EDA will now use the clean, standardized dataset.`);
+    activeCleaningData = null;
+
+    setTimeout(() => {
+      appendChatMessage("assistant", `✨ <strong>Data Cleaning Applied!</strong> Successfully integrated <strong>${acceptedList.length}</strong> standardized values and mathematical repairs into the active dataset (${currentRecords.length} records). Modified cells are highlighted in green.`);
+    }, 150);
 
   } catch (err) {
     console.error("Error accepting cleaning changes:", err);
@@ -6039,7 +6291,7 @@ async function acceptCleaningChanges() {
   } finally {
     if (btnAccept) {
       btnAccept.disabled = false;
-      btnAccept.textContent = origText;
+      btnAccept.innerHTML = `✅ Apply Selected Fixes (${selectedCleaningChangeIds.size})`;
     }
   }
 }

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Data Extractor AI — Autonomous Document Intelligence</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=3.2">
+  <link rel="stylesheet" href="/static/css/style.css?v=3.5">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
@@ -1856,7 +1856,7 @@
           </div>
 
           <!-- Filter & Search Bar -->
-          <div style="display: flex; justify-content: space-between; align-items: center; margin: 1rem 0; gap: 0.75rem; flex-wrap: wrap;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin: 1rem 0 0.5rem 0; gap: 0.75rem; flex-wrap: wrap;">
             <div class="cleaning-filter-chips" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
               <button type="button" class="btn btn-sm btn-outline active clean-filter-btn" data-filter="all">All Changes (<span id="chipAllCount">0</span>)</button>
               <button type="button" class="btn btn-sm btn-outline clean-filter-btn" data-filter="missing_imputed">Missing Imputed (<span id="chipImputedCount">0</span>)</button>
@@ -1867,12 +1867,25 @@
             <input type="text" id="cleanDiffSearch" class="search-input" placeholder="Search student name, seat no, or field..." style="max-width: 280px; font-size: 0.85rem; padding: 0.4rem 0.75rem;">
           </div>
 
+          <!-- Granular Selection Toolbar -->
+          <div class="clean-selection-toolbar" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.65rem; padding: 0.45rem 0.75rem; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.07); border-radius: 6px; font-size: 0.82rem; color: #94A3B8;">
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+              <button type="button" class="btn btn-sm btn-outline" id="btnCleanSelectAll" style="font-size: 0.78rem; padding: 0.25rem 0.6rem;">☑️ Select All</button>
+              <button type="button" class="btn btn-sm btn-outline" id="btnCleanDeselectAll" style="font-size: 0.78rem; padding: 0.25rem 0.6rem;">◻️ Deselect All</button>
+              <span id="cleanSelectedCountText" style="font-weight: 600; color: #38BDF8; margin-left: 0.3rem;">0 fixes selected</span>
+            </div>
+            <div style="font-size: 0.76rem; color: #64748B;">
+              Only checked fixes are applied; unchecked rows keep their original values.
+            </div>
+          </div>
+
           <!-- Diff Inspection Table -->
           <div class="table-container" style="max-height: 380px; overflow-y: auto; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px;">
             <table class="data-table" id="cleanDiffTable" style="width: 100%; font-size: 0.85rem;">
               <thead>
                 <tr>
-                  <th style="width: 50px;">Row</th>
+                  <th style="width: 38px; text-align: center;"><input type="checkbox" id="cleanDiffSelectAllHeader" title="Select / Deselect Visible Rows" style="cursor: pointer; width: 15px; height: 15px;"></th>
+                  <th style="width: 50px; text-align: center;">Row</th>
                   <th>Student Info</th>
                   <th>Field / Column</th>
                   <th>Original Value</th>
@@ -1899,7 +1912,7 @@
               ❌ Discard Changes
             </button>
             <button type="button" class="btn btn-success" id="btnAcceptCleanChanges" style="font-weight: 600;">
-              ✅ Accept &amp; Set as Primary Dataset
+              ✅ Apply Selected Fixes (0)
             </button>
           </div>
         </div>
@@ -2152,6 +2165,6 @@
     <p>Data Extractor AI • Local GPU Acceleration • Independent Standalone Architecture</p>
   </footer>
 
-  <script src="/static/js/app.js?v=3.2"></script>
+  <script src="/static/js/app.js?v=3.5"></script>
 </body>
 </html>

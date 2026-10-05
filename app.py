@@ -18,7 +18,7 @@ import threading
 import time
 import uuid
 import webbrowser
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from flask import Flask, jsonify, render_template, request, send_from_directory
 from werkzeug.utils import secure_filename
@@ -1209,6 +1209,46 @@ def stop_extraction_job(job_id):
 # Tabular Ingestion Routes (Excel & CSV Inspection, Direct Import, AI Fix)
 # =========================================================================
 
+def resolve_tabular_file_path(filename_or_rel: str) -> Optional[Tuple[str, str]]:
+    """
+    Resolve file path from uploaded input, historical batch directory, or subdirectories.
+    Returns (absolute_file_path, display_filename) or None.
+    """
+    if not filename_or_rel:
+        return None
+
+    # 1. Direct INPUT_DIR check
+    safe_base = secure_filename(os.path.basename(filename_or_rel))
+    cand_input = os.path.join(INPUT_DIR, safe_base)
+    if os.path.isfile(cand_input):
+        return cand_input, safe_base
+
+    # 2. BATCH_DATA_DIR / APP_BATCH_DATA_DIR relative path check (e.g. '21-22/Sem_8.xlsx')
+    clean_rel = str(filename_or_rel).replace("\\", "/").strip().lstrip("/")
+    if clean_rel.lower().startswith("batch data/"):
+        clean_rel = clean_rel[11:].lstrip("/")
+
+    for base_store in [BATCH_DATA_DIR, APP_BATCH_DATA_DIR]:
+        if not os.path.isdir(base_store):
+            continue
+        cand_batch = os.path.abspath(os.path.join(base_store, clean_rel))
+        if cand_batch.startswith(os.path.abspath(base_store)) and os.path.isfile(cand_batch):
+            return cand_batch, clean_rel
+
+    # 3. Walk directories to search by filename
+    for base_store in [BATCH_DATA_DIR, APP_BATCH_DATA_DIR, INPUT_DIR]:
+        if not os.path.isdir(base_store):
+            continue
+        for root, _, files in os.walk(base_store):
+            for f in files:
+                if f.lower() == safe_base.lower() or f.lower() == os.path.basename(clean_rel).lower():
+                    found_path = os.path.join(root, f)
+                    rel_display = os.path.relpath(found_path, base_store).replace("\\", "/")
+                    return found_path, rel_display
+
+    return None
+
+
 @app.route("/api/tabular/inspect", methods=["POST"])
 def inspect_tabular_file():
     """Inspect uploaded Excel/CSV file to evaluate formatting and structure."""
@@ -1228,13 +1268,16 @@ def inspect_tabular_file():
 
     json_data = request.get_json(silent=True) or {}
     if not target_path:
-        fname = request.form.get("filename") or json_data.get("filename")
+        fname = (
+            request.form.get("filename")
+            or json_data.get("filename")
+            or request.form.get("batch_file")
+            or json_data.get("batch_file")
+        )
         if fname:
-            safe_name = secure_filename(fname)
-            cand = os.path.join(INPUT_DIR, safe_name)
-            if os.path.isfile(cand):
-                target_path = cand
-                target_filename = safe_name
+            resolved = resolve_tabular_file_path(fname)
+            if resolved:
+                target_path, target_filename = resolved
 
     if not target_path or not os.path.isfile(target_path):
         return jsonify({"success": False, "error": "No valid tabular file uploaded or specified."}), 400
@@ -1262,18 +1305,10 @@ def import_tabular_direct():
     if not filename:
         return jsonify({"success": False, "error": "Filename is required."}), 400
 
-    safe_name = secure_filename(filename)
-    target_path = os.path.join(INPUT_DIR, safe_name)
-    if not os.path.isfile(target_path):
-        found = None
-        for root, _, files in os.walk(BATCH_DATA_DIR):
-            if safe_name in files:
-                found = os.path.join(root, safe_name)
-                break
-        if found:
-            target_path = found
-        else:
-            return jsonify({"success": False, "error": f"File '{safe_name}' not found."}), 404
+    resolved = resolve_tabular_file_path(filename)
+    if not resolved:
+        return jsonify({"success": False, "error": f"Tabular file '{filename}' not found."}), 404
+    target_path, target_filename = resolved
 
     result = tabular_ingester.direct_import(target_path, sheet_name=sheet_name, header_row=header_row)
     if result.get("success") and result.get("students"):
@@ -1296,18 +1331,10 @@ def ai_fix_tabular():
     if not filename:
         return jsonify({"success": False, "error": "Filename is required."}), 400
 
-    safe_name = secure_filename(filename)
-    target_path = os.path.join(INPUT_DIR, safe_name)
-    if not os.path.isfile(target_path):
-        found = None
-        for root, _, files in os.walk(BATCH_DATA_DIR):
-            if safe_name in files:
-                found = os.path.join(root, safe_name)
-                break
-        if found:
-            target_path = found
-        else:
-            return jsonify({"success": False, "error": f"File '{safe_name}' not found."}), 404
+    resolved = resolve_tabular_file_path(filename)
+    if not resolved:
+        return jsonify({"success": False, "error": f"Tabular file '{filename}' not found."}), 404
+    target_path, target_filename = resolved
 
     oc = OllamaClient()
     cc = CloudClient()
@@ -1771,7 +1798,16 @@ def apply_data_cleaning():
 
         if not session:
             passed_cleaned = data.get("cleaned_students")
-            if passed_cleaned:
+            passed_orig = data.get("original_records")
+            passed_changes = data.get("changes")
+            if passed_orig and passed_changes and accepted_ids is not None:
+                engine = DataCleaningEngine()
+                final_records = engine.apply_changes(
+                    original_records=passed_orig,
+                    changes=passed_changes,
+                    accepted_ids=set(str(x) for x in accepted_ids)
+                )
+            elif passed_cleaned:
                 final_records = passed_cleaned
             else:
                 return jsonify({"success": False, "error": "No active cleaning session found to apply."}), 400
@@ -1781,12 +1817,17 @@ def apply_data_cleaning():
                 final_records = engine.apply_changes(
                     original_records=session["original_records"],
                     changes=session["changes"],
-                    accepted_ids=set(accepted_ids)
+                    accepted_ids=set(str(x) for x in accepted_ids)
                 )
             else:
                 final_records = session["cleaned_records"]
 
-        fieldnames = session.get("fieldnames") if session else list(final_records[0].keys())
+        fieldnames = session.get("fieldnames") if session else (list(final_records[0].keys()) if final_records else [])
+        all_fieldnames = list(fieldnames) if fieldnames else []
+        for r in final_records:
+            for k in r.keys():
+                if k not in all_fieldnames:
+                    all_fieldnames.append(k)
 
         if folder_name:
             clean_folder = safe_folder_name(folder_name)
@@ -1797,7 +1838,7 @@ def apply_data_cleaning():
 
             if os.path.isdir(target_dir):
                 try:
-                    write_csv_file(final_records, fieldnames, csv_path)
+                    write_csv_file(final_records, all_fieldnames, csv_path)
                 except Exception as e:
                     logger.warning(f"Could not overwrite CSV with cleaned data: {e}")
 
@@ -1812,7 +1853,7 @@ def apply_data_cleaning():
                         for c in cat_data.get("courses", []):
                             cat_obj.add_course(c.get("code", ""), c.get("name", ""), c.get("heads", []))
                         meta.catalog = cat_obj
-                    write_excel_file(final_records, fieldnames, meta.catalog, meta, excel_path)
+                    write_excel_file(final_records, all_fieldnames, meta.catalog, meta, excel_path)
                 except Exception as e:
                     logger.warning(f"Could not re-generate Excel with cleaned data: {e}")
 

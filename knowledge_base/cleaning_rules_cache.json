@@ -2368,5 +2368,303 @@
       }
     },
     "source": "heuristic_fallback"
+  },
+  "a667be6b7ae4bbd5": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "gender": null,
+      "sgpi": null,
+      "cgpi": null,
+      "total_marks": null,
+      "max_marks": null,
+      "result": null,
+      "candidate_type": null
+    },
+    "courses": {
+      "COURSE": {
+        "CREDITS": "Course_Credits",
+        "TH": "Course_TH",
+        "IA": "Course_IA",
+        "TOT": "Course_TOT",
+        "GP": "Course_GP",
+        "CG": "Course_CG"
+      },
+      "CSC401": {
+        "CREDITS": "CSC401_Credits",
+        "TW": "CSC401_TW",
+        "GP": "CSC401_GP",
+        "CG": "CSC401_CG"
+      },
+      "CSC402": {
+        "CREDITS": "CSC402_Credits",
+        "TH": "CSC402_TH",
+        "IA": "CSC402_IA",
+        "TOT": "CSC402_TOT",
+        "GP": "CSC402_GP",
+        "CG": "CSC402_CG"
+      },
+      "CSC403": {
+        "CREDITS": "CSC403_Credits",
+        "TH": "CSC403_TH",
+        "IA": "CSC403_IA",
+        "TOT": "CSC403_TOT",
+        "GP": "CSC403_GP",
+        "CG": "CSC403_CG"
+      },
+      "CSC404": {
+        "CREDITS": "CSC404_Credits",
+        "TH": "CSC404_TH",
+        "IA": "CSC404_IA",
+        "TOT": "CSC404_TOT",
+        "GP": "CSC404_GP",
+        "CG": "CSC404_CG"
+      },
+      "CSC405": {
+        "TH": "CSC405_TH",
+        "IA": "CSC405_IA",
+        "TOT": "CSC405_TOT",
+        "GP": "CSC405_GP",
+        "CG": "CSC405_CG"
+      },
+      "CSL401": {
+        "CREDITS": "CSL401_Credits",
+        "TW": "CSL401_TW",
+        "PR": "CSL401_PR",
+        "TOT": "CSL401_TOT",
+        "GP": "CSL401_GP",
+        "CG": "CSL401_CG"
+      },
+      "CSL402": {
+        "CREDITS": "CSL402_Credits",
+        "TW": "CSL402_TW",
+        "PR": "CSL402_PR",
+        "TOT": "CSL402_TOT",
+        "GP": "CSL402_GP",
+        "CG": "CSL402_CG"
+      },
+      "CSL403": {
+        "CREDITS": "CSL403_Credits",
+        "TW": "CSL403_TW",
+        "PR": "CSL403_PR",
+        "TOT": "CSL403_TOT",
+        "GP": "CSL403_GP",
+        "CG": "CSL403_CG"
+      },
+      "CSL404": {
+        "CREDITS": "CSL404_Credits",
+        "TW": "CSL404_TW",
+        "GP": "CSL404_GP",
+        "CG": "CSL404_CG"
+      },
+      "CSL405": {
+        "CREDITS": "CSL405_Credits",
+        "TW": "CSL405_TW",
+        "GP": "CSL405_GP",
+        "CG": "CSL405_CG"
+      },
+      "CSM401": {
+        "CREDITS": "CSM401_Credits",
+        "TW": "CSM401_TW",
+        "PR": "CSM401_PR",
+        "TOT": "CSM401_TOT",
+        "GP": "CSM401_GP",
+        "CG": "CSM401_CG"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "Course_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "Course_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "Course_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC401_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSC402_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC402_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC402_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC403_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC403_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC403_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC404_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC404_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC404_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC405_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC405_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC405_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL401_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL401_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL401_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL402_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL402_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL402_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL403_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL403_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL403_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL404_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL405_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSM401_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSM401_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSM401_PR": {
+        "min": 0.0,
+        "max": 50.0
+      }
+    },
+    "source": "ai_determined"
+  },
+  "6e181ca7c5f15a72": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "gender": "Gender",
+      "total_marks": "Total_Marks"
+    },
+    "courses": {
+      "CS101": {
+        "TH": "CS101_TH",
+        "IA": "CS101_IA",
+        "TOT": "CS101_TOT"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "CS101_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CS101_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CS101_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      }
+    },
+    "source": "heuristic_fallback"
+  },
+  "4b6af1feecad7415": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "gender": null,
+      "sgpi": null,
+      "cgpi": null,
+      "total_marks": null,
+      "max_marks": null,
+      "result": "Result_Status",
+      "candidate_type": null
+    },
+    "courses": {},
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      }
+    },
+    "source": "ai_determined"
   }
 }

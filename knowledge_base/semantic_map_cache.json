@@ -700,5 +700,131 @@
     ],
     "tier_used": 1,
     "token_usage": 0
+  },
+  "8cfb1d796a2ad8e1": {
+    "mappings": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "result": "Result_Status",
+      "sgpi": "8.86"
+    },
+    "subjects": {},
+    "unmapped": [
+      "0",
+      "1",
+      "547",
+      "7000441",
+      "NITESH_RAMESH_YAMUNA",
+      "2021016402156235",
+      "PASS"
+    ],
+    "tier_used": 2,
+    "token_usage": 100
+  },
+  "ff7d07649f8e1684": {
+    "mappings": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "sgpi": "SGPI",
+      "total_marks": "Total_Marks",
+      "result": "Result_Status"
+    },
+    "subjects": {
+      "CSC301": {
+        "CREDITS": "CSC301_Credits",
+        "IA": "CSC301_IA",
+        "TOT": "CSC301_TOT",
+        "GP": "CSC301_GP",
+        "TW": "CSC301_TW",
+        "CG": "CSC301_CG"
+      },
+      "CSC302": {
+        "CREDITS": "CSC302_Credits",
+        "IA": "CSC302_IA",
+        "TOT": "CSC302_TOT",
+        "GP": "CSC302_GP",
+        "TW": "CSC302_TW",
+        "CG": "CSC302_CG"
+      },
+      "CSC303": {
+        "CREDITS": "CSC303_Credits",
+        "IA": "CSC303_IA",
+        "TOT": "CSC303_TOT",
+        "GP": "CSC303_GP",
+        "CG": "CSC303_CG"
+      },
+      "CSC304": {
+        "CREDITS": "CSC304_Credits",
+        "IA": "CSC304_IA",
+        "TOT": "CSC304_TOT",
+        "GP": "CSC304_GP",
+        "CG": "CSC304_CG"
+      },
+      "CSC305": {
+        "IA": "CSC305_IA",
+        "TOT": "CSC305_TOT",
+        "GP": "CSC305_GP"
+      },
+      "CSL301": {
+        "CREDITS": "CSL301_Credits",
+        "TW": "CSL301_TW",
+        "TOT": "CSL301_TOT",
+        "GP": "CSL301_GP",
+        "CG": "CSL301_CG"
+      },
+      "CSL303": {
+        "CREDITS": "CSL303_Credits",
+        "TW": "CSL303_TW",
+        "TOT": "CSL303_TOT",
+        "GP": "CSL303_GP",
+        "CG": "CSL303_CG"
+      },
+      "CSL304": {
+        "CREDITS": "CSL304_Credits",
+        "TW": "CSL304_TW",
+        "TOT": "CSL304_TOT",
+        "GP": "CSL304_GP",
+        "CG": "CSL304_CG"
+      },
+      "CSM301": {
+        "CREDITS": "CSM301_Credits",
+        "TW": "CSM301_TW",
+        "TOT": "CSM301_TOT",
+        "GP": "CSM301_GP",
+        "CG": "CSM301_CG"
+      }
+    },
+    "unmapped": [
+      "CSC301_TH",
+      "CSC301_PF",
+      "CSC301_Col_9",
+      "CSC301_Col_13",
+      "CSC302_TH",
+      "CSC302_PF",
+      "CSC302_Col_21",
+      "CSC303_TH",
+      "CSC303_PF",
+      "CSC303_Col_29",
+      "CSC304_TH",
+      "CSC304_PF",
+      "CSC304_Col_37",
+      "CSC305_TH",
+      "CSC305_PF",
+      "CSC305_Col_45",
+      "CSL301_PR",
+      "CSL301_Col_51",
+      "CSC302_Col_55",
+      "CSL303_PR",
+      "CSL303_Col_61",
+      "CSL304_PR",
+      "CSL304_Col_67",
+      "CSM301_PR",
+      "CSM301_Col_73",
+      "Total_TOT",
+      "Total_Credits",
+      "Total_ECG"
+    ],
+    "tier_used": 1,
+    "token_usage": 0
   }
 }

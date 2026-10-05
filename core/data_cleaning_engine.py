@@ -669,16 +669,25 @@ Respond ONLY with valid JSON in this exact structure:
         onto the original records to yield the final primary dataset.
         """
         output = [copy.deepcopy(r) for r in original_records]
+        acc_set = set(str(x) for x in accepted_ids) if accepted_ids is not None else None
+
         for c in changes:
-            cid = c.get("change_id")
-            if accepted_ids is not None and cid not in accepted_ids:
+            cid = str(c.get("change_id") if isinstance(c, dict) else getattr(c, "change_id", ""))
+            if acc_set is not None and cid not in acc_set:
                 continue  # Skip rejected/unselected changes
 
-            r_idx = c.get("row_index")
-            col = c.get("column")
-            new_val = c.get("new_value")
+            r_idx = c.get("row_index") if isinstance(c, dict) else getattr(c, "row_index", None)
+            col = c.get("column") if isinstance(c, dict) else getattr(c, "column", None)
+            new_val = c.get("new_value") if isinstance(c, dict) else getattr(c, "new_value", None)
 
-            if 0 <= r_idx < len(output) and col:
-                output[r_idx][col] = new_val
+            if r_idx is not None and 0 <= r_idx < len(output) and col:
+                target_col = col
+                if target_col not in output[r_idx]:
+                    for existing_col in output[r_idx].keys():
+                        if str(existing_col).strip().lower() == str(col).strip().lower():
+                            target_col = existing_col
+                            break
+                output[r_idx][target_col] = new_val
 
         return output
+
