@@ -21,6 +21,7 @@ import socket
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -269,7 +270,12 @@ class CloudClient:
         if not raw and prov == self.config.get("provider", "").lower():
             raw = self.config.get("api_key", "")
         if isinstance(raw, list):
-            return [str(k).strip() for k in raw if str(k).strip()]
+            pool = []
+            for item in raw:
+                for token in re.split(r"[\n,;]+", str(item)):
+                    if token.strip():
+                        pool.append(token.strip())
+            return pool
         if isinstance(raw, str):
             tokens = re.split(r"[\n,;]+", raw)
             return [t.strip() for t in tokens if t.strip()]
@@ -405,7 +411,9 @@ class CloudClient:
         Returns: (success: bool, message: str, latency_ms: int)
         """
         prov = provider.lower()
-        key = (api_key or self.get_api_key(prov)).strip()
+        raw_key = (api_key or self.get_api_key(prov)).strip()
+        key_pool = [t.strip() for t in re.split(r"[\n,;]+", raw_key) if t.strip()] if raw_key else []
+        key = key_pool[0] if key_pool else ""
         if not key and prov != "custom":
             return False, "No API key configured for this provider.", 0
 
@@ -630,33 +638,66 @@ class CloudClient:
 
     def probe_all_providers(self, keys_dict: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         """
-        Test all configured or supplied keys across providers and select the best working model.
+        Test all configured or supplied keys across providers in parallel using ThreadPoolExecutor(max_workers=6)
+        with a 5-second per-provider timeout, and select the best working model.
         Returns a comprehensive report for the UI.
         """
-        keys_to_test = keys_dict if keys_dict is not None else self.config.get("api_keys", {})
-        report: Dict[str, Any] = {}
+        keys_to_test = dict(self.config.get("api_keys", {}))
+        if keys_dict:
+            for p, k in keys_dict.items():
+                if k is not None:
+                    keys_to_test[p] = k
+                    self.config.setdefault("api_keys", {})[p] = k
 
-        for prov, p_info in DEFAULT_PROVIDERS.items():
+        report: Dict[str, Any] = {}
+        providers_to_probe = [p for p in DEFAULT_PROVIDERS if p != "custom"]
+        if "custom" in DEFAULT_PROVIDERS and (keys_to_test.get("custom") or self.config.get("custom_base_url")):
+            providers_to_probe.append("custom")
+
+        def _probe_provider(prov: str) -> Tuple[str, Dict[str, Any]]:
+            p_info = DEFAULT_PROVIDERS.get(prov, {})
             k = (keys_to_test.get(prov) or self.get_api_key(prov)).strip()
-            if not k:
-                report[prov] = {
+            test_mod = p_info.get("default_model", "")
+
+            if not k and prov != "custom":
+                return prov, {
                     "configured": False,
                     "success": False,
-                    "model": p_info.get("default_model", ""),
+                    "model": test_mod,
+                    "latency_ms": 0,
+                    "key_count": 0,
                     "message": "No API key configured."
                 }
-                continue
 
-            # Probe default model for this provider
-            test_mod = p_info.get("default_model", "")
-            ok, msg, lat = self.probe_candidate(prov, test_mod, k, timeout=6)
-            report[prov] = {
+            tokens = [t.strip() for t in re.split(r"[\n,;]+", k) if t.strip()]
+            key_count = len(tokens)
+
+            ok, msg, lat = self.probe_candidate(prov, test_mod, k, timeout=5)
+            return prov, {
                 "configured": True,
                 "success": ok,
                 "model": test_mod,
                 "latency_ms": lat,
+                "key_count": key_count,
                 "message": msg
             }
+
+        with ThreadPoolExecutor(max_workers=min(len(providers_to_probe), 6)) as executor:
+            future_to_prov = {executor.submit(_probe_provider, prov): prov for prov in providers_to_probe}
+            for future in as_completed(future_to_prov):
+                prov = future_to_prov[future]
+                try:
+                    p_name, result = future.result()
+                    report[p_name] = result
+                except Exception as e:
+                    report[prov] = {
+                        "configured": True,
+                        "success": False,
+                        "model": DEFAULT_PROVIDERS.get(prov, {}).get("default_model", ""),
+                        "latency_ms": 0,
+                        "key_count": 0,
+                        "message": f"Probe error: {e}"
+                    }
 
         # Select and lock best model
         best = self.get_best_working_model(force_refresh=True, probe=True)
@@ -672,11 +713,22 @@ class CloudClient:
         """Test API key validity and remote connectivity for a given or currently active model."""
         prov = (provider or self.config.get("provider", "groq")).lower()
         key = (api_key or self.get_api_key(prov)).strip()
-        mod = model or self.config.get("model", DEFAULT_PROVIDERS.get(prov, {}).get("default_model", ""))
+        if model:
+            mod = model
+        elif prov == self.config.get("provider", "").lower() and self.config.get("model"):
+            mod = self.config.get("model")
+        else:
+            mod = DEFAULT_PROVIDERS.get(prov, {}).get("default_model", "")
 
-        ok, msg, lat = self.probe_candidate(prov, mod, key, timeout=10)
+        if not key and prov != "custom":
+            return False, f"No API key provided for {prov.upper()}."
+
+        raw_pool = [t.strip() for t in re.split(r"[\n,;]+", key) if t.strip()]
+        pool_str = f" (Key pool of {len(raw_pool)} keys active)" if len(raw_pool) > 1 else ""
+
+        ok, msg, lat = self.probe_candidate(prov, mod, key, timeout=5)
         if ok:
-            return True, f"Successfully connected to {prov.upper()} ({mod}) in {lat}ms!"
+            return True, f"Successfully connected to {prov.upper()} ({mod}) in {lat}ms!{pool_str}"
         return False, f"API Error: {msg}"
 
     def fetch_live_models(self, provider: Optional[str] = None, api_key: Optional[str] = None) -> List[Dict[str, Any]]:

@@ -37,6 +37,53 @@ def sanitize_folder_name(name: str, max_len: int = 50) -> str:
     return clean or "ai_extracted_results"
 
 
+def get_versioned_folder_name(base_dir: str, base_name: str) -> str:
+    """
+    Atomic collision detection: if 'sem1' or 'sem1.xlsx' exists, subsequent runs automatically
+    save as 'sem1(1)', 'sem1(2)', etc.
+    """
+    clean_base = sanitize_folder_name(base_name) or "ai_extracted_results"
+
+    match = re.match(r"^(.*?)(?:\((\d+)\))?$", clean_base)
+    root = match.group(1).rstrip() if match else clean_base
+    candidate = clean_base
+    counter = int(match.group(2)) + 1 if (match and match.group(2)) else 1
+
+    while True:
+        target_dir = os.path.join(base_dir, candidate)
+        direct_xlsx = os.path.join(base_dir, f"{candidate}.xlsx")
+        direct_csv = os.path.join(base_dir, f"{candidate}.csv")
+
+        collision = False
+        if os.path.exists(direct_xlsx) or os.path.exists(direct_csv):
+            collision = True
+        elif os.path.exists(target_dir):
+            excel_file = os.path.join(target_dir, f"{candidate}_extracted_data.xlsx")
+            csv_file = os.path.join(target_dir, f"{candidate}_extracted_data.csv")
+            cat_file = os.path.join(target_dir, f"{candidate}_catalog.json")
+            direct_inner_xlsx = os.path.join(target_dir, f"{candidate}.xlsx")
+            try:
+                has_files = any(os.scandir(target_dir))
+            except Exception:
+                has_files = True
+            if (
+                os.path.exists(excel_file)
+                or os.path.exists(csv_file)
+                or os.path.exists(cat_file)
+                or os.path.exists(direct_inner_xlsx)
+                or has_files
+            ):
+                collision = True
+
+        if not collision:
+            break
+
+        candidate = f"{root}({counter})"
+        counter += 1
+
+    return candidate
+
+
 def write_csv_file(data: List[Dict[str, Any]], fieldnames: List[str], output_path: str) -> None:
     """Write list of row dictionaries to UTF-8 CSV with Windows long-path safety."""
     abs_path = os.path.abspath(output_path)
@@ -143,13 +190,14 @@ def export_ai_extracted_data(
     """
     pdf_filename = os.path.basename(input_pdf_path)
     pdf_stem = os.path.splitext(pdf_filename)[0]
-    folder_name = sanitize_folder_name(pdf_stem) or "ai_extracted_results"
+    folder_name = get_versioned_folder_name(base_output_dir, pdf_stem)
 
     designated_dir = os.path.join(base_output_dir, folder_name)
     os.makedirs(designated_dir, exist_ok=True)
 
     csv_path = os.path.join(designated_dir, f"{folder_name}_extracted_data.csv")
     excel_path = os.path.join(designated_dir, f"{folder_name}_extracted_data.xlsx")
+    direct_excel_path = os.path.join(designated_dir, f"{folder_name}.xlsx")
     json_path = os.path.join(designated_dir, f"{folder_name}_catalog.json")
 
     # Flatten students to dicts if not provided
@@ -259,8 +307,15 @@ def export_ai_extracted_data(
         meta=meta,
         output_path=excel_path
     )
+    try:
+        import shutil
+        shutil.copyfile(excel_path, direct_excel_path)
+    except Exception:
+        pass
 
     # 3. Export JSON Metadata Catalog
+    import datetime
+    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cat_dict = meta.catalog.to_dict() if meta.catalog else []
     payload = {
         "exam_title": meta.exam_title,
@@ -270,7 +325,10 @@ def export_ai_extracted_data(
         "archetype": meta.archetype or archetype,
         "total_students": len(students),
         "courses": cat_dict,
-        "checksum_verification": checksum_data or {}
+        "checksum_verification": checksum_data or {},
+        "created_at": now_str,
+        "timestamp": now_str,
+        "folder_name": folder_name
     }
     if hasattr(meta, "spec") and meta.spec:
         payload["document_execution_spec"] = meta.spec.to_dict() if hasattr(meta.spec, "to_dict") else meta.spec

@@ -2140,5 +2140,233 @@
       }
     },
     "source": "ai_determined"
+  },
+  "dab2cc338a7d4d05": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "total_marks": "Total_Marks"
+    },
+    "courses": {
+      "CSC101": {
+        "TH": "CSC101_TH",
+        "IA": "CSC101_IA",
+        "TOT": "CSC101_TOT"
+      },
+      "CSC102": {
+        "TH": "CSC102_TH",
+        "IA": "CSC102_IA",
+        "TOT": "CSC102_TOT"
+      },
+      "CSC103": {
+        "TH": "CSC103_TH",
+        "IA": "CSC103_IA",
+        "TOT": "CSC103_TOT"
+      },
+      "CSC104": {
+        "TH": "CSC104_TH",
+        "IA": "CSC104_IA",
+        "TOT": "CSC104_TOT"
+      },
+      "CSC105": {
+        "TH": "CSC105_TH",
+        "IA": "CSC105_IA",
+        "TOT": "CSC105_TOT"
+      },
+      "CSC106": {
+        "TH": "CSC106_TH",
+        "IA": "CSC106_IA",
+        "TOT": "CSC106_TOT"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "CSC101_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC101_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC101_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC102_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC102_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC102_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC103_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC103_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC103_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC104_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC104_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC104_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC105_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC105_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC105_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC106_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC106_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC106_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      }
+    },
+    "source": "heuristic_fallback"
+  },
+  "ef8f99f1f2b61ccc": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name"
+    },
+    "courses": {
+      "CSC101": {
+        "TH": "CSC101_TH"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "CSC101_TH": {
+        "min": 0.0,
+        "max": 80.0
+      }
+    },
+    "source": "heuristic_fallback"
+  },
+  "7cb1d08acd03d261": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name"
+    },
+    "courses": {
+      "CSC101": {
+        "TH": "CSC101_TH",
+        "IA": "CSC101_IA"
+      },
+      "CSC102": {
+        "TH": "CSC102_TH",
+        "IA": "CSC102_IA"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "CSC101_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC101_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC102_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC102_IA": {
+        "min": 0.0,
+        "max": 20.0
+      }
+    },
+    "source": "heuristic_fallback"
+  },
+  "50f15cc92c1df4e7": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "total_marks": "Total_Marks"
+    },
+    "courses": {
+      "CSC101": {
+        "TOT": "CSC101_TOT",
+        "TH": "CSC101_TH",
+        "IA": "CSC101_IA"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "CSC101_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC101_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC101_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      }
+    },
+    "source": "heuristic_fallback"
   }
 }

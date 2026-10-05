@@ -63,6 +63,14 @@ tabular_ingester = TabularIngester(OUTPUT_DIR)
 batch_analyzer = BatchAcademicAnalyzer(OUTPUT_DIR, app_batch_dir=APP_BATCH_DATA_DIR, root_batch_dir=BATCH_DATA_DIR)
 
 
+def safe_folder_name(name: str) -> str:
+    """Safe folder name preserving parentheses for auto-versioning (e.g. sem1(1))."""
+    if not name:
+        return ""
+    clean = os.path.basename(str(name)).replace("..", "").replace("/", "").replace("\\", "")
+    return re.sub(r"[^\w\-\(\)\.]", "_", clean)
+
+
 def auto_sort_into_app_batch_store(
     excel_path: Optional[str] = None,
     meta: Optional[Any] = None,
@@ -891,10 +899,11 @@ def download_batch_json(job_id):
 
 @app.route("/api/history", methods=["GET"])
 def list_history():
-    """List historical extractions."""
+    """List historical extractions with atomic iteration retention and timestamps."""
     history = []
     if os.path.isdir(OUTPUT_DIR):
-        for entry in sorted(os.listdir(OUTPUT_DIR), reverse=True):
+        entries = []
+        for entry in os.listdir(OUTPUT_DIR):
             fpath = os.path.join(OUTPUT_DIR, entry)
             if not os.path.isdir(fpath):
                 continue
@@ -906,20 +915,33 @@ def list_history():
                         meta = json.load(f)
                 except Exception:
                     pass
-            history.append({
+            mtime = os.path.getmtime(fpath)
+            created_str = (
+                meta.get("created_at")
+                or meta.get("timestamp")
+                or time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(mtime))
+            )
+            entries.append({
                 "folder_name": entry,
                 "archetype": meta.get("archetype", "unknown"),
                 "semester": meta.get("semester", "--"),
                 "total_students": meta.get("total_students", 0),
-                "exam_title": meta.get("exam_title", entry)
+                "exam_title": meta.get("exam_title", entry),
+                "timestamp": created_str,
+                "created_at": created_str,
+                "_mtime": mtime
             })
+        entries.sort(key=lambda x: x["_mtime"], reverse=True)
+        for e in entries:
+            e.pop("_mtime", None)
+        history = entries
     return jsonify({"history": history})
 
 
 @app.route("/api/history/<folder_name>", methods=["GET"])
 def load_history_entry(folder_name):
     """Load extracted CSV records from history."""
-    clean_folder = secure_filename(folder_name)
+    clean_folder = safe_folder_name(folder_name)
     folder_path = os.path.join(OUTPUT_DIR, clean_folder)
     if not os.path.isdir(folder_path):
         return jsonify({"success": False, "error": "History folder not found."}), 404
@@ -1362,8 +1384,8 @@ def interactive_fix_tabular():
 @app.route("/api/download/<folder>/<filename>", methods=["GET"])
 def download_extracted_file(folder, filename):
     """Download exported CSV, Excel, or JSON."""
-    clean_folder = secure_filename(folder)
-    clean_filename = secure_filename(filename)
+    clean_folder = safe_folder_name(folder)
+    clean_filename = safe_folder_name(filename)
     folder_path = os.path.join(OUTPUT_DIR, clean_folder)
     if not os.path.isdir(folder_path):
         return jsonify({"success": False, "error": "Directory not found."}), 404
@@ -1376,7 +1398,7 @@ def export_academic_analysis(folder):
     Generate and stream the publication-grade 6-sheet Academic Analysis Workbook
     (e.g. '21-22 sem 8.xlsx') matching the exact departmental Google Sheet format.
     """
-    clean_folder = secure_filename(folder)
+    clean_folder = safe_folder_name(folder)
     folder_path = os.path.join(OUTPUT_DIR, clean_folder)
     if not os.path.isdir(folder_path):
         return jsonify({"success": False, "error": f"Folder '{clean_folder}' not found in output."}), 404
@@ -1437,7 +1459,7 @@ def sync_dataset():
     if not folder_name:
         folder_name = "live_edited_results"
 
-    clean_folder = secure_filename(folder_name)
+    clean_folder = safe_folder_name(folder_name)
     folder_path = os.path.join(OUTPUT_DIR, clean_folder)
     os.makedirs(folder_path, exist_ok=True)
 
@@ -1514,7 +1536,7 @@ def chat_with_dataset():
 
     catalog_courses = []
     if folder_name:
-        clean_folder = secure_filename(folder_name)
+        clean_folder = safe_folder_name(folder_name)
         cat_file = os.path.join(OUTPUT_DIR, clean_folder, f"{clean_folder}_catalog.json")
         if os.path.isfile(cat_file):
             try:
@@ -1541,7 +1563,7 @@ def chat_with_dataset():
         updated = result.get("students", [])
         if folder_name and updated:
             try:
-                clean_folder = secure_filename(folder_name)
+                clean_folder = safe_folder_name(folder_name)
                 folder_path = os.path.join(OUTPUT_DIR, clean_folder)
                 if os.path.isdir(folder_path):
                     csv_path = os.path.join(folder_path, f"{clean_folder}_extracted_data.csv")
@@ -1685,7 +1707,7 @@ def analyze_data_cleaning():
 
     fieldnames = []
     if not records and folder_name:
-        clean_folder = secure_filename(folder_name)
+        clean_folder = safe_folder_name(folder_name)
         csv_path = os.path.join(OUTPUT_DIR, clean_folder, f"{clean_folder}_extracted_data.csv")
         if os.path.isfile(csv_path):
             with open(csv_path, "r", encoding="utf-8-sig") as f:
@@ -1767,7 +1789,7 @@ def apply_data_cleaning():
         fieldnames = session.get("fieldnames") if session else list(final_records[0].keys())
 
         if folder_name:
-            clean_folder = secure_filename(folder_name)
+            clean_folder = safe_folder_name(folder_name)
             target_dir = os.path.join(OUTPUT_DIR, clean_folder)
             csv_path = os.path.join(target_dir, f"{clean_folder}_extracted_data.csv")
             excel_path = os.path.join(target_dir, f"{clean_folder}_extracted_data.xlsx")
@@ -1821,7 +1843,7 @@ def run_dataset_eda():
 
     # If no records provided directly, load from saved folder in output
     if not records and folder_name:
-        clean_folder = secure_filename(folder_name)
+        clean_folder = safe_folder_name(folder_name)
         csv_path = os.path.join(OUTPUT_DIR, clean_folder, f"{clean_folder}_extracted_data.csv")
         if os.path.isfile(csv_path):
             with open(csv_path, "r", encoding="utf-8") as f:
@@ -2026,7 +2048,7 @@ def run_ai_crosscheck_endpoint():
     if not folder_name:
         return jsonify({"success": False, "error": "folder_name is required."}), 400
 
-    safe_folder = secure_filename(folder_name)
+    safe_folder = safe_folder_name(folder_name)
     target_dir = os.path.join(OUTPUT_DIR, safe_folder)
     if not os.path.isdir(target_dir):
         return jsonify({"success": False, "error": f"Extracted output folder '{safe_folder}' not found."}), 404
@@ -2111,7 +2133,7 @@ def apply_ai_crosscheck_patches():
     if not patches:
         return jsonify({"success": False, "error": "No patches provided to apply."}), 400
 
-    safe_folder = secure_filename(folder_name)
+    safe_folder = safe_folder_name(folder_name)
     target_dir = os.path.join(OUTPUT_DIR, safe_folder)
     if not os.path.isdir(target_dir):
         return jsonify({"success": False, "error": "Target folder not found."}), 404

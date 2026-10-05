@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Data Extractor AI — Autonomous Document Intelligence</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=3.0">
+  <link rel="stylesheet" href="/static/css/style.css?v=3.2">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
@@ -1337,9 +1337,14 @@
                   </div>
                   <span id="groqKeyBadge" class="key-status-badge missing">⚪ Not set</span>
                 </div>
-                <div class="password-input-wrapper">
-                  <input type="password" id="cloudApiKeyGroq" class="form-input prov-key-input" placeholder="gsk_... (or paste comma-separated key pool)" autocomplete="off">
-                  <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyGroq" title="Show / Hide">👁️</button>
+                <div class="key-input-row">
+                  <div class="password-input-wrapper">
+                    <input type="password" id="cloudApiKeyGroq" class="form-input prov-key-input" placeholder="gsk_... (or paste comma-separated key pool)" autocomplete="off">
+                    <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyGroq" title="Show / Hide">👁️</button>
+                  </div>
+                  <button type="button" class="btn-test-key-inline" data-provider="groq" title="Test Groq Key">
+                    <span>⚡ Test Key</span>
+                  </button>
                 </div>
               </div>
 
@@ -1358,9 +1363,14 @@
                   </div>
                   <span id="geminiKeyBadge" class="key-status-badge missing">⚪ Not set</span>
                 </div>
-                <div class="password-input-wrapper">
-                  <input type="password" id="cloudApiKeyGemini" class="form-input prov-key-input" placeholder="AIzaSy... (or paste comma-separated key pool)" autocomplete="off">
-                  <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyGemini" title="Show / Hide">👁️</button>
+                <div class="key-input-row">
+                  <div class="password-input-wrapper">
+                    <input type="password" id="cloudApiKeyGemini" class="form-input prov-key-input" placeholder="AIzaSy... (or paste comma-separated key pool)" autocomplete="off">
+                    <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyGemini" title="Show / Hide">👁️</button>
+                  </div>
+                  <button type="button" class="btn-test-key-inline" data-provider="gemini" title="Test Gemini Key">
+                    <span>⚡ Test Key</span>
+                  </button>
                 </div>
               </div>
 
@@ -1379,9 +1389,14 @@
                   </div>
                   <span id="anthropicKeyBadge" class="key-status-badge missing">⚪ Not set</span>
                 </div>
-                <div class="password-input-wrapper">
-                  <input type="password" id="cloudApiKeyAnthropic" class="form-input prov-key-input" placeholder="sk-ant-... (or paste comma-separated key pool)" autocomplete="off">
-                  <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyAnthropic" title="Show / Hide">👁️</button>
+                <div class="key-input-row">
+                  <div class="password-input-wrapper">
+                    <input type="password" id="cloudApiKeyAnthropic" class="form-input prov-key-input" placeholder="sk-ant-... (or paste comma-separated key pool)" autocomplete="off">
+                    <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyAnthropic" title="Show / Hide">👁️</button>
+                  </div>
+                  <button type="button" class="btn-test-key-inline" data-provider="anthropic" title="Test Anthropic Key">
+                    <span>⚡ Test Key</span>
+                  </button>
                 </div>
               </div>
 
@@ -1400,9 +1415,14 @@
                   </div>
                   <span id="deepseekKeyBadge" class="key-status-badge missing">⚪ Not set</span>
                 </div>
-                <div class="password-input-wrapper">
-                  <input type="password" id="cloudApiKeyDeepseek" class="form-input prov-key-input" placeholder="sk-... (or paste comma-separated key pool)" autocomplete="off">
-                  <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyDeepseek" title="Show / Hide">👁️</button>
+                <div class="key-input-row">
+                  <div class="password-input-wrapper">
+                    <input type="password" id="cloudApiKeyDeepseek" class="form-input prov-key-input" placeholder="sk-... (or paste comma-separated key pool)" autocomplete="off">
+                    <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyDeepseek" title="Show / Hide">👁️</button>
+                  </div>
+                  <button type="button" class="btn-test-key-inline" data-provider="deepseek" title="Test DeepSeek Key">
+                    <span>⚡ Test Key</span>
+                  </button>
                 </div>
               </div>
 
@@ -1421,9 +1441,14 @@
                   </div>
                   <span id="openaiKeyBadge" class="key-status-badge missing">⚪ Not set</span>
                 </div>
-                <div class="password-input-wrapper">
-                  <input type="password" id="cloudApiKeyOpenAI" class="form-input prov-key-input" placeholder="sk-... (or paste comma-separated key pool)" autocomplete="off">
-                  <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyOpenAI" title="Show / Hide">👁️</button>
+                <div class="key-input-row">
+                  <div class="password-input-wrapper">
+                    <input type="password" id="cloudApiKeyOpenAI" class="form-input prov-key-input" placeholder="sk-... (or paste comma-separated key pool)" autocomplete="off">
+                    <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyOpenAI" title="Show / Hide">👁️</button>
+                  </div>
+                  <button type="button" class="btn-test-key-inline" data-provider="openai" title="Test OpenAI Key">
+                    <span>⚡ Test Key</span>
+                  </button>
                 </div>
               </div>
 
@@ -1442,9 +1467,14 @@
                   </div>
                   <span id="openrouterKeyBadge" class="key-status-badge missing">⚪ Not set</span>
                 </div>
-                <div class="password-input-wrapper">
-                  <input type="password" id="cloudApiKeyOpenrouter" class="form-input prov-key-input" placeholder="sk-or-v1-... (or paste comma-separated key pool)" autocomplete="off">
-                  <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyOpenrouter" title="Show / Hide">👁️</button>
+                <div class="key-input-row">
+                  <div class="password-input-wrapper">
+                    <input type="password" id="cloudApiKeyOpenrouter" class="form-input prov-key-input" placeholder="sk-or-v1-... (or paste comma-separated key pool)" autocomplete="off">
+                    <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyOpenrouter" title="Show / Hide">👁️</button>
+                  </div>
+                  <button type="button" class="btn-test-key-inline" data-provider="openrouter" title="Test OpenRouter Key">
+                    <span>⚡ Test Key</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -2122,6 +2152,6 @@
     <p>Data Extractor AI • Local GPU Acceleration • Independent Standalone Architecture</p>
   </footer>
 
-  <script src="/static/js/app.js?v=3.0"></script>
+  <script src="/static/js/app.js?v=3.2"></script>
 </body>
 </html>

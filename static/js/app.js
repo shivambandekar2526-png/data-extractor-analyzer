@@ -1239,7 +1239,10 @@ function displayTablePage(highlightSeats = null) {
   // Select-All checkbox logic
   const selectAllCb = thNum.querySelector("#excelSelectAllRows");
   if (selectAllCb) {
+    selectAllCb.addEventListener("click", (e) => e.stopPropagation());
+    selectAllCb.addEventListener("mousedown", (e) => e.stopPropagation());
     selectAllCb.addEventListener("change", (e) => {
+      e.stopPropagation();
       const checked = e.target.checked;
       const startIdx = (currentPage - 1) * pageSize;
       const endIdx = Math.min(startIdx + pageSize, filteredRecords.length);
@@ -1291,7 +1294,10 @@ function displayTablePage(highlightSeats = null) {
     // Row checkbox change
     const rowCb = tdNum.querySelector(".excel-row-check");
     if (rowCb) {
+      rowCb.addEventListener("click", (e) => e.stopPropagation());
+      rowCb.addEventListener("mousedown", (e) => e.stopPropagation());
       rowCb.addEventListener("change", (e) => {
+        e.stopPropagation();
         if (e.target.checked) selectedRowIndices.add(absIdx);
         else selectedRowIndices.delete(absIdx);
         if (selectedRowIndices.has(absIdx)) tr.classList.add("excel-row-selected");
@@ -2772,7 +2778,7 @@ async function initHistory() {
       card.className = "history-item";
       card.innerHTML = `
         <div class="history-title">${item.folder_name}</div>
-        <div class="history-meta">Archetype: ${item.archetype} • Sem: ${item.semester} • ${item.total_students} records</div>
+        <div class="history-meta">Archetype: ${item.archetype} • Sem: ${item.semester} • ${item.total_students} records${item.timestamp ? ' • ' + item.timestamp : ''}</div>
       `;
       card.addEventListener("click", () => loadHistoryItem(item.folder_name));
       list.appendChild(card);
@@ -3293,17 +3299,121 @@ async function initCloudModal() {
     return "default";
   }
 
+  // Inline Key Test Buttons (⚡ Test Key per provider without saving)
+  const providerInputMap = {
+    groq: groqKeyInput,
+    gemini: geminiKeyInput,
+    openai: openaiKeyInput,
+    anthropic: anthropicKeyInput,
+    deepseek: deepseekKeyInput,
+    openrouter: openrouterKeyInput
+  };
+
+  const providerBadgeMap = {
+    groq: groqKeyBadge,
+    gemini: geminiKeyBadge,
+    openai: openaiKeyBadge,
+    anthropic: anthropicKeyBadge,
+    deepseek: deepseekKeyBadge,
+    openrouter: openrouterKeyBadge
+  };
+
+  const inlineTestBtns = document.querySelectorAll(".btn-test-key-inline");
+  inlineTestBtns.forEach(btn => {
+    const prov = btn.getAttribute("data-provider");
+    const inputEl = providerInputMap[prov];
+
+    // Reset button state when user edits key
+    if (inputEl) {
+      inputEl.addEventListener("input", () => {
+        btn.className = "btn-test-key-inline";
+        btn.disabled = false;
+        btn.innerHTML = "<span>⚡ Test Key</span>";
+      });
+    }
+
+    btn.addEventListener("click", async () => {
+      const liveKey = inputEl ? inputEl.value.trim() : "";
+      const badge = providerBadgeMap[prov];
+
+      btn.disabled = true;
+      btn.className = "btn-test-key-inline testing";
+      btn.innerHTML = "<span>⏳ Testing...</span>";
+
+      if (testAlert) {
+        testAlert.className = "alert-box info";
+        testAlert.textContent = `Testing ${prov.toUpperCase()} connection with live key...`;
+        testAlert.classList.remove("hidden");
+      }
+
+      try {
+        const payload = {
+          provider: prov,
+          api_key: liveKey
+        };
+        const res = await fetch("/api/cloud/test", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const result = await res.json();
+
+        if (result.success) {
+          btn.className = "btn-test-key-inline success";
+          btn.innerHTML = "<span>✓ Valid</span>";
+          if (badge) {
+            badge.className = "key-status-badge success";
+            badge.textContent = "✓ Verified";
+          }
+          if (testAlert) {
+            testAlert.className = "alert-box success";
+            testAlert.textContent = `✓ ${result.message}`;
+            testAlert.classList.remove("hidden");
+          }
+        } else {
+          btn.className = "btn-test-key-inline error";
+          btn.innerHTML = "<span>✗ Failed</span>";
+          if (badge) {
+            badge.className = "key-status-badge error";
+            badge.textContent = "✗ Failed";
+          }
+          if (testAlert) {
+            testAlert.className = "alert-box error";
+            testAlert.textContent = `✗ ${result.message}`;
+            testAlert.classList.remove("hidden");
+          }
+        }
+      } catch (err) {
+        btn.className = "btn-test-key-inline error";
+        btn.innerHTML = "<span>✗ Error</span>";
+        if (testAlert) {
+          testAlert.className = "alert-box error";
+          testAlert.textContent = `✗ Network error testing ${prov}: ${err.message}`;
+          testAlert.classList.remove("hidden");
+        }
+      } finally {
+        btn.disabled = false;
+        setTimeout(() => {
+          if (btn.classList.contains("success") || btn.classList.contains("error")) {
+            btn.className = "btn-test-key-inline";
+            btn.innerHTML = "<span>⚡ Test Key</span>";
+          }
+        }, 5000);
+      }
+    });
+  });
+
   // Probe All Keys Button
   if (probeAllBtn) {
     probeAllBtn.addEventListener("click", async () => {
       switchToCloudTab("cloudTabPanelDiagnostics");
       probeAllBtn.disabled = true;
       const origText = probeAllBtn.textContent;
-      probeAllBtn.textContent = "⏳ Probing Keys...";
+      probeAllBtn.textContent = "⏳ Probing Keys in Parallel...";
 
       if (testAlert) {
         testAlert.className = "alert-box info";
-        testAlert.textContent = "Testing each configured API key with live pings across providers...";
+        testAlert.textContent = "Probing all configured and entered API keys simultaneously (5s timeout per provider)...";
         testAlert.classList.remove("hidden");
       }
 
@@ -3325,17 +3435,32 @@ async function initCloudModal() {
 
         if (data.success && data.report) {
           const rep = data.report;
-          const updateBadgeHelper = (badge, repProv) => {
+          const updateBadgeHelper = (badge, repProv, provName) => {
             if (!badge || !repProv) return;
+            const inlineBtn = document.querySelector(`.btn-test-key-inline[data-provider="${provName}"]`);
             if (repProv.success) {
               badge.className = "key-status-badge success";
-              badge.textContent = `✓ Active (${repProv.latency_ms}ms)`;
+              badge.textContent = repProv.key_count > 1
+                ? `✓ Active (${repProv.latency_ms}ms, ${repProv.key_count} keys)`
+                : `✓ Active (${repProv.latency_ms}ms)`;
+              if (inlineBtn) {
+                inlineBtn.className = "btn-test-key-inline success";
+                inlineBtn.innerHTML = "<span>✓ Valid</span>";
+              }
             } else if (repProv.configured) {
               badge.className = "key-status-badge error";
               badge.textContent = `✗ ${repProv.message.slice(0, 24)}`;
+              if (inlineBtn) {
+                inlineBtn.className = "btn-test-key-inline error";
+                inlineBtn.innerHTML = "<span>✗ Failed</span>";
+              }
             } else {
               badge.className = "key-status-badge missing";
               badge.textContent = "⚪ No key";
+              if (inlineBtn) {
+                inlineBtn.className = "btn-test-key-inline";
+                inlineBtn.innerHTML = "<span>⚡ Test Key</span>";
+              }
             }
           };
 
@@ -3352,7 +3477,9 @@ async function initCloudModal() {
             } else if (repProv.success) {
               card.className = "diag-card success";
               statusEl.textContent = "Online";
-              latEl.textContent = `${repProv.latency_ms} ms`;
+              latEl.textContent = repProv.key_count > 1
+                ? `${repProv.latency_ms} ms (${repProv.key_count} keys)`
+                : `${repProv.latency_ms} ms`;
               latEl.style.color = "#34D399";
             } else {
               card.className = "diag-card error";
@@ -3362,12 +3489,12 @@ async function initCloudModal() {
             }
           };
 
-          updateBadgeHelper(groqKeyBadge, rep.groq);
-          updateBadgeHelper(geminiKeyBadge, rep.gemini);
-          updateBadgeHelper(openrouterKeyBadge, rep.openrouter);
-          updateBadgeHelper(openaiKeyBadge, rep.openai);
-          updateBadgeHelper(anthropicKeyBadge, rep.anthropic);
-          updateBadgeHelper(deepseekKeyBadge, rep.deepseek);
+          updateBadgeHelper(groqKeyBadge, rep.groq, "groq");
+          updateBadgeHelper(geminiKeyBadge, rep.gemini, "gemini");
+          updateBadgeHelper(openrouterKeyBadge, rep.openrouter, "openrouter");
+          updateBadgeHelper(openaiKeyBadge, rep.openai, "openai");
+          updateBadgeHelper(anthropicKeyBadge, rep.anthropic, "anthropic");
+          updateBadgeHelper(deepseekKeyBadge, rep.deepseek, "deepseek");
 
           updateDiagCard("diagGroqCard", "diagGroqStatus", "diagGroqLatency", rep.groq);
           updateDiagCard("diagGeminiCard", "diagGeminiStatus", "diagGeminiLatency", rep.gemini);
@@ -3389,6 +3516,15 @@ async function initCloudModal() {
               testAlert.textContent = "Probe finished, but no candidate models passed validation. Please verify your keys.";
             }
           }
+
+          setTimeout(() => {
+            document.querySelectorAll(".btn-test-key-inline").forEach(b => {
+              if (b.classList.contains("success") || b.classList.contains("error")) {
+                b.className = "btn-test-key-inline";
+                b.innerHTML = "<span>⚡ Test Key</span>";
+              }
+            });
+          }, 6000);
         } else {
           if (testAlert) {
             testAlert.className = "alert-box error";

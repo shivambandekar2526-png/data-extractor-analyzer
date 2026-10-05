@@ -414,11 +414,13 @@ class TabularIngester:
 
         csv_file = f"{folder_slug}_extracted_data.csv"
         excel_file = f"{folder_slug}_extracted_data.xlsx"
+        direct_excel_file = f"{folder_slug}.xlsx"
         json_file = f"{folder_slug}_catalog.json"
         academic_file = f"{folder_slug} sem {detected_sem.lower().replace('semester', '').strip()}.xlsx"
 
         csv_path = os.path.join(out_folder, csv_file)
         excel_path = os.path.join(out_folder, excel_file)
+        direct_excel_path = os.path.join(out_folder, direct_excel_file)
         json_path = os.path.join(out_folder, json_file)
 
         # Write CSV
@@ -428,6 +430,7 @@ class TabularIngester:
         # Write Excel
         try:
             clean_df.to_excel(excel_path, index=False)
+            clean_df.to_excel(direct_excel_path, index=False)
         except Exception as e:
             logger.warning(f"Error saving excel: {e}")
 
@@ -605,11 +608,13 @@ class TabularIngester:
 
         csv_file = f"{folder_slug}_extracted_data.csv"
         excel_file = f"{folder_slug}_extracted_data.xlsx"
+        direct_excel_file = f"{folder_slug}.xlsx"
         json_file = f"{folder_slug}_catalog.json"
         academic_file = f"{folder_slug} sem {detected_sem.lower().replace('semester', '').strip()}.xlsx"
 
         csv_path = os.path.join(out_folder, csv_file)
         excel_path = os.path.join(out_folder, excel_file)
+        direct_excel_path = os.path.join(out_folder, direct_excel_file)
         json_path = os.path.join(out_folder, json_file)
 
         clean_df = pd.DataFrame(records)
@@ -617,6 +622,7 @@ class TabularIngester:
 
         try:
             clean_df.to_excel(excel_path, index=False)
+            clean_df.to_excel(direct_excel_path, index=False)
         except Exception as e:
             logger.warning(f"Error saving excel: {e}")
 
@@ -1195,7 +1201,8 @@ Return valid JSON only matching:
             "archetype": "Tabular Sheet",
             "courses": courses,
             "columns": columns,
-            "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
+            "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
         }
 
     def _detect_semester(self, filename: str, columns: List[str]) -> str:
@@ -1224,9 +1231,50 @@ Return valid JSON only matching:
         return self._detect_semester(top_text, [])
 
     def _create_folder_slug(self, name: str) -> str:
-        clean = re.sub(r"[^\w\-]", "_", name).strip("_")
+        clean = re.sub(r"[^\w\-\(\)]", "_", name).strip("_")
         clean = re.sub(r"_+", "_", clean)
-        return clean[:45] if clean else f"sheet_{uuid.uuid4().hex[:8]}"
+        base = clean[:45] if clean else f"sheet_{uuid.uuid4().hex[:8]}"
+
+        # Atomic collision detection: if 'sem1' or 'sem1.xlsx' exists in output_dir,
+        # subsequent runs automatically save as 'sem1(1)', 'sem1(2)', etc.
+        m = re.match(r"^(.*?)(?:\((\d+)\))?$", base)
+        root = m.group(1).rstrip() if m else base
+        candidate = base
+        counter = int(m.group(2)) + 1 if (m and m.group(2)) else 1
+
+        while True:
+            target_dir = os.path.join(self.output_dir, candidate)
+            direct_xlsx = os.path.join(self.output_dir, f"{candidate}.xlsx")
+            direct_csv = os.path.join(self.output_dir, f"{candidate}.csv")
+
+            collision = False
+            if os.path.exists(direct_xlsx) or os.path.exists(direct_csv):
+                collision = True
+            elif os.path.exists(target_dir):
+                excel_file = os.path.join(target_dir, f"{candidate}_extracted_data.xlsx")
+                csv_file = os.path.join(target_dir, f"{candidate}_extracted_data.csv")
+                cat_file = os.path.join(target_dir, f"{candidate}_catalog.json")
+                direct_inner_xlsx = os.path.join(target_dir, f"{candidate}.xlsx")
+                try:
+                    has_files = any(os.scandir(target_dir))
+                except Exception:
+                    has_files = True
+                if (
+                    os.path.exists(excel_file)
+                    or os.path.exists(csv_file)
+                    or os.path.exists(cat_file)
+                    or os.path.exists(direct_inner_xlsx)
+                    or has_files
+                ):
+                    collision = True
+
+            if not collision:
+                break
+
+            candidate = f"{root}({counter})"
+            counter += 1
+
+        return candidate
 
     def _clean_column_name(self, col: Any, idx: int) -> str:
         if col is None or pd.isna(col):
