@@ -263,10 +263,10 @@
           <div class="manual-meta-override-container">
             <button type="button" class="btn-toggle-meta-override" id="btnToggleMetaOverride" title="Manually specify or correct department, batch, and semester">
               <span id="metaOverrideIcon">⚙️</span>
-              <span>Dataset Details &amp; Metadata Override</span>
+              <span>Dataset Details &amp; Manual Override</span>
               <span class="meta-override-badge" id="metaOverrideStatusBadge">Auto-detected by AI</span>
             </button>
-            <div class="meta-override-drawer hidden" id="metaOverrideDrawer">
+            <div class="meta-override-drawer" id="metaOverrideDrawer">
               <p class="meta-override-hint">Auto-detected via AI on upload. You can adjust any values if needed before or after extraction:</p>
               <div class="meta-override-grid">
                 <div class="meta-override-field">
@@ -502,6 +502,54 @@
             <div class="extracted-stat-badge stat-stream-corner hidden" id="liveStreamPill" title="Live Extraction Stream">
               <span class="pulse-dot"></span>
               <span id="liveStreamPillText">Streaming Live</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dataset Classification & Manual Target Override Bar -->
+        <div class="dataset-meta-override-bar" id="resultsMetaOverrideBar">
+          <div class="meta-bar-header">
+            <div class="meta-bar-title">
+              <span class="meta-bar-icon">🏷️</span>
+              <strong class="meta-bar-heading">Dataset Classification &amp; Target Storage:</strong>
+              <span class="meta-override-badge" id="resultsMetaBadge">Auto-detected by AI</span>
+            </div>
+            <span class="meta-bar-hint">Manually adjust Department, Batch (YY-YY), or Semester below if AI made a mistake before saving:</span>
+          </div>
+          <div class="meta-bar-inputs-grid">
+            <div class="meta-bar-field">
+              <label for="resultsDeptInput">Department / Branch:</label>
+              <select id="resultsDeptInput" class="form-select form-select-sm">
+                <option value="Artificial_Intelligence_and_Data_Science">Artificial Intelligence &amp; Data Science (AIDS)</option>
+                <option value="Computer_Engineering">Computer Engineering (COMPS)</option>
+                <option value="Information_Technology">Information Technology (IT)</option>
+                <option value="Electronics_and_Telecommunication">Electronics &amp; Telecommunication (EXTC)</option>
+                <option value="Mechanical_Engineering">Mechanical Engineering (MECH)</option>
+                <option value="Civil_Engineering">Civil Engineering (CIVIL)</option>
+                <option value="Electrical_Engineering">Electrical Engineering (ELEC)</option>
+                <option value="Instrumentation_Engineering">Instrumentation Engineering (INST)</option>
+              </select>
+            </div>
+            <div class="meta-bar-field">
+              <label for="resultsBatchInput">Batch / Academic Year (YY-YY):</label>
+              <input type="text" id="resultsBatchInput" class="form-control form-control-sm" placeholder="e.g. 21-22, 22-23" pattern="^\d{2}-\d{2}$" title="Format: YY-YY (e.g. 21-22)">
+            </div>
+            <div class="meta-bar-field">
+              <label for="resultsSemInput">Semester:</label>
+              <select id="resultsSemInput" class="form-select form-select-sm">
+                <option value="Semester_1">Semester 1</option>
+                <option value="Semester_2">Semester 2</option>
+                <option value="Semester_3">Semester 3</option>
+                <option value="Semester_4">Semester 4</option>
+                <option value="Semester_5">Semester 5</option>
+                <option value="Semester_6">Semester 6</option>
+                <option value="Semester_7">Semester 7</option>
+                <option value="Semester_8">Semester 8</option>
+              </select>
+            </div>
+            <div class="meta-bar-preview-box">
+              <span class="meta-preview-title">Target Storage Mirror:</span>
+              <code id="resultsMirrorPathPreview" class="meta-mirror-path">departments_data/excel/...</code>
             </div>
           </div>
         </div>

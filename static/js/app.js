@@ -794,6 +794,24 @@ function handleFileSelected(file) {
           if (batchInp && d.batch) batchInp.value = d.batch;
           if (semInp && d.semester) semInp.value = d.semester;
           if (statusBadge) statusBadge.textContent = "AI Classified";
+
+          const resDept = document.getElementById("resultsDeptInput");
+          const resBatch = document.getElementById("resultsBatchInput");
+          const resSem = document.getElementById("resultsSemInput");
+          if (resDept && d.department) resDept.value = d.department;
+          if (resBatch && d.batch) resBatch.value = d.batch;
+          if (resSem && d.semester) resSem.value = d.semester;
+
+          const resultsMetaBadge = document.getElementById("resultsMetaBadge");
+          if (resultsMetaBadge) resultsMetaBadge.textContent = "AI Classified";
+
+          const preview = document.getElementById("resultsMirrorPathPreview");
+          if (preview) {
+            const dStr = d.department || "<Department>";
+            const bStr = d.batch || "<Batch>";
+            const sStr = d.semester || "<Semester>";
+            preview.textContent = `departments_data/excel/${dStr}/${bStr}/${sStr}.xlsx`;
+          }
         }
       })
       .catch(err => console.warn("Background classification probe warning:", err));
@@ -1683,6 +1701,24 @@ function renderResults(result) {
       if (deptInp && dsMeta.department) deptInp.value = dsMeta.department;
       if (batchInp && dsMeta.batch) batchInp.value = dsMeta.batch;
       if (semInp && dsMeta.semester) semInp.value = dsMeta.semester;
+
+      const resDept = document.getElementById("resultsDeptInput");
+      const resBatch = document.getElementById("resultsBatchInput");
+      const resSem = document.getElementById("resultsSemInput");
+      if (resDept && dsMeta.department) resDept.value = dsMeta.department;
+      if (resBatch && dsMeta.batch) resBatch.value = dsMeta.batch;
+      if (resSem && dsMeta.semester) resSem.value = dsMeta.semester;
+
+      const resultsMetaBadge = document.getElementById("resultsMetaBadge");
+      if (resultsMetaBadge) resultsMetaBadge.textContent = "AI Classified";
+
+      const preview = document.getElementById("resultsMirrorPathPreview");
+      if (preview) {
+        const dStr = dsMeta.department || "<Department>";
+        const bStr = dsMeta.batch || "<Batch>";
+        const sStr = dsMeta.semester || "<Semester>";
+        preview.textContent = `departments_data/excel/${dStr}/${bStr}/${sStr}.xlsx`;
+      }
     } else {
       classifiedMetaPill.classList.add("hidden");
     }
@@ -2374,6 +2410,71 @@ function updateExcelSaveStatus() {
   }
 }
 
+// Synchronize classification metadata between Step 1 and Extracted Data inputs
+function syncDatasetMetadata(source) {
+  const stepDept = document.getElementById("overrideDeptInput");
+  const stepBatch = document.getElementById("overrideBatchInput");
+  const stepSem = document.getElementById("overrideSemInput");
+
+  const resDept = document.getElementById("resultsDeptInput");
+  const resBatch = document.getElementById("resultsBatchInput");
+  const resSem = document.getElementById("resultsSemInput");
+
+  let deptVal = "";
+  let batchVal = "";
+  let semVal = "";
+
+  if (source === "step") {
+    deptVal = stepDept?.value || "";
+    batchVal = stepBatch?.value?.trim() || "";
+    semVal = stepSem?.value || "";
+
+    if (resDept && deptVal) resDept.value = deptVal;
+    if (resBatch && batchVal) resBatch.value = batchVal;
+    if (resSem && semVal) resSem.value = semVal;
+  } else if (source === "results") {
+    deptVal = resDept?.value || "";
+    batchVal = resBatch?.value?.trim() || "";
+    semVal = resSem?.value || "";
+
+    if (stepDept && deptVal) stepDept.value = deptVal;
+    if (stepBatch && batchVal) stepBatch.value = batchVal;
+    if (stepSem && semVal) stepSem.value = semVal;
+  } else {
+    // Read from results if available, else step
+    deptVal = resDept?.value || stepDept?.value || "";
+    batchVal = resBatch?.value?.trim() || stepBatch?.value?.trim() || "";
+    semVal = resSem?.value || stepSem?.value || "";
+  }
+
+  // Update target storage preview
+  const preview = document.getElementById("resultsMirrorPathPreview");
+  if (preview) {
+    const dStr = deptVal || "<Department>";
+    const bStr = batchVal || "<Batch>";
+    const sStr = semVal || "<Semester>";
+    preview.textContent = `departments_data/excel/${dStr}/${bStr}/${sStr}.xlsx`;
+  }
+
+  // Update active meta badge
+  const resultsMetaBadge = document.getElementById("resultsMetaBadge");
+  const stepMetaBadge = document.getElementById("metaOverrideStatusBadge");
+  if (source === "step" || source === "results") {
+    if (resultsMetaBadge) resultsMetaBadge.textContent = "Manually Specified";
+    if (stepMetaBadge) stepMetaBadge.textContent = "Manual Override";
+  }
+
+  // Persist into window.currentDatasetMeta
+  if (deptVal || batchVal || semVal) {
+    window.currentDatasetMeta = {
+      ...(window.currentDatasetMeta || {}),
+      department: deptVal || (window.currentDatasetMeta && window.currentDatasetMeta.department) || "Artificial_Intelligence_and_Data_Science",
+      batch: batchVal || (window.currentDatasetMeta && window.currentDatasetMeta.batch) || "22-23",
+      semester: semVal || (window.currentDatasetMeta && window.currentDatasetMeta.semester) || "Semester_1"
+    };
+  }
+}
+
 async function saveDatasetToServer() {
   if (!currentRecords || currentRecords.length === 0) {
     alert("No records to save.");
@@ -2381,17 +2482,31 @@ async function saveDatasetToServer() {
   }
 
   const saveBtn = document.getElementById("btnExcelSave");
+  const saveDbBtn = document.getElementById("btnSaveToDatabase");
   const origText = saveBtn ? saveBtn.innerHTML : "";
+  const origDbText = saveDbBtn ? saveDbBtn.innerHTML : "";
   if (saveBtn) {
     saveBtn.disabled = true;
     saveBtn.innerHTML = `<span>⏳ Saving...</span>`;
   }
+  if (saveDbBtn) {
+    saveDbBtn.disabled = true;
+    saveDbBtn.innerHTML = `<span>⏳ Saving...</span>`;
+  }
 
   try {
-    // Check if user manually typed or modified department, batch, or semester
-    const manualDept = document.getElementById("overrideDeptInput")?.value?.trim();
-    const manualBatch = document.getElementById("overrideBatchInput")?.value?.trim();
-    const manualSem = document.getElementById("overrideSemInput")?.value?.trim();
+    // Read directly from results inputs first, fallback to step 1 override inputs
+    const manualDept = (document.getElementById("resultsDeptInput")?.value || document.getElementById("overrideDeptInput")?.value)?.trim();
+    const manualBatch = (document.getElementById("resultsBatchInput")?.value || document.getElementById("overrideBatchInput")?.value)?.trim();
+    const manualSem = (document.getElementById("resultsSemInput")?.value || document.getElementById("overrideSemInput")?.value)?.trim();
+
+    // Validate hyphenated batch format if user provided a batch
+    if (manualBatch && !/^\d{2}-\d{2}$/.test(manualBatch)) {
+      alert(`Invalid batch format: "${manualBatch}".\nBatch must follow the YY-YY format (e.g. 21-22, 22-23).`);
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = origText; }
+      if (saveDbBtn) { saveDbBtn.disabled = false; saveDbBtn.innerHTML = origDbText; }
+      return;
+    }
 
     let metaToPersist = window.currentDatasetMeta || (currentResultObj && currentResultObj.dataset_meta) || {};
     if (manualDept || manualBatch || manualSem) {
@@ -2450,6 +2565,24 @@ async function saveDatasetToServer() {
     if (data.db_saved) {
       appendChatMessage("assistant", `💾 <strong>Dataset Saved to Database:</strong> Persisted ${data.count} student records to SQLite database (<code>academic_records.db</code>) and generated deterministic Excel mirror at <code>${data.canonical_excel_path || data.excel_file}</code>.`);
     }
+
+    // Prominent alert confirming successful database and mirror persistence
+    const savedDept = metaToPersist.department || "Artificial_Intelligence_and_Data_Science";
+    const savedBatch = metaToPersist.batch || "22-23";
+    const savedSem = metaToPersist.semester || "Semester_1";
+    const mirrorPath = data.canonical_excel_path || `departments_data/excel/${savedDept}/${savedBatch}/${savedSem}.xlsx`;
+    const recordCount = data.count || currentRecords.length;
+
+    alert(
+      `✅ Dataset Successfully Saved to Database!\n\n` +
+      `• Department: ${savedDept}\n` +
+      `• Batch: ${savedBatch}\n` +
+      `• Semester: ${savedSem}\n` +
+      `• Records Persisted: ${recordCount} students\n` +
+      `• Database: SQLite (academic_records.db)\n` +
+      `• Excel Mirror: ${mirrorPath}`
+    );
+
   } catch (err) {
     console.error("Error saving dataset:", err);
     alert("Network error occurred while saving: " + err.message);
@@ -2457,6 +2590,10 @@ async function saveDatasetToServer() {
     if (saveBtn) {
       saveBtn.disabled = false;
       saveBtn.innerHTML = origText;
+    }
+    if (saveDbBtn) {
+      saveDbBtn.disabled = false;
+      saveDbBtn.innerHTML = origDbText;
     }
   }
 }
@@ -3182,6 +3319,24 @@ function initInteractiveExcelGrid() {
       metaDrawer.classList.toggle("hidden");
     });
   }
+
+  // Step 1 Override input listeners -> sync to results inputs & mirror preview
+  ["overrideDeptInput", "overrideBatchInput", "overrideSemInput"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener("input", () => syncDatasetMetadata("step"));
+      el.addEventListener("change", () => syncDatasetMetadata("step"));
+    }
+  });
+
+  // Results Section Metadata input listeners -> sync to Step 1 & mirror preview
+  ["resultsDeptInput", "resultsBatchInput", "resultsSemInput"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener("input", () => syncDatasetMetadata("results"));
+      el.addEventListener("change", () => syncDatasetMetadata("results"));
+    }
+  });
 
   // Export dropdown menu toggle
   const exportToggle = document.getElementById("btnExportMenuToggle");
