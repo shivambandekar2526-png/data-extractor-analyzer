@@ -7063,3 +7063,30 @@ body.light-theme .meta-mirror-path,
   color: #0284c7;
 }
 
+.step-meta-preview-strip {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+}
+
+body.light-theme .step-meta-preview-strip,
+[data-theme="light"] .step-meta-preview-strip {
+  border-top-color: rgba(0, 0, 0, 0.08);
+}
+
+.meta-bar-preview-stacked {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+@media (max-width: 768px) {
+  .step-meta-preview-strip {
+    grid-template-columns: 1fr;
+  }
+}
+

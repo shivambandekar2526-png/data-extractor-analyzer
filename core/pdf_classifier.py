@@ -447,3 +447,11 @@ def get_canonical_excel_path(department: str, batch: str, semester: str, departm
     dest_folder = os.path.join(departments_dir, "excel", department, batch)
     os.makedirs(dest_folder, exist_ok=True)
     return os.path.join(dest_folder, f"{semester}.xlsx")
+
+
+def get_canonical_pdf_path(department: str, batch: str, semester: str, departments_dir: str) -> str:
+    """Returns deterministic canonical path for PDF dataset."""
+    dest_folder = os.path.join(departments_dir, "pdf", department, batch)
+    os.makedirs(dest_folder, exist_ok=True)
+    return os.path.join(dest_folder, f"{semester}.pdf")
+

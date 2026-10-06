@@ -805,13 +805,23 @@ function handleFileSelected(file) {
           const resultsMetaBadge = document.getElementById("resultsMetaBadge");
           if (resultsMetaBadge) resultsMetaBadge.textContent = "AI Classified";
 
-          const preview = document.getElementById("resultsMirrorPathPreview");
-          if (preview) {
-            const dStr = d.department || "<Department>";
-            const bStr = d.batch || "<Batch>";
-            const sStr = d.semester || "<Semester>";
-            preview.textContent = `departments_data/excel/${dStr}/${bStr}/${sStr}.xlsx`;
-          }
+          const dStr = d.department || "<Department>";
+          const bStr = d.batch || "<Batch>";
+          const sStr = d.semester || "<Semester>";
+          const pdfPathStr = `departments_data/pdf/${dStr}/${bStr}/${sStr}.pdf`;
+          const excelPathStr = `departments_data/excel/${dStr}/${bStr}/${sStr}.xlsx`;
+
+          const resultsExcelPreview = document.getElementById("resultsMirrorPathPreview");
+          if (resultsExcelPreview) resultsExcelPreview.textContent = excelPathStr;
+
+          const resultsPdfPreview = document.getElementById("resultsPdfMirrorPathPreview");
+          if (resultsPdfPreview) resultsPdfPreview.textContent = pdfPathStr;
+
+          const stepPdfPreview = document.getElementById("stepPdfMirrorPreview");
+          if (stepPdfPreview) stepPdfPreview.textContent = pdfPathStr;
+
+          const stepExcelPreview = document.getElementById("stepExcelMirrorPreview");
+          if (stepExcelPreview) stepExcelPreview.textContent = excelPathStr;
         }
       })
       .catch(err => console.warn("Background classification probe warning:", err));
@@ -1712,13 +1722,23 @@ function renderResults(result) {
       const resultsMetaBadge = document.getElementById("resultsMetaBadge");
       if (resultsMetaBadge) resultsMetaBadge.textContent = "AI Classified";
 
-      const preview = document.getElementById("resultsMirrorPathPreview");
-      if (preview) {
-        const dStr = dsMeta.department || "<Department>";
-        const bStr = dsMeta.batch || "<Batch>";
-        const sStr = dsMeta.semester || "<Semester>";
-        preview.textContent = `departments_data/excel/${dStr}/${bStr}/${sStr}.xlsx`;
-      }
+      const dStr = dsMeta.department || "<Department>";
+      const bStr = dsMeta.batch || "<Batch>";
+      const sStr = dsMeta.semester || "<Semester>";
+      const pdfPathStr = `departments_data/pdf/${dStr}/${bStr}/${sStr}.pdf`;
+      const excelPathStr = `departments_data/excel/${dStr}/${bStr}/${sStr}.xlsx`;
+
+      const resultsExcelPreview = document.getElementById("resultsMirrorPathPreview");
+      if (resultsExcelPreview) resultsExcelPreview.textContent = excelPathStr;
+
+      const resultsPdfPreview = document.getElementById("resultsPdfMirrorPathPreview");
+      if (resultsPdfPreview) resultsPdfPreview.textContent = pdfPathStr;
+
+      const stepPdfPreview = document.getElementById("stepPdfMirrorPreview");
+      if (stepPdfPreview) stepPdfPreview.textContent = pdfPathStr;
+
+      const stepExcelPreview = document.getElementById("stepExcelMirrorPreview");
+      if (stepExcelPreview) stepExcelPreview.textContent = excelPathStr;
     } else {
       classifiedMetaPill.classList.add("hidden");
     }
@@ -2447,14 +2467,24 @@ function syncDatasetMetadata(source) {
     semVal = resSem?.value || stepSem?.value || "";
   }
 
-  // Update target storage preview
-  const preview = document.getElementById("resultsMirrorPathPreview");
-  if (preview) {
-    const dStr = deptVal || "<Department>";
-    const bStr = batchVal || "<Batch>";
-    const sStr = semVal || "<Semester>";
-    preview.textContent = `departments_data/excel/${dStr}/${bStr}/${sStr}.xlsx`;
-  }
+  // Update target storage preview (both PDF and Excel mirrors)
+  const dStr = deptVal || "<Department>";
+  const bStr = batchVal || "<Batch>";
+  const sStr = semVal || "<Semester>";
+  const pdfPathStr = `departments_data/pdf/${dStr}/${bStr}/${sStr}.pdf`;
+  const excelPathStr = `departments_data/excel/${dStr}/${bStr}/${sStr}.xlsx`;
+
+  const resultsExcelPreview = document.getElementById("resultsMirrorPathPreview");
+  if (resultsExcelPreview) resultsExcelPreview.textContent = excelPathStr;
+
+  const resultsPdfPreview = document.getElementById("resultsPdfMirrorPathPreview");
+  if (resultsPdfPreview) resultsPdfPreview.textContent = pdfPathStr;
+
+  const stepPdfPreview = document.getElementById("stepPdfMirrorPreview");
+  if (stepPdfPreview) stepPdfPreview.textContent = pdfPathStr;
+
+  const stepExcelPreview = document.getElementById("stepExcelMirrorPreview");
+  if (stepExcelPreview) stepExcelPreview.textContent = excelPathStr;
 
   // Update active meta badge
   const resultsMetaBadge = document.getElementById("resultsMetaBadge");
@@ -2470,7 +2500,9 @@ function syncDatasetMetadata(source) {
       ...(window.currentDatasetMeta || {}),
       department: deptVal || (window.currentDatasetMeta && window.currentDatasetMeta.department) || "Artificial_Intelligence_and_Data_Science",
       batch: batchVal || (window.currentDatasetMeta && window.currentDatasetMeta.batch) || "22-23",
-      semester: semVal || (window.currentDatasetMeta && window.currentDatasetMeta.semester) || "Semester_1"
+      semester: semVal || (window.currentDatasetMeta && window.currentDatasetMeta.semester) || "Semester_1",
+      pdf_path: pdfPathStr,
+      excel_path: excelPathStr
     };
   }
 }
@@ -2571,7 +2603,13 @@ async function saveDatasetToServer() {
     const savedBatch = metaToPersist.batch || "22-23";
     const savedSem = metaToPersist.semester || "Semester_1";
     const mirrorPath = data.canonical_excel_path || `departments_data/excel/${savedDept}/${savedBatch}/${savedSem}.xlsx`;
+    const pdfMirrorPath = data.canonical_pdf_path || `departments_data/pdf/${savedDept}/${savedBatch}/${savedSem}.pdf`;
     const recordCount = data.count || currentRecords.length;
+
+    // Refresh batch catalog so newly saved PDF and Excel appear immediately in batch selection
+    if (typeof initBatches === "function") {
+      initBatches();
+    }
 
     alert(
       `✅ Dataset Successfully Saved to Database!\n\n` +
@@ -2580,6 +2618,7 @@ async function saveDatasetToServer() {
       `• Semester: ${savedSem}\n` +
       `• Records Persisted: ${recordCount} students\n` +
       `• Database: SQLite (academic_records.db)\n` +
+      `• PDF Storage: ${pdfMirrorPath}\n` +
       `• Excel Mirror: ${mirrorPath}`
     );
 

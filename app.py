@@ -63,6 +63,7 @@ from core.pdf_classifier import (
     check_duplicate_dataset,
     store_classified_pdf,
     get_canonical_excel_path,
+    get_canonical_pdf_path,
     normalize_department,
     normalize_batch,
     normalize_semester
@@ -795,7 +796,7 @@ def list_inputs():
 
 @app.route("/api/batches", methods=["GET"])
 def list_batches():
-    """List batch datasets from Batch Data/ including PDF, Excel, and CSV."""
+    """List batch datasets from departments_data/ including PDF, Excel, and CSV with human-friendly hierarchical labels."""
     batches = {}
     if os.path.isdir(BATCH_DATA_DIR):
         for root, dirs, files in os.walk(BATCH_DATA_DIR):
@@ -803,14 +804,34 @@ def list_batches():
                 ext = os.path.splitext(f)[1].lower()
                 if ext in (".pdf", ".xlsx", ".xls", ".csv"):
                     rel = os.path.relpath(os.path.join(root, f), BATCH_DATA_DIR).replace("\\", "/")
-                    batch_name = rel.split("/")[0] if "/" in rel else "Default"
-                    batches.setdefault(batch_name, []).append({
-                        "rel_path": rel,
-                        "filename": f,
-                        "file_type": "pdf" if ext == ".pdf" else "excel",
-                        "full_path": os.path.join(root, f)
-                    })
+                    parts = rel.split("/")
+                    
+                    # If organized as pdf/<Dept>/<Batch>/<Sem>.pdf or excel/<Dept>/<Batch>/<Sem>.xlsx
+                    if len(parts) >= 4 and parts[0] in ("pdf", "excel"):
+                        group_type = parts[0].upper()
+                        dept_label = parts[1].replace("_", " ")
+                        batch_label = parts[2]
+                        group_name = f"📁 {dept_label} ({batch_label}) - {group_type}"
+                        sem_label = parts[3]
+                        batches.setdefault(group_name, []).append({
+                            "rel_path": rel,
+                            "filename": f"{sem_label} ({group_type})",
+                            "file_type": "pdf" if ext == ".pdf" else "excel",
+                            "full_path": os.path.join(root, f),
+                            "department": parts[1],
+                            "batch": parts[2],
+                            "semester": os.path.splitext(parts[3])[0]
+                        })
+                    else:
+                        batch_name = parts[0] if len(parts) > 1 else "Root Files"
+                        batches.setdefault(batch_name, []).append({
+                            "rel_path": rel,
+                            "filename": f,
+                            "file_type": "pdf" if ext == ".pdf" else "excel",
+                            "full_path": os.path.join(root, f)
+                        })
     return jsonify({"batches": batches})
+
 
 
 @app.route("/api/batch-analysis/hierarchy", methods=["GET"])
@@ -1907,14 +1928,77 @@ def sync_dataset():
     except Exception as e:
         print(f"[!] Note: Excel export sync warning: {e}")
 
+    # Synchronize corresponding PDF file to canonical location under departments_data/pdf/
+    canonical_pdf_path = None
+    if ds_meta and isinstance(ds_meta, dict):
+        s_dept = ds_meta.get("department")
+        s_batch = ds_meta.get("batch")
+        s_sem = ds_meta.get("semester")
+        if s_dept and s_batch and s_sem:
+            target_canonical_pdf = get_canonical_pdf_path(s_dept, s_batch, s_sem, DEPARTMENTS_DATA_DIR)
+            # Find current source PDF for this folder/job
+            source_pdf_loc = None
+            if ds_meta.get("pdf_path") and os.path.isfile(ds_meta["pdf_path"]):
+                source_pdf_loc = ds_meta["pdf_path"]
+            if not source_pdf_loc:
+                with jobs_lock:
+                    for jid, job in jobs.items():
+                        if job.get("folder_name") == clean_folder and job.get("dataset_meta", {}).get("pdf_path"):
+                            cand_p = job["dataset_meta"]["pdf_path"]
+                            if os.path.isfile(cand_p):
+                                source_pdf_loc = cand_p
+                                break
+            if not source_pdf_loc:
+                source_pdf_loc = _find_pdf_for_folder(clean_folder)
+
+            if source_pdf_loc and os.path.isfile(source_pdf_loc):
+                try:
+                    src_abs = os.path.abspath(source_pdf_loc)
+                    dst_abs = os.path.abspath(target_canonical_pdf)
+                    if src_abs != dst_abs:
+                        os.makedirs(os.path.dirname(dst_abs), exist_ok=True)
+                        shutil.copy2(src_abs, dst_abs)
+                        # If the old PDF was already in departments_data/pdf, remove the old one to avoid duplicates
+                        norm_dept_pdf = os.path.abspath(os.path.join(DEPARTMENTS_DATA_DIR, "pdf"))
+                        if src_abs.startswith(norm_dept_pdf):
+                            try:
+                                os.remove(src_abs)
+                            except Exception:
+                                pass
+                    canonical_pdf_path = target_canonical_pdf
+                    ds_meta["pdf_path"] = target_canonical_pdf
+                    # Update dataset in SQLite with refreshed pdf_path
+                    try:
+                        save_dataset_to_db(
+                            db_path=DB_PATH,
+                            department=s_dept,
+                            batch=s_batch,
+                            semester=s_sem,
+                            excel_path=canonical_excel_path,
+                            pdf_path=target_canonical_pdf,
+                            students=students or [],
+                            catalog=existing_cat
+                        )
+                    except Exception as db_e:
+                        logger.warning(f"Failed to update db with canonical pdf: {db_e}")
+                except Exception as pdf_sync_err:
+                    logger.warning(f"Failed synchronizing canonical PDF: {pdf_sync_err}")
+            elif os.path.isfile(target_canonical_pdf):
+                canonical_pdf_path = target_canonical_pdf
+                ds_meta["pdf_path"] = target_canonical_pdf
+
     # Synchronize any matching job in memory
     with jobs_lock:
         for jid, job in jobs.items():
             if job.get("folder_name") == clean_folder:
                 job["live_students"] = students
+                if ds_meta:
+                    job["dataset_meta"] = ds_meta
                 if "result" in job and isinstance(job["result"], dict):
                     job["result"]["students"] = students
                     job["result"]["total_students"] = len(students)
+                    if ds_meta:
+                        job["result"]["dataset_meta"] = ds_meta
 
     return jsonify({
         "success": True,
@@ -1923,6 +2007,7 @@ def sync_dataset():
         "excel_file": excel_filename,
         "json_file": cat_filename,
         "canonical_excel_path": canonical_excel_path,
+        "canonical_pdf_path": canonical_pdf_path,
         "db_saved": True,
         "dataset_meta": ds_meta,
         "count": len(students),
