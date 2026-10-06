@@ -36,6 +36,7 @@ let currentFindMatchIdx = -1;
 let contextMenuTarget = { rowIndex: null, colKey: null };
 
 document.addEventListener("DOMContentLoaded", () => {
+  initTheme();
   initStatus();
   initBatches();
   initHistory();
@@ -52,6 +53,97 @@ document.addEventListener("DOMContentLoaded", () => {
   initDataCleaningUI();
   initInteractiveExcelGrid();
 });
+
+// 0. Theme Toggle & Palette Controller (Day / Night Mode)
+function initTheme() {
+  const themeToggleBtn = document.getElementById("themeToggleBtn");
+
+  // Retrieve saved preference or default to dark
+  const saved = localStorage.getItem("data-extractor-ai-theme") || localStorage.getItem("theme");
+  const preferredTheme = saved ? saved : (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+
+  applyTheme(preferredTheme, false);
+
+  if (themeToggleBtn) {
+    themeToggleBtn.addEventListener("click", () => {
+      const current = document.documentElement.getAttribute("data-theme") || (document.body && document.body.classList.contains("light-theme") ? "light" : "dark");
+      const nextTheme = current === "light" ? "dark" : "light";
+      applyTheme(nextTheme, true);
+    });
+  }
+
+  // Listen for OS theme changes if user has not explicitly persisted a preference
+  if (window.matchMedia) {
+    try {
+      window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", (e) => {
+        if (!localStorage.getItem("data-extractor-ai-theme")) {
+          applyTheme(e.matches ? "light" : "dark", false);
+        }
+      });
+    } catch (e) {}
+  }
+}
+
+function applyTheme(theme, save = true) {
+  const isLight = theme === "light";
+
+  // Set html and body theme attributes and classes
+  document.documentElement.setAttribute("data-theme", theme);
+  if (document.body) {
+    document.body.classList.remove("dark-theme", "light-theme");
+    document.body.classList.add(isLight ? "light-theme" : "dark-theme");
+  }
+
+  // Update theme button UI
+  const themeBtn = document.getElementById("themeToggleBtn");
+  const themeLabel = document.getElementById("themeLabelText");
+  if (themeBtn) {
+    themeBtn.setAttribute("data-theme", theme);
+    themeBtn.setAttribute("title", isLight ? "Switch to Night mode (Dark)" : "Switch to Day mode (Light)");
+    themeBtn.setAttribute("aria-label", isLight ? "Switch to Night mode (Dark)" : "Switch to Day mode (Light)");
+  }
+  if (themeLabel) {
+    themeLabel.textContent = isLight ? "Night" : "Day";
+  }
+
+  if (save) {
+    localStorage.setItem("data-extractor-ai-theme", theme);
+  }
+
+  // Sync Chart.js default colors
+  updateChartsTheme(theme);
+}
+
+function updateChartsTheme(theme) {
+  if (typeof Chart === "undefined") return;
+  const isLight = theme === "light";
+
+  Chart.defaults.color = isLight ? "#475569" : "#94A3B8";
+  Chart.defaults.borderColor = isLight ? "rgba(0, 0, 0, 0.08)" : "rgba(255, 255, 255, 0.07)";
+
+  const charts = [];
+  if (typeof chartInstances !== "undefined" && chartInstances) {
+    Object.values(chartInstances).forEach(c => { if (c) charts.push(c); });
+  }
+  if (typeof batchChartInstances !== "undefined" && batchChartInstances) {
+    Object.values(batchChartInstances).forEach(c => { if (c) charts.push(c); });
+  }
+
+  charts.forEach(chart => {
+    try {
+      if (chart.options && chart.options.scales) {
+        Object.values(chart.options.scales).forEach(scale => {
+          if (scale.ticks) scale.ticks.color = isLight ? "#475569" : "#94A3B8";
+          if (scale.grid) scale.grid.color = isLight ? "rgba(0, 0, 0, 0.06)" : "rgba(255, 255, 255, 0.07)";
+        });
+      }
+      if (chart.options?.plugins?.legend?.labels) {
+        chart.options.plugins.legend.labels.color = isLight ? "#334155" : "#CBD5E1";
+      }
+      chart.update();
+    } catch (e) {}
+  });
+}
 
 // 1. Status Polling & Model Switcher
 async function initStatus() {
@@ -3872,8 +3964,9 @@ function renderEdaCharts(eda) {
   }
 
   // Set global chart theme defaults
-  Chart.defaults.color = "#94A3B8";
-  Chart.defaults.borderColor = "rgba(255, 255, 255, 0.07)";
+  const isLightTheme = document.documentElement.getAttribute("data-theme") === "light";
+  Chart.defaults.color = isLightTheme ? "#475569" : "#94A3B8";
+  Chart.defaults.borderColor = isLightTheme ? "rgba(0, 0, 0, 0.08)" : "rgba(255, 255, 255, 0.07)";
   Chart.defaults.font.family = "'Inter', sans-serif";
 
   renderSgpiDistChart(eda.sgpi_distribution || []);
@@ -5134,27 +5227,44 @@ function initBatchSuite() {
     loadBatchSuiteDatasets();
   });
 
-  // 2. Batch Dropdown & Inspect Trigger
+  // 2. Cascading Batch Dropdowns & Inspect Trigger
+  let cachedBatchHierarchy = [];
+
+  const branchSelect = document.getElementById("batchBranchSelect");
+  const yearSelect = document.getElementById("batchYearSelect");
+  const semesterSelect = document.getElementById("batchSemesterSelect");
   const batchSelect = document.getElementById("batchSuiteSelect");
   const branchInput = document.getElementById("batchBranchInput");
   const btnInspect = document.getElementById("btnInspectBatch");
   const btnRun = document.getElementById("btnRunBatchAnalysis");
 
+  if (branchSelect) {
+    branchSelect.addEventListener("change", () => {
+      onBatchBranchChanged(branchSelect.value);
+    });
+  }
+
+  if (yearSelect) {
+    yearSelect.addEventListener("change", () => {
+      onBatchYearChanged(branchSelect ? branchSelect.value : "", yearSelect.value);
+    });
+  }
+
+  if (semesterSelect) {
+    semesterSelect.addEventListener("change", () => {
+      onBatchSemesterChanged(semesterSelect.value);
+    });
+  }
+
   if (batchSelect) {
     batchSelect.addEventListener("change", () => {
-      const selected = batchSelect.value;
-      if (selected) {
-        inspectBatchSuite(selected);
-      }
+      inspectCurrentBatchSelection();
     });
   }
 
   if (btnInspect) {
     btnInspect.addEventListener("click", () => {
-      const selected = batchSelect ? batchSelect.value : "";
-      if (selected) {
-        inspectBatchSuite(selected);
-      }
+      inspectCurrentBatchSelection();
     });
   }
 
@@ -5184,6 +5294,13 @@ function initBatchSuite() {
       document.querySelectorAll(".batch-tab-content").forEach(c => c.classList.add("hidden"));
       const targetEl = document.getElementById(targetId);
       if (targetEl) targetEl.classList.remove("hidden");
+      setTimeout(() => {
+        if (typeof batchChartInstances !== "undefined") {
+          Object.values(batchChartInstances).forEach(ch => {
+            if (ch && typeof ch.resize === "function") ch.resize();
+          });
+        }
+      }, 50);
     });
   });
 
@@ -5224,48 +5341,184 @@ function initBatchSuite() {
 }
 
 async function loadBatchSuiteDatasets() {
+  const branchSelect = document.getElementById("batchBranchSelect");
   const batchSelect = document.getElementById("batchSuiteSelect");
-  if (!batchSelect) return;
 
   try {
-    const res = await fetch("/api/batch-analysis/batches");
+    const res = await fetch("/api/batch-analysis/hierarchy");
     const data = await res.json();
-    if (data.success && Array.isArray(data.batches)) {
-      const prevVal = batchSelect.value;
-      batchSelect.innerHTML = '<option value="">-- Choose Historical Batch Folder --</option>';
-      data.batches.forEach(b => {
-        const opt = document.createElement("option");
-        opt.value = b.batch_name;
-        opt.textContent = `${b.batch_name} (${b.total_semesters} Semesters: ${b.excel_count} Excel, ${b.pdf_count} PDF)`;
-        batchSelect.appendChild(opt);
-      });
-      if (prevVal) {
-        batchSelect.value = prevVal;
-      } else if (data.batches.length > 0) {
-        batchSelect.value = data.batches[0].batch_name;
-        inspectBatchSuite(data.batches[0].batch_name);
+    if (data.success && Array.isArray(data.branches)) {
+      cachedBatchHierarchy = data.branches;
+
+      // Populate Branch Select
+      if (branchSelect) {
+        const prevBranch = branchSelect.value;
+        branchSelect.innerHTML = '<option value="">-- Select Branch / Department --</option>';
+        cachedBatchHierarchy.forEach(b => {
+          const opt = document.createElement("option");
+          opt.value = b.id;
+          opt.textContent = `${b.display_name} (${b.years.length} Academic Years)`;
+          branchSelect.appendChild(opt);
+        });
+
+        const targetBranch = (prevBranch && cachedBatchHierarchy.some(b => b.id === prevBranch))
+          ? prevBranch
+          : (cachedBatchHierarchy.length > 0 ? cachedBatchHierarchy[0].id : "");
+
+        if (targetBranch) {
+          branchSelect.value = targetBranch;
+          onBatchBranchChanged(targetBranch);
+        }
+      }
+
+      // Populate legacy batchSelect for backward compatibility
+      if (batchSelect && Array.isArray(data.batches)) {
+        batchSelect.innerHTML = '<option value="">-- Choose Historical Batch Folder --</option>';
+        data.batches.forEach(b => {
+          const opt = document.createElement("option");
+          opt.value = b.batch_name;
+          opt.textContent = b.display_name || b.batch_name;
+          batchSelect.appendChild(opt);
+        });
       }
     }
   } catch (err) {
-    console.warn("Failed to load batch list:", err);
+    console.warn("Failed to load batch hierarchy:", err);
+  }
+}
+
+function onBatchBranchChanged(branchId) {
+  const yearSelect = document.getElementById("batchYearSelect");
+  const semesterSelect = document.getElementById("batchSemesterSelect");
+  const branchInput = document.getElementById("batchBranchInput");
+
+  if (branchInput) branchInput.value = branchId || "AIDS";
+
+  if (!yearSelect) return;
+
+  if (!branchId) {
+    yearSelect.innerHTML = '<option value="">-- Select Academic Year --</option>';
+    yearSelect.disabled = true;
+    if (semesterSelect) {
+      semesterSelect.innerHTML = '<option value="all">⚡ All Semesters (Sem 1–8 Full Suite)</option>';
+      semesterSelect.disabled = true;
+    }
+    return;
+  }
+
+  const branchObj = cachedBatchHierarchy.find(b => b.id === branchId);
+  if (!branchObj || !Array.isArray(branchObj.years) || branchObj.years.length === 0) {
+    yearSelect.innerHTML = '<option value="">-- No Academic Years Found --</option>';
+    yearSelect.disabled = true;
+    return;
+  }
+
+  yearSelect.innerHTML = '<option value="">-- Select Academic Year --</option>';
+  branchObj.years.forEach(y => {
+    const opt = document.createElement("option");
+    opt.value = y.year;
+    opt.textContent = `${y.year} (${y.total_semesters} Semesters: ${y.excel_count} Excel, ${y.pdf_count} PDF)`;
+    yearSelect.appendChild(opt);
+  });
+
+  yearSelect.disabled = false;
+  // Select first year by default
+  yearSelect.value = branchObj.years[0].year;
+  onBatchYearChanged(branchId, branchObj.years[0].year);
+}
+
+function onBatchYearChanged(branchId, yearVal) {
+  const semesterSelect = document.getElementById("batchSemesterSelect");
+  const batchSelect = document.getElementById("batchSuiteSelect");
+
+  if (!yearVal) {
+    if (semesterSelect) {
+      semesterSelect.innerHTML = '<option value="all">⚡ All Semesters (Sem 1–8 Full Suite)</option>';
+      semesterSelect.disabled = true;
+    }
+    return;
+  }
+
+  const branchObj = cachedBatchHierarchy.find(b => b.id === branchId);
+  const yearObj = branchObj ? branchObj.years.find(y => y.year === yearVal) : null;
+
+  if (batchSelect && yearObj) {
+    batchSelect.value = yearObj.batch_folder;
+  }
+
+  if (semesterSelect && yearObj) {
+    semesterSelect.innerHTML = "";
+    const allOpt = document.createElement("option");
+    allOpt.value = "all";
+    allOpt.textContent = `⚡ All Semesters (${yearObj.total_semesters} Detected: Sem ${yearObj.semesters.join(', ')})`;
+    semesterSelect.appendChild(allOpt);
+
+    (yearObj.semesters_detected || []).forEach(s => {
+      const opt = document.createElement("option");
+      opt.value = String(s.semester);
+      opt.textContent = `Semester ${s.semester} (${s.file_type.toUpperCase()}: ${s.filename})`;
+      semesterSelect.appendChild(opt);
+    });
+
+    semesterSelect.disabled = false;
+    semesterSelect.value = "all";
+  }
+
+  inspectCurrentBatchSelection();
+}
+
+function onBatchSemesterChanged(semVal) {
+  // Update visual focus in the 8-semester grid
+  for (let s = 1; s <= 8; s++) {
+    const card = document.getElementById(`semCard${s}`);
+    if (!card) continue;
+    card.classList.remove("highlighted", "dimmed");
+    if (semVal !== "all") {
+      if (String(s) === String(semVal)) {
+        card.classList.add("highlighted");
+      } else {
+        card.classList.add("dimmed");
+      }
+    }
   }
 }
 
 async function inspectBatchSuite(batchName) {
+  // Alias for backward compatibility
+  inspectCurrentBatchSelection();
+}
+
+async function inspectCurrentBatchSelection() {
+  const branchSelect = document.getElementById("batchBranchSelect");
+  const yearSelect = document.getElementById("batchYearSelect");
+  const semesterSelect = document.getElementById("batchSemesterSelect");
+  const batchSelect = document.getElementById("batchSuiteSelect");
   const branchInput = document.getElementById("batchBranchInput");
-  const branch = branchInput ? branchInput.value.trim() : "AIDS";
   const btnRun = document.getElementById("btnRunBatchAnalysis");
   const hintEl = document.getElementById("batchReadyHint");
   const detectSummary = document.getElementById("batchDetectSummary");
   const promptBanner = document.getElementById("batchExcelPromptBanner");
 
-  if (hintEl) hintEl.textContent = "Scanning batch documents...";
+  const branch = branchSelect ? branchSelect.value : (branchInput ? branchInput.value : "AIDS");
+  const year = yearSelect ? yearSelect.value : "";
+  const semVal = semesterSelect ? semesterSelect.value : "all";
+  let batchName = (branch && year) ? `${branch}/${year}` : (batchSelect ? batchSelect.value : "");
+
+  if (!batchName) return;
+
+  if (hintEl) hintEl.textContent = `Scanning batch ${batchName}...`;
 
   try {
     const res = await fetch("/api/batch-analysis/inspect", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ batch_name: batchName, target_branch: branch })
+      body: JSON.stringify({
+        batch_name: batchName,
+        branch: branch,
+        academic_year: year,
+        semester: semVal,
+        target_branch: branch
+      })
     });
     const data = await res.json();
     if (data.success) {
@@ -5277,20 +5530,29 @@ async function inspectBatchSuite(batchName) {
       for (let s = 1; s <= 8; s++) {
         const card = document.getElementById(`semCard${s}`);
         if (!card) continue;
+        card.className = "sem-card";
         if (semMap[s]) {
           const info = semMap[s];
-          card.className = "sem-card detected";
+          card.classList.add("detected");
           card.innerHTML = `
             <span class="sem-num-badge">Sem ${s}</span>
             <span class="sem-file-type ${info.file_type}">${info.file_type.toUpperCase()}</span>
             <span class="sem-filename-text" title="${info.filename}">${info.filename}</span>
           `;
         } else {
-          card.className = "sem-card missing";
+          card.classList.add("missing");
           card.innerHTML = `
             <span class="sem-num-badge">Sem ${s}</span>
             <span class="sem-filename-text" style="color: #64748B;">Not Found</span>
           `;
+        }
+
+        if (semVal !== "all") {
+          if (String(s) === String(semVal)) {
+            card.classList.add("highlighted");
+          } else {
+            card.classList.add("dimmed");
+          }
         }
       }
 
@@ -5312,7 +5574,7 @@ async function inspectBatchSuite(batchName) {
         btnRun.disabled = (data.total_semesters === 0);
       }
       if (hintEl) {
-        hintEl.textContent = `${data.total_semesters} Semesters ready for cross-semester analysis.`;
+        hintEl.textContent = `${data.total_semesters} Semesters ready for ${data.branch || branch} ${data.academic_year || year} analysis.`;
       }
     } else {
       if (hintEl) hintEl.textContent = data.error || "Failed to inspect batch.";
@@ -5323,6 +5585,9 @@ async function inspectBatchSuite(batchName) {
 }
 
 async function runBatchAnalysisAction() {
+  const branchSelect = document.getElementById("batchBranchSelect");
+  const yearSelect = document.getElementById("batchYearSelect");
+  const semesterSelect = document.getElementById("batchSemesterSelect");
   const batchSelect = document.getElementById("batchSuiteSelect");
   const branchInput = document.getElementById("batchBranchInput");
   const pdfSelect = document.getElementById("batchPdfPipelineSelect");
@@ -5334,8 +5599,10 @@ async function runBatchAnalysisAction() {
   const pBar = document.getElementById("batchProgressBar");
   const pPct = document.getElementById("batchProgressPercentage");
 
-  const batchName = batchSelect ? batchSelect.value : "";
-  const branch = branchInput ? branchInput.value.trim() : "AIDS";
+  const branch = branchSelect ? branchSelect.value : (branchInput ? branchInput.value.trim() : "AIDS");
+  const year = yearSelect ? yearSelect.value : "";
+  const semester = semesterSelect ? semesterSelect.value : "all";
+  const batchName = (branch && year) ? `${branch}/${year}` : (batchSelect ? batchSelect.value : "");
   const pdfEngine = pdfSelect ? pdfSelect.value : "local";
   const excelMode = excelSelect ? excelSelect.value : "direct";
 
@@ -5346,7 +5613,7 @@ async function runBatchAnalysisAction() {
   if (progressSec) progressSec.classList.remove("hidden");
   if (pBar) pBar.style.width = "2%";
   if (pPct) pPct.textContent = "2%";
-  if (pMsg) pMsg.textContent = "Initiating multi-semester batch analysis...";
+  if (pMsg) pMsg.textContent = `Initiating analysis for ${branch} ${year || batchName}...`;
 
   try {
     const res = await fetch("/api/batch-analysis/run", {
@@ -5354,6 +5621,9 @@ async function runBatchAnalysisAction() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         batch_name: batchName,
+        branch: branch,
+        academic_year: year,
+        semester: semester,
         target_branch: branch,
         pdf_pipeline: pdfEngine,
         excel_mode: excelMode
@@ -5449,6 +5719,11 @@ function renderBatchDashboard(analytics, jobId) {
   setEl("kpiBatchNoKtSub", `${sr.passed_without_backlogs || 0} Cleared Zero KT`);
   setEl("kpiBatchSuccessRateWithKt", `${sr.success_rate_with_backlog_percentage !== undefined ? sr.success_rate_with_backlog_percentage : 0}%`);
   setEl("kpiBatchWithKtSub", `${sr.passed_with_backlogs || 0} Cleared Backlogs`);
+  setEl("kpiBatchDiploma", sr.diploma_intake_count !== undefined ? sr.diploma_intake_count : (sr.lateral_entry_n3 || 0));
+  setEl("kpiBatchMultipleEntry", sr.multiple_entry_count !== undefined ? sr.multiple_entry_count : 0);
+  setEl("kpiBatchMultipleExit", sr.multiple_exit_after_y1_count !== undefined ? sr.multiple_exit_after_y1_count : 0);
+  setEl("badgeBatchExitCount", `${sr.multiple_exit_after_y1_count || 0} Students`);
+  setEl("badgeBatchEntryCount", `${sr.multiple_entry_count || 0} Students`);
 
   // Cohort Breakdown Table
   const breakdownBody = document.getElementById("batchSuccessBreakdownBody");
@@ -5467,6 +5742,51 @@ function renderBatchDashboard(analytics, jobId) {
       `;
       breakdownBody.appendChild(tr);
     });
+  }
+
+  // Multiple Exit Students Table
+  const exitBody = document.getElementById("batchMultipleExitBody");
+  if (exitBody) {
+    exitBody.innerHTML = "";
+    const exitList = sr.multiple_exit_students || [];
+    if (exitList.length > 0) {
+      exitList.forEach((st, idx) => {
+        const tr = document.createElement("tr");
+        const semsStr = (st.semesters_appeared || []).map(s => `Sem ${s}`).join(", ");
+        tr.innerHTML = `
+          <td>${idx + 1}</td>
+          <td><strong>${st.name}</strong></td>
+          <td style="font-family: monospace; font-size:0.75rem;">${st.prn || "N/A"}</td>
+          <td>${semsStr}</td>
+          <td><span class="badge-na">${st.exit_status || "Multiple Exit (after First Year)"}</span></td>
+        `;
+        exitBody.appendChild(tr);
+      });
+    } else {
+      exitBody.innerHTML = '<tr><td colspan="5" class="empty-cell">No multiple exit records.</td></tr>';
+    }
+  }
+
+  // Multiple Entry Students Table
+  const entryBody = document.getElementById("batchMultipleEntryBody");
+  if (entryBody) {
+    entryBody.innerHTML = "";
+    const entryList = sr.multiple_entry_students_list || [];
+    if (entryList.length > 0) {
+      entryList.forEach((st, idx) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${idx + 1}</td>
+          <td><strong>${st.name}</strong></td>
+          <td style="font-family: monospace; font-size:0.75rem;">${st.prn || "N/A"}</td>
+          <td style="text-align:center;">Sem ${st.entry_semester || 3}</td>
+          <td><span class="badge-pass">${st.category || "Multiple Entry Student"}</span></td>
+        `;
+        entryBody.appendChild(tr);
+      });
+    } else {
+      entryBody.innerHTML = '<tr><td colspan="5" class="empty-cell">No multiple entry records.</td></tr>';
+    }
   }
 
   // Student Cross-Checking & Success Verification Roster
@@ -5811,6 +6131,9 @@ function renderBatchDashboard(analytics, jobId) {
       renderRawSemesterTable(sems[0]);
     }
   }
+
+  // 10. Render Interactive Multi-Semester Batch Charts
+  renderAllBatchCharts(analytics);
 }
 
 function renderRawSemesterTable(sem) {
@@ -5843,6 +6166,289 @@ function renderRawSemesterTable(sem) {
     `;
     tbody.appendChild(tr);
   });
+}
+
+// ==========================================================================
+// Batch Suite Interactive Charts (Chart.js Engine)
+// ==========================================================================
+let batchChartInstances = {};
+
+function destroyBatchCharts() {
+  Object.keys(batchChartInstances).forEach(k => {
+    if (batchChartInstances[k]) {
+      try { batchChartInstances[k].destroy(); } catch (e) {}
+      delete batchChartInstances[k];
+    }
+  });
+}
+
+function renderAllBatchCharts(analytics) {
+  if (typeof Chart === "undefined") return;
+  destroyBatchCharts();
+
+  const sr = analytics.success_rate_analysis || {};
+  const overall = analytics.overall_summary || {};
+  const semList = analytics.semester_wise_analysis || analytics.semester_analysis || [];
+  const ktList = analytics.kt_analysis || [];
+  const retList = analytics.retention_flow || [];
+
+  // 1. Chart: Admission Intake vs Final Graduation by Category
+  const ctxIntake = document.getElementById("chartBatchIntakeGrad");
+  if (ctxIntake) {
+    const bd = sr.breakdown || [];
+    const labels = bd.length > 0 ? bd.map(b => b.category) : ["Regular Intake (Sem 1)", "Lateral Entry (DSE)"];
+    const admitted = bd.length > 0 ? bd.map(b => b.admitted) : [sr.regular_intake_n1 || 0, sr.lateral_entry_n3 || 0];
+    const passed = bd.length > 0 ? bd.map(b => b.passed_final) : [sr.P_final_regular || 0, sr.P_final_lateral || 0];
+    const noKt = bd.length > 0 ? bd.map(b => b.passed_no_kt) : [sr.P_no_kt_regular || 0, sr.P_no_kt_lateral || 0];
+
+    batchChartInstances.intakeGrad = new Chart(ctxIntake, {
+      type: "bar",
+      data: {
+        labels: labels,
+        datasets: [
+          { label: "Admitted Intake", data: admitted, backgroundColor: "#1F4E78", borderRadius: 4 },
+          { label: "Passed Final Sem", data: passed, backgroundColor: "#10b981", borderRadius: 4 },
+          { label: "Cleared Zero KT", data: noKt, backgroundColor: "#3b82f6", borderRadius: 4 }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: "top", labels: { boxWidth: 12, font: { size: 11 } } },
+          tooltip: { mode: "index", intersect: false }
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+          y: { beginAtZero: true, grid: { color: "rgba(0,0,0,0.05)" } }
+        }
+      }
+    });
+  }
+
+  // 2. Chart: Final Graduation & Backlog Status Split
+  const ctxDonut = document.getElementById("chartBatchBacklogSplit");
+  if (ctxDonut) {
+    const pNoKt = sr.passed_without_backlogs || sr.P_no_kt_passed || 0;
+    const pWithKt = sr.passed_with_backlogs || sr.P_with_kt_passed || 0;
+    const totAdm = sr.total_admitted_n1_n3 || sr.total_cohort_intake || 0;
+    const pFinal = sr.passed_final_sem || sr.P_final_passed || 0;
+    const pending = Math.max(0, totAdm - pFinal);
+
+    batchChartInstances.backlogSplit = new Chart(ctxDonut, {
+      type: "doughnut",
+      data: {
+        labels: ["Cleared Zero KT", "Cleared With Backlogs", "Pending / Incomplete"],
+        datasets: [{
+          data: [pNoKt, pWithKt, pending],
+          backgroundColor: ["#10b981", "#f59e0b", "#94a3b8"],
+          borderWidth: 2,
+          borderColor: "#ffffff"
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: "right", labels: { boxWidth: 12, font: { size: 11 } } }
+        },
+        cutout: "60%"
+      }
+    });
+  }
+
+  // 3. Chart: Semester Pass Rate (%) Progression Trend
+  const ctxSemPass = document.getElementById("chartBatchSemPassTrend");
+  if (ctxSemPass && semList.length > 0) {
+    batchChartInstances.semPass = new Chart(ctxSemPass, {
+      type: "bar",
+      data: {
+        labels: semList.map(s => s.semester_name),
+        datasets: [{
+          label: "Pass Rate (%)",
+          data: semList.map(s => s.pass_percentage || 0),
+          backgroundColor: semList.map(s => (s.pass_percentage >= 75 ? "#10b981" : (s.pass_percentage >= 50 ? "#3b82f6" : "#ef4444"))),
+          borderRadius: 4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: (ctx) => `${ctx.raw}% Passed` } }
+        },
+        scales: {
+          x: { grid: { display: false } },
+          y: { beginAtZero: true, max: 100, ticks: { callback: v => v + "%" } }
+        }
+      }
+    });
+  }
+
+  // 4. Chart: Average SGPI Trajectory Trend
+  const ctxSemSgpi = document.getElementById("chartBatchSemSgpiTrend");
+  if (ctxSemSgpi && semList.length > 0) {
+    batchChartInstances.semSgpi = new Chart(ctxSemSgpi, {
+      type: "line",
+      data: {
+        labels: semList.map(s => s.semester_name),
+        datasets: [
+          {
+            label: "Average SGPI",
+            data: semList.map(s => s.average_sgpi || null),
+            borderColor: "#3b82f6",
+            backgroundColor: "rgba(59, 130, 246, 0.12)",
+            tension: 0.35,
+            fill: true,
+            pointRadius: 4,
+            pointBackgroundColor: "#3b82f6"
+          },
+          {
+            label: "Highest SGPI",
+            data: semList.map(s => s.highest_sgpi || null),
+            borderColor: "#f59e0b",
+            borderDash: [5, 4],
+            tension: 0.2,
+            pointRadius: 3,
+            fill: false
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: "top", labels: { boxWidth: 12 } }
+        },
+        scales: {
+          x: { grid: { display: false } },
+          y: { min: 4, max: 10 }
+        }
+      }
+    });
+  }
+
+  // 5. Chart: Cohort Grade Classification Distribution
+  const ctxGrade = document.getElementById("chartBatchGradeDist");
+  if (ctxGrade) {
+    const g = overall.grade_distribution || {};
+    batchChartInstances.gradeDist = new Chart(ctxGrade, {
+      type: "doughnut",
+      data: {
+        labels: ["Distinction (≥7.5)", "First Class (6.75-7.5)", "Second Class (6.0-6.75)", "Pass Class (<6.0)"],
+        datasets: [{
+          data: [g.distinction || 0, g.first_class || 0, g.second_class || 0, g.pass_class || 0],
+          backgroundColor: ["#10b981", "#3b82f6", "#f59e0b", "#94a3b8"],
+          borderWidth: 2
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: "right", labels: { boxWidth: 12 } } },
+        cutout: "60%"
+      }
+    });
+  }
+
+  // 6. Chart: Cohort Clearance & Backlog Distribution
+  const ctxComp = document.getElementById("chartBatchCompletionRatio");
+  if (ctxComp) {
+    batchChartInstances.completionRatio = new Chart(ctxComp, {
+      type: "bar",
+      data: {
+        labels: ["Cleared All (Zero KT)", "Encountered KT", "Graduated (Sem 8)"],
+        datasets: [{
+          label: "Students",
+          data: [
+            overall.cleared_all_available_semesters || 0,
+            overall.students_with_any_kt || 0,
+            overall.graduated_eligible || 0
+          ],
+          backgroundColor: ["#10b981", "#ef4444", "#3b82f6"],
+          borderRadius: 4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { display: false } },
+          y: { beginAtZero: true }
+        }
+      }
+    });
+  }
+
+  // 7. Chart: Semester Backlog Burden
+  const ctxKt = document.getElementById("chartBatchKtBurden");
+  if (ctxKt && ktList.length > 0) {
+    batchChartInstances.ktBurden = new Chart(ctxKt, {
+      type: "bar",
+      data: {
+        labels: ktList.map(k => k.semester_name),
+        datasets: [
+          {
+            label: "KT Students",
+            data: ktList.map(k => k.kt_students || 0),
+            backgroundColor: "#ef4444",
+            borderRadius: 4
+          },
+          {
+            label: "KT Subjects Count",
+            data: ktList.map(k => (typeof k.total_kt_subjects === "number" ? k.total_kt_subjects : 0)),
+            backgroundColor: "#f97316",
+            borderRadius: 4
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: "top", labels: { boxWidth: 12 } } },
+        scales: {
+          x: { grid: { display: false } },
+          y: { beginAtZero: true }
+        }
+      }
+    });
+  }
+
+  // 8. Chart: Retention & Progression Flow
+  const ctxRet = document.getElementById("chartBatchRetentionFlow");
+  if (ctxRet && retList.length > 0) {
+    batchChartInstances.retentionFlow = new Chart(ctxRet, {
+      type: "bar",
+      data: {
+        labels: retList.map(r => r.transition),
+        datasets: [
+          {
+            label: "Continuing Students",
+            data: retList.map(r => r.continuing_students || 0),
+            backgroundColor: "#3b82f6",
+            borderRadius: 4
+          },
+          {
+            label: "Lateral / New Entry",
+            data: retList.map(r => r.lateral_new_students || 0),
+            backgroundColor: "#10b981",
+            borderRadius: 4
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: "top", labels: { boxWidth: 12 } } },
+        scales: {
+          x: { grid: { display: false } },
+          y: { beginAtZero: true }
+        }
+      }
+    });
+  }
 }
 
 // ==========================================================================

@@ -21,6 +21,7 @@ import re
 from typing import Any, Dict, List, Optional, Union
 
 import openpyxl
+from openpyxl.chart import BarChart, LineChart, DoughnutChart, Reference
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
@@ -284,6 +285,10 @@ class BatchExcelReportGenerator:
         sr_with_kt_pct = sr_data.get("success_rate_with_backlog_percentage", 0.0)
 
         # Top KPI Cards (Row 8 - 10)
+        dip_cnt = sr_data.get("diploma_intake_count", n3)
+        me_cnt = sr_data.get("multiple_entry_count", 0)
+        mex_cnt = sr_data.get("multiple_exit_after_y1_count", 0)
+
         cards = [
             ("REGULAR INTAKE (N1)", n1, "Admitted Sem 1"),
             ("LATERAL ENTRY (N3)", n3, "Admitted Sem 3 (DSE)"),
@@ -292,6 +297,9 @@ class BatchExcelReportGenerator:
             ("OFFICIAL SUCCESS RATE", f"{sr_pct:.1f}%", "P / (N1 + N3)"),
             ("WITHOUT BACKLOG (P_no_kt)", f"{sr_no_kt_pct:.1f}%", f"{p_no_kt} Cleared Zero KT"),
             ("WITH BACKLOG (P_with_kt)", f"{sr_with_kt_pct:.1f}%", f"{p_with_kt} Cleared Backlogs"),
+            ("DIPLOMA INTAKE", dip_cnt, "Lateral Entry (DSE)"),
+            ("MULTIPLE ENTRY", me_cnt, "Flexible Entry"),
+            ("MULTIPLE EXIT (Y1)", mex_cnt, "Left After Year 1"),
         ]
 
         col_curr = 2
@@ -316,7 +324,7 @@ class BatchExcelReportGenerator:
 
             col_curr += 1
 
-        # Table 1: Regular vs Lateral Progression Breakdown (Row 12)
+        # Table 1: Admission Cohort Breakdown & Completion Audit (Row 12)
         ws.cell(row=12, column=2, value="1. ADMISSION COHORT BREAKDOWN & COMPLETION AUDIT").font = SECTION_FONT
 
         tbl1_headers = [
@@ -330,23 +338,39 @@ class BatchExcelReportGenerator:
             c.alignment = ALIGN_CENTER
             c.border = HEADER_BORDER
 
-        reg_p = sr_data.get("P_final_regular", 0)
-        reg_no_kt = sr_data.get("P_no_kt_regular", 0)
-        reg_with_kt = max(0, reg_p - reg_no_kt)
-        reg_sr = sr_data.get("regular_success_rate", 0.0)
+        breakdown_items = sr_data.get("breakdown", [])
+        cohort_rows = []
+        if breakdown_items:
+            for b in breakdown_items:
+                cohort_rows.append((
+                    b.get("category", ""),
+                    b.get("entry_sem", ""),
+                    b.get("admitted", 0),
+                    b.get("passed_final", 0),
+                    b.get("passed_no_kt", 0),
+                    b.get("passed_with_kt", 0),
+                    b.get("success_rate", 0.0)
+                ))
+            cohort_rows.append(("Total Degree Cohort", "Sem 1 + Sem 3", tot_intake, p_final, p_no_kt, p_with_kt, sr_pct))
+        else:
+            reg_p = sr_data.get("P_final_regular", 0)
+            reg_no_kt = sr_data.get("P_no_kt_regular", 0)
+            reg_with_kt = max(0, reg_p - reg_no_kt)
+            reg_sr = sr_data.get("regular_success_rate", 0.0)
 
-        lat_p = sr_data.get("P_final_lateral", 0)
-        lat_no_kt = sr_data.get("P_no_kt_lateral", 0)
-        lat_with_kt = max(0, lat_p - lat_no_kt)
-        lat_sr = sr_data.get("lateral_success_rate", 0.0)
+            lat_p = sr_data.get("P_final_lateral", 0)
+            lat_no_kt = sr_data.get("P_no_kt_lateral", 0)
+            lat_with_kt = max(0, lat_p - lat_no_kt)
+            lat_sr = sr_data.get("lateral_success_rate", 0.0)
 
-        cohort_rows = [
-            ("Regular Intake Students", "Semester 1", n1, reg_p, reg_no_kt, reg_with_kt, reg_sr),
-            ("Lateral Entry / DSE Students", "Semester 3", n3, lat_p, lat_no_kt, lat_with_kt, lat_sr),
-            ("Total Degree Cohort", "Sem 1 + Sem 3", tot_intake, p_final, p_no_kt, p_with_kt, sr_pct),
-        ]
+            cohort_rows = [
+                ("Regular Intake Students", "Semester 1", n1, reg_p, reg_no_kt, reg_with_kt, reg_sr),
+                ("Lateral Entry / DSE Students", "Semester 3", n3, lat_p, lat_no_kt, lat_with_kt, lat_sr),
+                ("Total Degree Cohort", "Sem 1 + Sem 3", tot_intake, p_final, p_no_kt, p_with_kt, sr_pct),
+            ]
 
         r_curr = 14
+        tbl1_start_row = 14
         for cat_name, sem_lbl, adm_cnt, pass_cnt, nok_cnt, withk_cnt, cat_pct in cohort_rows:
             ws.cell(row=r_curr, column=2, value=cat_name).font = BOLD_DATA_FONT
             ws.cell(row=r_curr, column=3, value=sem_lbl).font = DATA_FONT
@@ -379,6 +403,109 @@ class BatchExcelReportGenerator:
                 if "Total" in cat_name:
                     ws.cell(row=r_curr, column=c).fill = GOLD_FILL
             r_curr += 1
+        tbl1_end_row = r_curr - 1
+
+        # Embed BarChart 1: Admission Intake vs Final Graduation by Category (Placed at J12)
+        try:
+            chart_sr = BarChart()
+            chart_sr.type = "col"
+            chart_sr.style = 10
+            chart_sr.title = "Admission Intake vs Final Graduation"
+            chart_sr.y_axis.title = "Number of Students"
+            chart_sr.x_axis.title = "Category"
+            chart_sr.width = 16
+            chart_sr.height = 11
+
+            # Exclude the "Total" row from the chart series
+            chart_rows_count = max(1, len(cohort_rows) - 1)
+            data_ref = Reference(ws, min_col=4, min_row=13, max_col=6, max_row=13 + chart_rows_count)
+            cats_ref = Reference(ws, min_col=2, min_row=14, max_row=13 + chart_rows_count)
+            chart_sr.add_data(data_ref, titles_from_data=True)
+            chart_sr.set_categories(cats_ref)
+            ws.add_chart(chart_sr, "J12")
+
+            # Reference mini-table for Doughnut Chart (Placed at Col R rows 12-16)
+            ws.cell(row=12, column=18, value="Graduation Status").font = BOLD_DATA_FONT
+            ws.cell(row=12, column=19, value="Candidates").font = BOLD_DATA_FONT
+            ws.cell(row=13, column=18, value="Cleared Zero KT").font = DATA_FONT
+            ws.cell(row=13, column=19, value=p_no_kt).font = BOLD_DATA_FONT
+            ws.cell(row=14, column=18, value="Cleared With KT").font = DATA_FONT
+            ws.cell(row=14, column=19, value=p_with_kt).font = BOLD_DATA_FONT
+            ws.cell(row=15, column=18, value="Incomplete / Pending").font = DATA_FONT
+            ws.cell(row=15, column=19, value=max(0, tot_intake - p_final)).font = BOLD_DATA_FONT
+            for r_sub in range(12, 16):
+                for c_sub in range(18, 20):
+                    ws.cell(row=r_sub, column=c_sub).border = CELL_BORDER
+
+            chart_donut = DoughnutChart()
+            chart_donut.title = "Graduation & Backlog Split"
+            chart_donut.style = 10
+            chart_donut.width = 14
+            chart_donut.height = 11
+            d_data = Reference(ws, min_col=19, min_row=12, max_row=15)
+            d_cats = Reference(ws, min_col=18, min_row=13, max_row=15)
+            chart_donut.add_data(d_data, titles_from_data=True)
+            chart_donut.set_categories(d_cats)
+            ws.add_chart(chart_donut, "R17")
+        except Exception:
+            pass
+
+        # Table 1B: Multiple Exit Candidates (Exited after First Year)
+        multiple_exit_list = sr_data.get("multiple_exit_students", [])
+        if multiple_exit_list:
+            r_curr += 2
+            ws.cell(row=r_curr, column=2, value="1B. NEP 2020 MULTIPLE EXIT CANDIDATES (EXITED AFTER FIRST YEAR)").font = SECTION_FONT
+            r_curr += 1
+            me_headers = ["Sr No", "Student Name", "PRN", "Semesters Appeared", "Exit Classification & Status"]
+            for c_idx, h in enumerate(me_headers, start=2):
+                c = ws.cell(row=r_curr, column=c_idx, value=h)
+                c.font = NAVY_HEADER_FONT
+                c.fill = NAVY_HEADER_FILL
+                c.alignment = ALIGN_CENTER
+                c.border = HEADER_BORDER
+            r_curr += 1
+            for idx, mex in enumerate(multiple_exit_list, start=1):
+                ws.cell(row=r_curr, column=2, value=idx).font = DATA_FONT
+                ws.cell(row=r_curr, column=2).alignment = ALIGN_CENTER
+                ws.cell(row=r_curr, column=3, value=mex.get("name", "")).font = BOLD_DATA_FONT
+                ws.cell(row=r_curr, column=4, value=mex.get("prn", "") or "N/A").font = DATA_FONT
+                ws.cell(row=r_curr, column=4).alignment = ALIGN_CENTER
+                sems_str = ", ".join([f"Sem {s}" for s in mex.get("semesters_appeared", [])])
+                ws.cell(row=r_curr, column=5, value=sems_str).font = DATA_FONT
+                ws.cell(row=r_curr, column=5).alignment = ALIGN_CENTER
+                c_stat = ws.cell(row=r_curr, column=6, value=mex.get("exit_status", "Multiple Exit (after First Year)"))
+                c_stat.font = BOLD_DATA_FONT
+                c_stat.fill = CARD_BG_FILL
+                for c in range(2, 7):
+                    ws.cell(row=r_curr, column=c).border = CELL_BORDER
+                r_curr += 1
+
+        # Table 1C: Multiple Entry Candidates
+        multiple_entry_list = sr_data.get("multiple_entry_students_list", [])
+        if multiple_entry_list:
+            r_curr += 2
+            ws.cell(row=r_curr, column=2, value="1C. NEP 2020 MULTIPLE ENTRY CANDIDATES").font = SECTION_FONT
+            r_curr += 1
+            mentry_headers = ["Sr No", "Student Name", "PRN", "Entry Semester", "Admission Classification"]
+            for c_idx, h in enumerate(mentry_headers, start=2):
+                c = ws.cell(row=r_curr, column=c_idx, value=h)
+                c.font = NAVY_HEADER_FONT
+                c.fill = NAVY_HEADER_FILL
+                c.alignment = ALIGN_CENTER
+                c.border = HEADER_BORDER
+            r_curr += 1
+            for idx, me_st in enumerate(multiple_entry_list, start=1):
+                ws.cell(row=r_curr, column=2, value=idx).font = DATA_FONT
+                ws.cell(row=r_curr, column=2).alignment = ALIGN_CENTER
+                ws.cell(row=r_curr, column=3, value=me_st.get("name", "")).font = BOLD_DATA_FONT
+                ws.cell(row=r_curr, column=4, value=me_st.get("prn", "") or "N/A").font = DATA_FONT
+                ws.cell(row=r_curr, column=4).alignment = ALIGN_CENTER
+                ws.cell(row=r_curr, column=5, value=f"Semester {me_st.get('entry_semester', 3)}").font = DATA_FONT
+                ws.cell(row=r_curr, column=5).alignment = ALIGN_CENTER
+                ws.cell(row=r_curr, column=6, value=me_st.get("category", "Multiple Entry Student")).font = DATA_FONT
+                for c in range(2, 7):
+                    ws.cell(row=r_curr, column=c).border = CELL_BORDER
+                r_curr += 1
 
         # Table 2: Student Cross-Checking Progression & Verification Roster (Row 18)
         r_curr += 2
@@ -582,6 +709,21 @@ class BatchExcelReportGenerator:
                     ws.cell(row=r_curr, column=c).fill = ZEBRA_FILL
             r_curr += 1
 
+        # Embed Doughnut Chart for Grade Distribution
+        try:
+            chart_grade = DoughnutChart()
+            chart_grade.title = "Cohort Grade Distribution"
+            chart_grade.style = 10
+            chart_grade.width = 15
+            chart_grade.height = 11
+            d_data = Reference(ws, min_col=4, min_row=r_curr - len(grade_rows) - 1, max_row=r_curr - 1)
+            d_cats = Reference(ws, min_col=2, min_row=r_curr - len(grade_rows), max_row=r_curr - 1)
+            chart_grade.add_data(d_data, titles_from_data=True)
+            chart_grade.set_categories(d_cats)
+            ws.add_chart(chart_grade, "G10")
+        except Exception:
+            pass
+
         auto_fit_columns(ws, min_width=14, max_width=45)
 
     # -----------------------------------------------------------------
@@ -685,6 +827,42 @@ class BatchExcelReportGenerator:
                 ws.cell(row=r_curr, column=col).border = CELL_BORDER
 
             r_curr += 1
+
+        # Embed Charts for Semester Performance Progression
+        try:
+            if self.semester_analysis:
+                sem_rows_cnt = len(self.semester_analysis)
+                # 1. BarChart: Pass Rate (%)
+                chart_pass = BarChart()
+                chart_pass.type = "col"
+                chart_pass.style = 10
+                chart_pass.title = "Semester Pass Rate (%)"
+                chart_pass.y_axis.title = "Pass Rate (%)"
+                chart_pass.x_axis.title = "Semester"
+                chart_pass.width = 16
+                chart_pass.height = 11
+                data_pass = Reference(ws, min_col=9, min_row=5, max_row=5 + sem_rows_cnt)
+                cats_pass = Reference(ws, min_col=2, min_row=6, max_row=5 + sem_rows_cnt)
+                chart_pass.add_data(data_pass, titles_from_data=True)
+                chart_pass.set_categories(cats_pass)
+                chart_pass.legend = None
+                ws.add_chart(chart_pass, "U5")
+
+                # 2. LineChart: Average SGPI Trend
+                chart_sgpi = LineChart()
+                chart_sgpi.title = "Average SGPI Progression Trend"
+                chart_sgpi.style = 13
+                chart_sgpi.y_axis.title = "Average SGPI"
+                chart_sgpi.x_axis.title = "Semester"
+                chart_sgpi.width = 16
+                chart_sgpi.height = 11
+                data_sgpi = Reference(ws, min_col=11, min_row=5, max_row=5 + sem_rows_cnt)
+                chart_sgpi.add_data(data_sgpi, titles_from_data=True)
+                chart_sgpi.set_categories(cats_pass)
+                chart_sgpi.legend = None
+                ws.add_chart(chart_sgpi, "U20")
+        except Exception:
+            pass
 
         auto_fit_columns(ws, min_width=12, max_width=30)
 
@@ -869,6 +1047,27 @@ class BatchExcelReportGenerator:
 
             r_curr += 1
 
+        # Embed BarChart for Semester KT Burden
+        try:
+            if self.kt_analysis:
+                kt_cnt = len(self.kt_analysis)
+                chart_kt = BarChart()
+                chart_kt.type = "col"
+                chart_kt.style = 10
+                chart_kt.title = "Semester Backlog / KT Burden"
+                chart_kt.y_axis.title = "Student Count"
+                chart_kt.x_axis.title = "Semester"
+                chart_kt.width = 16
+                chart_kt.height = 11
+                data_kt = Reference(ws, min_col=4, min_row=6, max_row=6 + kt_cnt)
+                cats_kt = Reference(ws, min_col=2, min_row=7, max_row=6 + kt_cnt)
+                chart_kt.add_data(data_kt, titles_from_data=True)
+                chart_kt.set_categories(cats_kt)
+                chart_kt.legend = None
+                ws.add_chart(chart_kt, "I5")
+        except Exception:
+            pass
+
         # Table 2: Repeated KT Occurrences
         r_curr += 2
         ws.cell(row=r_curr, column=2, value="2. REPEATED KT OCCURRENCES (STUDENTS WITH KT IN ≥ 2 SEMESTERS)").font = SECTION_FONT
@@ -1047,6 +1246,26 @@ class BatchExcelReportGenerator:
                 ws.cell(row=r_curr, column=c).border = CELL_BORDER
 
             r_curr += 1
+
+        # Embed BarChart for Retention & Lateral Entry Flow
+        try:
+            if self.retention_flow:
+                ret_cnt = len(self.retention_flow)
+                chart_ret = BarChart()
+                chart_ret.type = "col"
+                chart_ret.style = 10
+                chart_ret.title = "Student Retention & Intake Transitions"
+                chart_ret.y_axis.title = "Student Count"
+                chart_ret.x_axis.title = "Transition"
+                chart_ret.width = 16
+                chart_ret.height = 11
+                data_ret = Reference(ws, min_col=7, min_row=6, max_col=8, max_row=6 + ret_cnt)
+                cats_ret = Reference(ws, min_col=2, min_row=7, max_row=6 + ret_cnt)
+                chart_ret.add_data(data_ret, titles_from_data=True)
+                chart_ret.set_categories(cats_ret)
+                ws.add_chart(chart_ret, "K5")
+        except Exception:
+            pass
 
         # Table 2: Multi-Semester Persistence Summary
         r_curr += 2

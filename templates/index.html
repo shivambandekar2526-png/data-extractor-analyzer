@@ -4,11 +4,27 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Data Extractor AI — Autonomous Document Intelligence</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=3.6">
+  <link rel="stylesheet" href="/static/css/style.css?v=3.8">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <script>
+    (function() {
+      try {
+        const saved = localStorage.getItem('data-extractor-ai-theme') || localStorage.getItem('theme');
+        const theme = saved || 'dark';
+        document.documentElement.setAttribute('data-theme', theme);
+        if (theme === 'light') {
+          document.documentElement.classList.add('light-theme');
+          document.documentElement.classList.remove('dark-theme');
+        } else {
+          document.documentElement.classList.add('dark-theme');
+          document.documentElement.classList.remove('light-theme');
+        }
+      } catch (e) {}
+    })();
+  </script>
 </head>
 <body class="dark-theme">
   <header class="app-header">
@@ -51,6 +67,28 @@
         <span class="status-dot green"></span>
         <span>Pre-Trained (4 Archetypes)</span>
       </div>
+      <!-- Day / Night Mode Toggle -->
+      <button type="button" id="themeToggleBtn" class="btn-theme-toggle" title="Toggle Day / Night mode" aria-label="Toggle Day / Night mode">
+        <span class="theme-icon icon-sun" aria-hidden="true">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+        </span>
+        <span class="theme-icon icon-moon" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </span>
+        <span class="theme-label" id="themeLabelText">Day</span>
+      </button>
     </div>
   </header>
 
@@ -751,24 +789,42 @@
           <span class="tag tag-accent">Sem 1 ➔ 8 Suite</span>
         </div>
 
-        <!-- Controls Row -->
+        <!-- Cascading Controls Row: Branch -> Academic Year -> Semesters -->
         <div class="batch-controls-row">
           <div>
-            <label class="batch-select-label" for="batchSuiteSelect">Select Academic Batch Dataset:</label>
-            <select id="batchSuiteSelect" class="form-select">
-              <option value="">-- Choose Historical Batch Folder --</option>
+            <label class="batch-select-label" for="batchBranchSelect">
+              <span class="batch-step-badge">1</span> Branch / Department:
+            </label>
+            <select id="batchBranchSelect" class="form-select">
+              <option value="">-- Select Branch --</option>
             </select>
           </div>
           <div>
-            <label class="batch-select-label" for="batchBranchInput">Department / Branch Filter:</label>
-            <input type="text" id="batchBranchInput" class="form-input" value="AIDS" placeholder="e.g. AIDS, COMP, IT, MECH">
+            <label class="batch-select-label" for="batchYearSelect">
+              <span class="batch-step-badge">2</span> Academic Year:
+            </label>
+            <select id="batchYearSelect" class="form-select" disabled>
+              <option value="">-- Select Academic Year --</option>
+            </select>
           </div>
           <div>
-            <button type="button" id="btnInspectBatch" class="btn btn-outline" style="height: 40px; margin-top: auto;">
-              <span>🔍 Scan Semesters</span>
+            <label class="batch-select-label" for="batchSemesterSelect">
+              <span class="batch-step-badge">3</span> Semesters (1–8):
+            </label>
+            <select id="batchSemesterSelect" class="form-select" disabled>
+              <option value="all">⚡ All Semesters (Sem 1–8 Full Suite)</option>
+            </select>
+          </div>
+          <div>
+            <button type="button" id="btnInspectBatch" class="btn btn-outline" style="height: 42px; margin-top: auto;" title="Scan directory for semester files">
+              <span>🔍 Scan</span>
             </button>
           </div>
         </div>
+
+        <!-- Hidden legacy inputs for backward compatibility -->
+        <input type="hidden" id="batchBranchInput" value="AIDS">
+        <select id="batchSuiteSelect" class="form-select hidden" style="display: none;"></select>
 
         <!-- Semester 1-8 Visual Discovery Matrix -->
         <div class="semester-grid-title">
@@ -947,6 +1003,43 @@
               <strong class="eda-kpi-value text-warning" id="kpiBatchSuccessRateWithKt">0%</strong>
               <span class="eda-kpi-sub" id="kpiBatchWithKtSub">0 Cleared Backlogs</span>
             </div>
+            <div class="eda-kpi-card">
+              <span class="eda-kpi-label">DIPLOMA INTAKE (DSE)</span>
+              <strong class="eda-kpi-value text-accent" id="kpiBatchDiploma">0</strong>
+              <span class="eda-kpi-sub">Admitted Lateral Entry</span>
+            </div>
+            <div class="eda-kpi-card">
+              <span class="eda-kpi-label">MULTIPLE ENTRY</span>
+              <strong class="eda-kpi-value" id="kpiBatchMultipleEntry">0</strong>
+              <span class="eda-kpi-sub">NEP 2020 Flexible Entry</span>
+            </div>
+            <div class="eda-kpi-card">
+              <span class="eda-kpi-label">MULTIPLE EXIT (Y1)</span>
+              <strong class="eda-kpi-value text-warning" id="kpiBatchMultipleExit">0</strong>
+              <span class="eda-kpi-sub">Left After First Year</span>
+            </div>
+          </div>
+
+          <!-- Visual Charts Row: Intake vs Grad & Backlog Split -->
+          <div class="eda-charts-grid" style="margin-top: 1.5rem; margin-bottom: 1.5rem;">
+            <div class="chart-box">
+              <div class="chart-header">
+                <h4>📊 Admission Intake vs. Final Graduation by Category</h4>
+                <span class="chart-tag">Accreditation Comparison</span>
+              </div>
+              <div class="chart-canvas-container" style="height: 270px;">
+                <canvas id="chartBatchIntakeGrad"></canvas>
+              </div>
+            </div>
+            <div class="chart-box">
+              <div class="chart-header">
+                <h4>🍩 Final Graduation &amp; Backlog Status Breakdown</h4>
+                <span class="chart-tag">P_no_kt vs. P_with_kt</span>
+              </div>
+              <div class="chart-canvas-container" style="height: 270px;">
+                <canvas id="chartBatchBacklogSplit"></canvas>
+              </div>
+            </div>
           </div>
 
           <!-- Regular vs Lateral Entry Progression Table -->
@@ -967,6 +1060,57 @@
                 </thead>
                 <tbody id="batchSuccessBreakdownBody"></tbody>
               </table>
+            </div>
+          </div>
+
+          <!-- Multiple Exit & Multiple Entry Tables Grid -->
+          <div class="eda-tables-grid" style="margin-top: 1.8rem; margin-bottom: 1.8rem;">
+            <!-- Multiple Exit Candidates -->
+            <div class="eda-subtable-card">
+              <div class="subtable-header">
+                <h4>🚪 NEP 2020 Multiple Exit Students (Left After First Year)</h4>
+                <span class="subtable-badge text-warning" id="badgeBatchExitCount">4 Students</span>
+              </div>
+              <div class="table-responsive-mini">
+                <table class="eda-mini-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Student Name</th>
+                      <th>PRN</th>
+                      <th>Semesters Appeared</th>
+                      <th>Exit Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="batchMultipleExitBody">
+                    <tr><td colspan="5" class="empty-cell">No multiple exit records.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Multiple Entry Candidates -->
+            <div class="eda-subtable-card">
+              <div class="subtable-header">
+                <h4>🚪 NEP 2020 Multiple Entry Students (Flexible Entry)</h4>
+                <span class="subtable-badge text-accent" id="badgeBatchEntryCount">11 Students</span>
+              </div>
+              <div class="table-responsive-mini">
+                <table class="eda-mini-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Student Name</th>
+                      <th>PRN</th>
+                      <th>Entry Sem</th>
+                      <th>Category</th>
+                    </tr>
+                  </thead>
+                  <tbody id="batchMultipleEntryBody">
+                    <tr><td colspan="5" class="empty-cell">No multiple entry records.</td></tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 
@@ -1007,6 +1151,28 @@
 
         <!-- TAB 2: Semester-Wise Result Analysis -->
         <div id="tabBatchSemester" class="batch-tab-content hidden">
+          <!-- Visual Charts Row: Semester Pass Rate & SGPI Trend -->
+          <div class="eda-charts-grid" style="margin-bottom: 1.5rem;">
+            <div class="chart-box">
+              <div class="chart-header">
+                <h4>📈 Semester Pass Rate (%) Progression</h4>
+                <span class="chart-tag">Sem 1 to Sem 8</span>
+              </div>
+              <div class="chart-canvas-container" style="height: 260px;">
+                <canvas id="chartBatchSemPassTrend"></canvas>
+              </div>
+            </div>
+            <div class="chart-box">
+              <div class="chart-header">
+                <h4>🎯 Average SGPI Trajectory Trend</h4>
+                <span class="chart-tag">Academic Scoring Mean</span>
+              </div>
+              <div class="chart-canvas-container" style="height: 260px;">
+                <canvas id="chartBatchSemSgpiTrend"></canvas>
+              </div>
+            </div>
+          </div>
+
           <div class="batch-table-container">
             <table id="batchSemesterTable">
               <thead>
@@ -1087,6 +1253,28 @@
               </table>
             </div>
           </div>
+
+          <!-- Visual Charts Row: Grade Distribution & Cohort Clearance Split -->
+          <div class="eda-charts-grid" style="margin-top: 1.5rem; margin-bottom: 1.5rem;">
+            <div class="chart-box">
+              <div class="chart-header">
+                <h4>🎓 Cohort Grade Classification Distribution</h4>
+                <span class="chart-tag">Distinction to Pass Class</span>
+              </div>
+              <div class="chart-canvas-container" style="height: 270px;">
+                <canvas id="chartBatchGradeDist"></canvas>
+              </div>
+            </div>
+            <div class="chart-box">
+              <div class="chart-header">
+                <h4>⚖️ Cohort Clearance &amp; Backlog Distribution</h4>
+                <span class="chart-tag">Zero KT vs ATKT Encountered</span>
+              </div>
+              <div class="chart-canvas-container" style="height: 270px;">
+                <canvas id="chartBatchCompletionRatio"></canvas>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- TAB 3: Student Progression -->
@@ -1104,6 +1292,17 @@
 
         <!-- TAB 4: KT Analysis -->
         <div id="tabBatchKt" class="batch-tab-content hidden">
+          <!-- Visual Chart: Semester KT Burden -->
+          <div class="chart-box" style="margin-bottom: 1.5rem;">
+            <div class="chart-header">
+              <h4>⚠️ Semester Backlog Burden (Students with KT &amp; Subjects)</h4>
+              <span class="chart-tag">Remedial Tracking</span>
+            </div>
+            <div class="chart-canvas-container" style="height: 270px;">
+              <canvas id="chartBatchKtBurden"></canvas>
+            </div>
+          </div>
+
           <h4 style="margin-bottom: 0.8rem;">⚠️ Semester-Wise Backlog Burden</h4>
           <div class="batch-table-container" style="margin-bottom: 1.5rem;">
             <table id="batchKtTable">
@@ -1176,6 +1375,17 @@
 
         <!-- TAB 6: Retention & Progression -->
         <div id="tabBatchRetention" class="batch-tab-content hidden">
+          <!-- Visual Chart: Retention & Intake Transitions -->
+          <div class="chart-box" style="margin-bottom: 1.5rem;">
+            <div class="chart-header">
+              <h4>👥 Semester Retention &amp; Lateral Entry Transition Flow</h4>
+              <span class="chart-tag">Cohort Persistence</span>
+            </div>
+            <div class="chart-canvas-container" style="height: 270px;">
+              <canvas id="chartBatchRetentionFlow"></canvas>
+            </div>
+          </div>
+
           <h4 style="margin-bottom: 0.8rem;">👥 Semester Transition &amp; Progression Flow</h4>
           <div class="batch-table-container" style="margin-bottom: 1.5rem;">
             <table id="batchRetentionTable">
@@ -2170,6 +2380,6 @@
     <p>Data Extractor AI • Local GPU Acceleration • Independent Standalone Architecture</p>
   </footer>
 
-  <script src="/static/js/app.js?v=3.7"></script>
+  <script src="/static/js/app.js?v=3.8"></script>
 </body>
 </html>

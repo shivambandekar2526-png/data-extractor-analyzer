@@ -2798,5 +2798,244 @@
       }
     },
     "source": "heuristic_fallback"
+  },
+  "8cfb1d796a2ad8e1": {
+    "canonical_columns": {
+      "seat": "7000441",
+      "name": "NITESH_RAMESH_YAMUNA",
+      "gender": null,
+      "sgpi": "8.86",
+      "cgpi": null,
+      "total_marks": "547",
+      "max_marks": "7000441",
+      "result": "PASS",
+      "candidate_type": null
+    },
+    "courses": {},
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      }
+    },
+    "source": "ai_determined"
+  },
+  "4ddaa0af4b5a53b1": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "gender": null,
+      "sgpi": null,
+      "cgpi": null,
+      "total_marks": null,
+      "max_marks": null,
+      "result": null,
+      "candidate_type": null
+    },
+    "courses": {
+      "CSC301": {
+        "CREDITS": "CSC301_Credits",
+        "TH": "CSC301_TH",
+        "IA": "CSC301_IA",
+        "TOT": "CSC301_TOT",
+        "GP": "CSC301_GP",
+        "TW": "CSC301_TW",
+        "CG": "CSC301_CG"
+      },
+      "CSC302": {
+        "CREDITS": "CSC302_Credits",
+        "TH": "CSC302_TH",
+        "IA": "CSC302_IA",
+        "TOT": "CSC302_TOT",
+        "GP": "CSC302_GP",
+        "TW": "CSC302_TW",
+        "CG": "CSC302_CG"
+      },
+      "CSC303": {
+        "CREDITS": "CSC303_Credits",
+        "TH": "CSC303_TH",
+        "IA": "CSC303_IA",
+        "TOT": "CSC303_TOT",
+        "GP": "CSC303_GP",
+        "CG": "CSC303_CG"
+      },
+      "CSC304": {
+        "CREDITS": "CSC304_Credits",
+        "TH": "CSC304_TH",
+        "IA": "CSC304_IA",
+        "TOT": "CSC304_TOT",
+        "GP": "CSC304_GP",
+        "CG": "CSC304_CG"
+      },
+      "CSC305": {
+        "TH": "CSC305_TH",
+        "IA": "CSC305_IA",
+        "TOT": "CSC305_TOT",
+        "GP": "CSC305_GP"
+      },
+      "CSL301": {
+        "CREDITS": "CSL301_Credits",
+        "TW": "CSL301_TW",
+        "PR": "CSL301_PR",
+        "TOT": "CSL301_TOT",
+        "GP": "CSL301_GP",
+        "CG": "CSL301_CG"
+      },
+      "CSL303": {
+        "CREDITS": "CSL303_Credits",
+        "TW": "CSL303_TW",
+        "PR": "CSL303_PR",
+        "TOT": "CSL303_TOT",
+        "GP": "CSL303_GP",
+        "CG": "CSL303_CG"
+      },
+      "CSL304": {
+        "CREDITS": "CSL304_Credits",
+        "TW": "CSL304_TW",
+        "PR": "CSL304_PR",
+        "TOT": "CSL304_TOT",
+        "GP": "CSL304_GP",
+        "CG": "CSL304_CG"
+      },
+      "CSM301": {
+        "CREDITS": "CSM301_Credits",
+        "TW": "CSM301_TW",
+        "PR": "CSM301_PR",
+        "TOT": "CSM301_TOT",
+        "GP": "CSM301_GP",
+        "CG": "CSM301_CG"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "CSC301_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC301_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC301_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC301_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSC302_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC302_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC302_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC302_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSC303_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC303_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC303_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC304_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC304_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC304_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC305_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC305_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC305_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL301_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL301_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL301_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL303_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL303_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL303_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL304_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL304_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL304_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSM301_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSM301_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSM301_PR": {
+        "min": 0.0,
+        "max": 50.0
+      }
+    },
+    "source": "ai_determined"
   }
 }

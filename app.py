@@ -136,7 +136,22 @@ def auto_sort_into_app_batch_store(
         if not batch_slug or batch_slug == "batch":
             batch_slug = "General"
 
-        dest_dir = os.path.join(base_batch_store, batch_slug)
+        dept_name = None
+        if source_path:
+            clean_sp = source_path.replace("\\", "/").strip("/")
+            parts = clean_sp.split("/")
+            if len(parts) >= 2:
+                for p in parts[:-1]:
+                    p_up = p.upper()
+                    if any(k in p_up for k in ["COMP", "AIDS", "AI_DS", "AI&DS", "IT", "MECH"]):
+                        dept_name = p
+                        break
+
+        if dept_name:
+            dest_dir = os.path.join(base_batch_store, dept_name, batch_slug)
+        else:
+            dest_dir = os.path.join(base_batch_store, batch_slug)
+
         os.makedirs(dest_dir, exist_ok=True)
         dest_excel = os.path.join(dest_dir, f"Sem_{sem_num}.xlsx")
 
@@ -145,7 +160,7 @@ def auto_sort_into_app_batch_store(
             shutil.copy2(excel_path, dest_excel)
         elif students:
             analyzer = BatchAcademicAnalyzer(output_dir=OUTPUT_DIR, app_batch_dir=base_batch_store)
-            analyzer.save_clean_semester_excel(students, batch_slug, sem_num)
+            analyzer.save_clean_semester_excel(students, batch_slug, sem_num, target_dir=dest_dir)
 
         return dest_excel
     except Exception as e:
@@ -570,7 +585,8 @@ def _run_batch_analysis_worker(
     batch_folder: str,
     target_branch: str = "AIDS",
     pdf_pipeline: str = "local",
-    excel_mode: str = "direct"
+    excel_mode: str = "direct",
+    selected_semesters: Optional[List[int]] = None
 ) -> None:
     """Background execution worker for 1st-8th semester multi-source batch analysis."""
     try:
@@ -592,7 +608,8 @@ def _run_batch_analysis_worker(
             pdf_pipeline=pdf_pipeline,
             excel_mode=excel_mode,
             progress_cb=on_prog,
-            audit_cb=log_audit
+            audit_cb=log_audit,
+            selected_semesters=selected_semesters
         )
 
         batch_slug = re.sub(r"[^\w\-]", "_", os.path.basename(batch_folder)).strip("_")
@@ -700,52 +717,64 @@ def list_batches():
     return jsonify({"batches": batches})
 
 
+@app.route("/api/batch-analysis/hierarchy", methods=["GET"])
+def get_batch_analysis_hierarchy():
+    """Return discovered hierarchical directory structure (Branch -> Academic Year -> Semesters)."""
+    try:
+        data = batch_analyzer.discover_batch_hierarchy()
+        return jsonify({"success": True, **data})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/api/batch-analysis/batches", methods=["GET"])
 def get_batch_analysis_batches():
-    """List all available batch folders across app's designated batch_data and root Batch Data."""
-    batch_list = []
-    seen_slugs = set()
-
-    candidate_entries = []
-    # 1. First check app designated batch store: data_extractor_AI/batch_data/
-    if os.path.isdir(APP_BATCH_DATA_DIR):
-        for entry in sorted(os.listdir(APP_BATCH_DATA_DIR)):
-            dir_path = os.path.join(APP_BATCH_DATA_DIR, entry)
-            if os.path.isdir(dir_path):
-                candidate_entries.append((entry, dir_path))
-
-    # 2. Check root Batch Data/
-    if os.path.isdir(BATCH_DATA_DIR):
-        for entry in sorted(os.listdir(BATCH_DATA_DIR)):
-            dir_path = os.path.join(BATCH_DATA_DIR, entry)
-            if os.path.isdir(dir_path):
-                candidate_entries.append((entry, dir_path))
-
-    for entry_name, dir_path in candidate_entries:
-        slug = normalize_batch_slug(entry_name)
-        if slug in seen_slugs:
-            continue
-        seen_slugs.add(slug)
-        try:
-            info = batch_analyzer.detect_batch_files(dir_path)
-            batch_list.append(info)
-        except Exception as e:
-            print(f"[!] Error inspecting batch {entry_name}: {e}")
-
-    return jsonify({"success": True, "batches": batch_list})
+    """List all available batch folders with hierarchical and flat views."""
+    try:
+        hierarchy = batch_analyzer.discover_batch_hierarchy()
+        batch_list = []
+        for br in hierarchy.get("branches", []):
+            for yr in br.get("years", []):
+                batch_list.append({
+                    "batch_name": yr["batch_folder"],
+                    "display_name": f"{br['display_name']} - {yr['year']}",
+                    "branch": br["name"],
+                    "branch_display": br["display_name"],
+                    "year": yr["year"],
+                    **yr
+                })
+        return jsonify({
+            "success": True,
+            "hierarchy": hierarchy.get("branches", []),
+            "branches": hierarchy.get("branches", []),
+            "batches": batch_list
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route("/api/batch-analysis/inspect", methods=["POST"])
 def inspect_batch():
-    """Inspect a specific batch folder or uploaded files across app and root stores."""
+    """Inspect a specific batch folder or branch/year selection across app and root stores."""
     data = request.get_json(silent=True) or {}
     batch_name = data.get("batch_name", "").strip()
-    target_branch = data.get("target_branch", "AIDS").strip()
+    branch = data.get("branch", "").strip()
+    academic_year = data.get("academic_year", "").strip()
+    semester = data.get("semester", "all")
+    target_branch = data.get("target_branch", branch or "AIDS").strip()
 
-    slug = normalize_batch_slug(batch_name)
+    if not batch_name and branch and academic_year:
+        batch_name = f"{branch}/{academic_year}"
+
+    clean_batch_name = batch_name.replace("\\", "/").strip("/")
+    slug = normalize_batch_slug(clean_batch_name)
+
     candidates = [
+        os.path.join(APP_BATCH_DATA_DIR, clean_batch_name),
+        os.path.join(APP_BATCH_DATA_DIR, branch, academic_year) if branch and academic_year else "",
         os.path.join(APP_BATCH_DATA_DIR, slug),
         os.path.join(APP_BATCH_DATA_DIR, batch_name),
+        os.path.join(BATCH_DATA_DIR, clean_batch_name),
         os.path.join(BATCH_DATA_DIR, batch_name),
         os.path.join(BATCH_DATA_DIR, slug),
         os.path.join(BATCH_DATA_DIR, f"{slug} data"),
@@ -753,7 +782,7 @@ def inspect_batch():
     ]
     folder_path = None
     for cand in candidates:
-        if os.path.isdir(cand):
+        if cand and os.path.isdir(cand):
             folder_path = cand
             break
 
@@ -762,7 +791,22 @@ def inspect_batch():
 
     try:
         info = batch_analyzer.detect_batch_files(folder_path, target_branch=target_branch)
-        return jsonify(sanitize_dict_for_json({"success": True, **info}))
+        sel_sem = None
+        if semester and str(semester).lower() != "all":
+            try:
+                m = re.search(r"\d+", str(semester))
+                if m:
+                    sel_sem = int(m.group(0))
+            except Exception:
+                sel_sem = None
+
+        return jsonify(sanitize_dict_for_json({
+            "success": True,
+            **info,
+            "selected_semester": sel_sem or "all",
+            "branch": branch or info.get("branch"),
+            "academic_year": academic_year or info.get("academic_year")
+        }))
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -772,14 +816,25 @@ def run_batch_analysis():
     """Start asynchronous multi-semester batch analysis."""
     data = request.get_json(silent=True) or {}
     batch_name = data.get("batch_name", "").strip()
-    target_branch = data.get("target_branch", "AIDS").strip()
+    branch = data.get("branch", "").strip()
+    academic_year = data.get("academic_year", "").strip()
+    semester = data.get("semester", "all")
+    target_branch = data.get("target_branch", branch or "AIDS").strip()
     pdf_pipeline = data.get("pdf_pipeline", "local").strip()
     excel_mode = data.get("excel_mode", "direct").strip()
 
-    slug = normalize_batch_slug(batch_name)
+    if not batch_name and branch and academic_year:
+        batch_name = f"{branch}/{academic_year}"
+
+    clean_batch_name = batch_name.replace("\\", "/").strip("/")
+    slug = normalize_batch_slug(clean_batch_name)
+
     candidates = [
+        os.path.join(APP_BATCH_DATA_DIR, clean_batch_name),
+        os.path.join(APP_BATCH_DATA_DIR, branch, academic_year) if branch and academic_year else "",
         os.path.join(APP_BATCH_DATA_DIR, slug),
         os.path.join(APP_BATCH_DATA_DIR, batch_name),
+        os.path.join(BATCH_DATA_DIR, clean_batch_name),
         os.path.join(BATCH_DATA_DIR, batch_name),
         os.path.join(BATCH_DATA_DIR, slug),
         os.path.join(BATCH_DATA_DIR, f"{slug} data"),
@@ -787,18 +842,30 @@ def run_batch_analysis():
     ]
     folder_path = None
     for cand in candidates:
-        if os.path.isdir(cand):
+        if cand and os.path.isdir(cand):
             folder_path = cand
             break
 
     if not folder_path:
         return jsonify({"success": False, "error": f"Batch folder '{batch_name}' not found."}), 404
 
+    selected_sems = None
+    if semester and str(semester).lower() != "all":
+        try:
+            m_s = re.search(r"\d+", str(semester))
+            if m_s:
+                selected_sems = [int(m_s.group(0))]
+        except Exception:
+            selected_sems = None
+
     job_id = uuid.uuid4().hex
     with batch_jobs_lock:
         batch_jobs[job_id] = {
             "job_id": job_id,
-            "batch_name": batch_name,
+            "batch_name": clean_batch_name or batch_name,
+            "branch": branch,
+            "academic_year": academic_year,
+            "selected_semesters": selected_sems,
             "status": "running",
             "progress": 0.0,
             "message": "Initializing batch analysis...",
@@ -810,7 +877,7 @@ def run_batch_analysis():
 
     worker_thread = threading.Thread(
         target=_run_batch_analysis_worker,
-        args=(job_id, folder_path, target_branch, pdf_pipeline, excel_mode),
+        args=(job_id, folder_path, target_branch, pdf_pipeline, excel_mode, selected_sems),
         daemon=True
     )
     worker_thread.start()

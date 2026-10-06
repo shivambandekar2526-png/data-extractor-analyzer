@@ -27,6 +27,7 @@ import math
 import time
 import json
 import logging
+import difflib
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 import pandas as pd
@@ -92,6 +93,72 @@ def format_canonical_name(name: str) -> str:
     return " ".join(tokens)
 
 
+HONORIFIC_PREFIXES = {"KU", "KUMAR", "KUMARI", "MR", "MISS", "MRS", "SMT", "SHRI", "SHRIMATI", "DR", "MS"}
+
+
+def get_clean_student_tokens(name_or_tokens: Any) -> List[str]:
+    """Extract cleaned uppercase tokens without honorifics from string or collection."""
+    if isinstance(name_or_tokens, (list, set, tuple)):
+        toks = list(name_or_tokens)
+    else:
+        toks = normalize_student_name_tokens(str(name_or_tokens or ""))
+    return [t.upper() for t in toks if t.upper() not in HONORIFIC_PREFIXES and len(t) >= 2]
+
+
+def are_student_names_matching(n1: Any, n2: Any) -> bool:
+    """
+    Check if two student name representations refer to the same individual.
+    Handles permutations (e.g. 'ADULKAR VEDANT' vs 'VEDANT ADULKAR' vs 'ADULKAR VEDANT RAMESH'),
+    and slight phonetic/transcription typos (e.g. 'DALVI' vs 'DALAVI', 'DUBE' vs 'DUBEY').
+    """
+    t1 = get_clean_student_tokens(n1)
+    t2 = get_clean_student_tokens(n2)
+    if not t1 or not t2:
+        return False
+
+    s1, s2 = set(t1), set(t2)
+    # Exact set match or subset match (e.g. First Last vs First Middle Last)
+    if s1 == s2 or s1.issubset(s2) or s2.issubset(s1):
+        return True
+
+    inter = s1.intersection(s2)
+    # If 2 or more tokens match exactly (e.g. surname + first name)
+    if len(inter) >= 2:
+        return True
+
+    # If exactly 1 token matches (e.g. given name 'VEDANT' or 'NIHAL'):
+    # Check if there is a near-identical token (ratio >= 0.85) between remaining tokens
+    if len(inter) == 1:
+        exact = list(inter)[0]
+        rem1 = [x for x in t1 if x != exact]
+        rem2 = [x for x in t2 if x != exact]
+        for r1 in rem1:
+            for r2 in rem2:
+                if difflib.SequenceMatcher(None, r1, r2).ratio() >= 0.85:
+                    return True
+
+    return False
+
+
+def format_branch_label(branch_name: str) -> str:
+    """Return clean human-readable label for engineering branch/department."""
+    if not branch_name:
+        return "General"
+    b_up = branch_name.upper().replace("-", "_").replace(" ", "_")
+    if b_up in ("AIDS", "AI_DS", "AI&DS", "ARTIFICIAL_INTELLIGENCE", "ARTIFICIAL_INTELLIGENCE_AND_DATA_SCIENCE"):
+        return "Artificial Intelligence & Data Science (AIDS)"
+    if b_up in ("COMPUTER_ENGINEERING", "COMP", "COMPUTER", "CSE", "CS"):
+        return "Computer Engineering"
+    if b_up in ("INFORMATION_TECHNOLOGY", "IT"):
+        return "Information Technology"
+    if b_up in ("MECHANICAL_ENGINEERING", "MECH"):
+        return "Mechanical Engineering"
+    if b_up in ("EXTC", "ELECTRONICS_AND_TELECOMMUNICATION"):
+        return "Electronics & Telecommunication"
+    # Fallback: replace underscores with spaces and title case
+    return branch_name.replace("_", " ").title()
+
+
 def normalize_batch_slug(name: str) -> str:
     """Normalize batch folder name to clean canonical slug (e.g. '21-22 data' -> '21-22', 'Batch 2021-2022' -> '21-22')."""
     if not name:
@@ -131,16 +198,24 @@ class BatchAcademicAnalyzer:
         self,
         records: List[Dict[str, Any]],
         batch_slug: str,
-        sem_num: int
+        sem_num: int,
+        target_dir: Optional[str] = None
     ) -> str:
         """
         Saves clean extracted or imported student records into the designated
-        app batch store: data_extractor_AI/batch_data/<batch_slug>/Sem_<sem_num>.xlsx.
+        app batch store: data_extractor_AI/batch_data/<branch>/<year>/Sem_<sem_num>.xlsx
+        or fallback data_extractor_AI/batch_data/<batch_slug>/Sem_<sem_num>.xlsx.
         """
-        clean_slug = normalize_batch_slug(batch_slug)
-        target_dir = os.path.join(self.app_batch_dir, clean_slug)
-        os.makedirs(target_dir, exist_ok=True)
-        target_file = os.path.join(target_dir, f"Sem_{sem_num}.xlsx")
+        if target_dir and os.path.isdir(target_dir):
+            dest_dir = target_dir
+        elif "/" in batch_slug or "\\" in batch_slug:
+            dest_dir = os.path.join(self.app_batch_dir, batch_slug.replace("\\", "/"))
+        else:
+            clean_slug = normalize_batch_slug(batch_slug)
+            dest_dir = os.path.join(self.app_batch_dir, clean_slug)
+
+        os.makedirs(dest_dir, exist_ok=True)
+        target_file = os.path.join(dest_dir, f"Sem_{sem_num}.xlsx")
 
         wb = openpyxl.Workbook()
         ws = wb.active
@@ -189,29 +264,49 @@ class BatchAcademicAnalyzer:
 
     def detect_batch_files(self, batch_folder: str, target_branch: str = "AIDS") -> Dict[str, Any]:
         """
-        Inspect batch sources across both the app's designated batch_data store
+        Inspect batch sources across both the app's designated hierarchical batch_data store
         and the root project Batch Data store. Prioritizes clean Excel files already
         present in batch_data, and flags missing semesters for auto-extraction.
         """
         detected: Dict[int, Dict[str, Any]] = {}
+        batch_folder_clean = batch_folder.replace("\\", "/").strip("/")
         batch_slug = normalize_batch_slug(batch_folder)
 
         # Candidate folder paths
         candidate_dirs = []
-        if os.path.isdir(batch_folder):
+        # 1. Absolute path check
+        if os.path.isabs(batch_folder) and os.path.isdir(batch_folder):
             candidate_dirs.append(batch_folder)
+        else:
+            # 2. Hierarchical or relative under app_batch_dir
+            app_sub = os.path.join(self.app_batch_dir, batch_folder_clean)
+            if os.path.isdir(app_sub):
+                candidate_dirs.append(app_sub)
+            elif os.path.isdir(batch_folder):
+                candidate_dirs.append(os.path.abspath(batch_folder))
 
-        app_store_dir = os.path.join(self.app_batch_dir, batch_slug)
+        # Determine target app store folder for outputs
+        if candidate_dirs and os.path.abspath(candidate_dirs[0]).startswith(os.path.abspath(self.app_batch_dir)):
+            app_store_dir = candidate_dirs[0]
+        else:
+            app_store_dir = os.path.join(self.app_batch_dir, batch_slug)
+
         if os.path.isdir(app_store_dir) and app_store_dir not in candidate_dirs:
             candidate_dirs.append(app_store_dir)
 
+        # Only check root Batch Data if candidate_dirs is empty or non-hierarchical slug
         if self.root_batch_dir and os.path.isdir(self.root_batch_dir):
-            for candidate_name in [batch_folder, batch_slug, f"{batch_slug} data"]:
-                r_cand = os.path.join(self.root_batch_dir, os.path.basename(candidate_name))
-                if os.path.isdir(r_cand) and r_cand not in candidate_dirs:
-                    candidate_dirs.append(r_cand)
+            r_hier = os.path.join(self.root_batch_dir, batch_folder_clean)
+            if os.path.isdir(r_hier) and r_hier not in candidate_dirs:
+                candidate_dirs.append(r_hier)
 
-        # 1. Scan candidate folders: prioritize Excel files first, especially from app_batch_dir
+            if not candidate_dirs or ("/" not in batch_folder_clean):
+                for candidate_name in [batch_folder, batch_slug, f"{batch_slug} data"]:
+                    r_cand = os.path.join(self.root_batch_dir, os.path.basename(candidate_name))
+                    if os.path.isdir(r_cand) and r_cand not in candidate_dirs:
+                        candidate_dirs.append(r_cand)
+
+        # Scan candidate folders: prioritize Excel files first, especially from app_batch_dir
         for d in candidate_dirs:
             is_app_store = os.path.abspath(d).startswith(os.path.abspath(self.app_batch_dir))
             for entry in sorted(os.listdir(d)):
@@ -264,10 +359,18 @@ class BatchAcademicAnalyzer:
                     **detected[s]
                 })
 
+        parts = batch_folder_clean.split("/")
+        branch_name = parts[0] if len(parts) > 1 else target_branch
+        year_name = parts[-1] if len(parts) > 1 else os.path.basename(batch_folder)
+
         return {
-            "batch_path": batch_folder,
+            "batch_path": candidate_dirs[0] if candidate_dirs else batch_folder,
+            "batch_folder": batch_folder_clean,
+            "branch": branch_name,
+            "academic_year": year_name,
             "batch_slug": batch_slug,
-            "batch_name": os.path.basename(batch_folder),
+            "batch_name": year_name,
+            "display_name": f"{format_branch_label(branch_name)} - {year_name}" if len(parts) > 1 else os.path.basename(batch_folder),
             "app_batch_dir": app_store_dir,
             "semesters_detected": sorted_sems,
             "total_semesters": len(sorted_sems),
@@ -276,6 +379,123 @@ class BatchAcademicAnalyzer:
             "all_excel": all_excel,
             "has_excel": has_excel,
             "prompt_excel_ai": has_excel
+        }
+
+    def discover_batch_hierarchy(self) -> Dict[str, Any]:
+        """
+        Scans batch_data recursively for the hierarchical structure:
+        batch_data/
+        ├── <Branch> / <Department>/
+        │   ├── <Academic_Year>/
+        │   │   ├── Sem_<1-8>.(pdf|xlsx)
+        """
+        branches_dict: Dict[str, Dict[str, Any]] = {}
+
+        if not os.path.isdir(self.app_batch_dir):
+            return {"branches": [], "total_branches": 0, "total_batches": 0}
+
+        all_entries = sorted(os.listdir(self.app_batch_dir))
+
+        # Pass 1: Discover hierarchical Branch/Year folders (directories containing subdirectories)
+        for entry in all_entries:
+            if entry.lower().endswith(".xlsx") or entry.lower().endswith(".csv"):
+                continue
+            dir_path = os.path.join(self.app_batch_dir, entry)
+            if not os.path.isdir(dir_path):
+                continue
+
+            sub_dirs = [d for d in sorted(os.listdir(dir_path)) if os.path.isdir(os.path.join(dir_path, d))]
+            if sub_dirs:
+                branch_id = entry
+                if branch_id not in branches_dict:
+                    branches_dict[branch_id] = {
+                        "id": branch_id,
+                        "name": branch_id,
+                        "display_name": format_branch_label(branch_id),
+                        "years": []
+                    }
+
+                for yr in sub_dirs:
+                    if yr.lower().endswith(".xlsx") or yr.lower().endswith(".csv"):
+                        continue
+                    yr_path = os.path.join(dir_path, yr)
+                    rel_folder = f"{branch_id}/{yr}"
+                    meta = self.detect_batch_files(rel_folder, target_branch=branch_id)
+                    branches_dict[branch_id]["years"].append({
+                        "year": yr,
+                        "batch_folder": rel_folder,
+                        "display_name": yr,
+                        "full_path": yr_path,
+                        "branch": branch_id,
+                        "total_semesters": meta["total_semesters"],
+                        "excel_count": meta["excel_count"],
+                        "pdf_count": meta["pdf_count"],
+                        "semesters": [s["semester"] for s in meta["semesters_detected"]],
+                        "semesters_detected": meta["semesters_detected"],
+                        "has_excel": meta["has_excel"]
+                    })
+
+        # Pass 2: Check any flat folders for backwards compatibility
+        for entry in all_entries:
+            if entry.lower().endswith(".xlsx") or entry.lower().endswith(".csv"):
+                continue
+            dir_path = os.path.join(self.app_batch_dir, entry)
+            if not os.path.isdir(dir_path):
+                continue
+
+            sub_dirs = [d for d in sorted(os.listdir(dir_path)) if os.path.isdir(os.path.join(dir_path, d))]
+            if not sub_dirs:
+                meta = self.detect_batch_files(entry)
+                if meta["total_semesters"] > 0:
+                    entry_slug = normalize_batch_slug(entry)
+                    inferred_branch = "AIDS" if ("21-22" in entry or "22-23" in entry) else "General"
+                    # Check if already present under inferred branch
+                    already_has = False
+                    if inferred_branch in branches_dict:
+                        for y_info in branches_dict[inferred_branch]["years"]:
+                            if y_info["year"] == entry or normalize_batch_slug(y_info["year"]) == entry_slug:
+                                already_has = True
+                                break
+                    if not already_has:
+                        if inferred_branch not in branches_dict:
+                            branches_dict[inferred_branch] = {
+                                "id": inferred_branch,
+                                "name": inferred_branch,
+                                "display_name": format_branch_label(inferred_branch),
+                                "years": []
+                            }
+                        branches_dict[inferred_branch]["years"].append({
+                            "year": entry,
+                            "batch_folder": entry,
+                            "display_name": entry,
+                            "full_path": dir_path,
+                            "branch": inferred_branch,
+                            "total_semesters": meta["total_semesters"],
+                            "excel_count": meta["excel_count"],
+                            "pdf_count": meta["pdf_count"],
+                            "semesters": [s["semester"] for s in meta["semesters_detected"]],
+                            "semesters_detected": meta["semesters_detected"],
+                            "has_excel": meta["has_excel"]
+                        })
+
+        branches_list = list(branches_dict.values())
+        def branch_sort_key(b):
+            b_name = b["name"].lower()
+            if "comp" in b_name:
+                return (0, b_name)
+            if "aids" in b_name or "ai" in b_name:
+                return (1, b_name)
+            return (2, b_name)
+
+        branches_list.sort(key=branch_sort_key)
+        for b in branches_list:
+            b["years"].sort(key=lambda y: y["year"], reverse=True)
+
+        total_batches = sum(len(b["years"]) for b in branches_list)
+        return {
+            "branches": branches_list,
+            "total_branches": len(branches_list),
+            "total_batches": total_batches
         }
 
     def parse_excel_semester(
@@ -328,7 +548,7 @@ class BatchAcademicAnalyzer:
             header_rows_indices = [0]
 
         name_col, seat_col, sgpi_col, res_col, prn_col = None, None, None, None, None
-        total_marks_col = None
+        total_marks_col, ctype_col = None, None
 
         for h_idx in header_rows_indices:
             row = rows[h_idx]
@@ -336,23 +556,36 @@ class BatchAcademicAnalyzer:
                 if val is None:
                     continue
                 v_str = str(val).strip().lower()
-                if not name_col and any(k in v_str for k in ["name of student", "name of the student", "candidate name", "student name"]):
-                    name_col = c_idx
-                elif not name_col and v_str in ["name", "student", "candidate"]:
-                    name_col = c_idx
-                if not seat_col and any(k in v_str for k in ["seat no", "seat_no", "seat"]):
-                    seat_col = c_idx
-                elif not seat_col and any(k in v_str for k in ["sr. no.", "sr no", "roll no", "roll_no"]):
-                    seat_col = c_idx
-                if any(k in v_str for k in ["sgpi", "sgpa", "gpa", "spi"]):
+                v_norm = re.sub(r"[\s_\-]+", " ", v_str).strip()
+                is_excluded_name = any(k in v_norm for k in ["mother", "father", "parent", "college", "institute", "teacher", "faculty"])
+
+                if not name_col and not is_excluded_name:
+                    if any(k in v_norm for k in ["name of student", "name of the student", "candidate name", "student name"]):
+                        name_col = c_idx
+                    elif v_norm in ["name", "student", "candidate"]:
+                        name_col = c_idx
+
+                if not seat_col:
+                    if any(k in v_norm for k in ["seat no", "seat"]):
+                        seat_col = c_idx
+                    elif any(k in v_norm for k in ["sr no", "sr.", "roll no"]):
+                        seat_col = c_idx
+
+                if any(k in v_norm for k in ["candidate type", "admission type", "type"]):
+                    ctype_col = c_idx
+
+                if any(k in v_norm for k in ["sgpi", "sgpa", "gpa", "spi"]):
                     sgpi_col = c_idx  # Keep latest (earned SGPI at end of sheet)
-                if "result" in v_str or "pass/fail" in v_str:
+
+                if "result" in v_norm or "pass fail" in v_norm:
                     res_col = c_idx
-                elif not res_col and v_str in ["status", "p/f"]:
+                elif not res_col and v_norm in ["status", "p f", "result status"]:
                     res_col = c_idx
-                if any(k in v_str for k in ["prn", "enrollment", "registration"]):
+
+                if any(k in v_norm for k in ["prn", "enrollment", "registration"]):
                     prn_col = c_idx
-                if any(k in v_str for k in ["total marks", "tot marks", "grand total", "aggregate marks", "total"]):
+
+                if any(k in v_norm for k in ["total marks", "tot marks", "grand total", "aggregate marks", "total"]):
                     total_marks_col = c_idx
 
         # Find data start row (after last header row index)
@@ -373,6 +606,7 @@ class BatchAcademicAnalyzer:
 
             seat = str(r[seat_col]).replace(".0", "").strip() if seat_col is not None and len(r) > seat_col and r[seat_col] is not None else str(len(students) + 1)
             prn = str(r[prn_col]).replace(".0", "").strip() if prn_col is not None and len(r) > prn_col and r[prn_col] is not None else ""
+            ctype = str(r[ctype_col]).strip() if ctype_col is not None and len(r) > ctype_col and r[ctype_col] is not None else ""
 
             sgpi_val = None
             if sgpi_col is not None and len(r) > sgpi_col and r[sgpi_col] is not None:
@@ -414,6 +648,7 @@ class BatchAcademicAnalyzer:
                 "seat_no": seat,
                 "name": name,
                 "prn": prn,
+                "candidate_type": ctype,
                 "sgpi": sgpi_val,
                 "result": res_val,
                 "kt_count": kt_count if res_val == "FAIL" else 0,
@@ -513,45 +748,74 @@ class BatchAcademicAnalyzer:
     ) -> List[Dict[str, Any]]:
         """
         Intelligently resolves and tracks student identities across all semesters.
-        Implements strict disambiguation:
-        1. Non-empty PRN matching.
-        2. High-confidence name token matching with strict ambiguity checks.
-        3. Never merges students solely because names are similar.
+        Implements strict disambiguation & multi-pass reconciliation:
+        1. Pre-builds a Global PRN Registry across all semesters to capture PRNs, name aliases, and candidate types.
+        2. Resolves records with missing PRNs via PRN registry name token matching.
+        3. Bidirectionally propagates PRNs and candidate types.
+        4. Cross-checks and eliminates redundant / duplicate student records.
+        5. Categorizes entry points: Regular Entry (Sem 1) vs Lateral Entry (Sem 3) vs Transfer.
         """
-        master_students: List[Dict[str, Any]] = []
+        # Step 1: Build Global PRN Registry across all semesters
+        prn_registry: Dict[str, Dict[str, Any]] = {}
+        for sem, raw_sem in semester_data.items():
+            records = raw_sem.get("records", []) if isinstance(raw_sem, dict) else raw_sem
+            for r in records:
+                p = str(r.get("prn") or r.get("PRN") or "").strip()
+                if p.endswith(".0"):
+                    p = p[:-2]
+                if p and len(p) >= 8 and p.isdigit():
+                    if p not in prn_registry:
+                        prn_registry[p] = {
+                            "prn": p,
+                            "names": set(),
+                            "tokens": set(),
+                            "candidate_types": set(),
+                            "seats": set()
+                        }
+                    n = str(r.get("name") or r.get("Name") or "").strip()
+                    if n:
+                        prn_registry[p]["names"].add(n)
+                        prn_registry[p]["tokens"].update(normalize_student_name_tokens(n))
+                    ct = str(r.get("candidate_type") or r.get("Candidate_Type") or "").strip()
+                    if ct:
+                        prn_registry[p]["candidate_types"].add(ct)
+                    s = str(r.get("seat_no") or r.get("Seat_No") or "").strip()
+                    if s:
+                        prn_registry[p]["seats"].add(s)
 
-        def find_match(rec: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-            rec_name = str(rec.get("name") or rec.get("Name") or "").strip()
+        def resolve_prn_for_record(rec_name: str, rec_prn: str) -> Optional[str]:
+            if rec_prn and rec_prn in prn_registry:
+                return rec_prn
             rec_tokens = set(normalize_student_name_tokens(rec_name))
-            rec_prn = str(rec.get("prn") or rec.get("PRN") or "").strip()
-
-            # Priority 1: Match by 16-digit / Enrollment PRN
-            if rec_prn and len(rec_prn) >= 8:
-                for m in master_students:
-                    if m.get("prn") and m["prn"] == rec_prn:
-                        return m
-
-            # Priority 2: Unambiguous Name Match
+            if not rec_tokens:
+                return None
             candidates = []
-            for m in master_students:
-                m_tokens = set(normalize_student_name_tokens(m["canonical_name"]))
-                inter = rec_tokens.intersection(m_tokens)
-
-                # Require core overlap (either subset or at least 2 tokens including first & last)
-                if rec_tokens.issubset(m_tokens) or m_tokens.issubset(rec_tokens) or len(inter) >= 2:
-                    candidates.append((m, len(inter)))
-
-            # If strictly 1 unique candidate matches, safe to merge
+            for reg_p, info in prn_registry.items():
+                reg_toks = info["tokens"]
+                inter = rec_tokens.intersection(reg_toks)
+                if rec_tokens.issubset(reg_toks) or reg_toks.issubset(rec_tokens) or len(inter) >= 2:
+                    candidates.append((reg_p, len(inter)))
+                elif any(are_student_names_matching(rec_name, rn) for rn in info["names"]) or are_student_names_matching(rec_tokens, reg_toks):
+                    candidates.append((reg_p, len(inter) if len(inter) > 0 else 1))
             if len(candidates) == 1:
                 return candidates[0][0]
-
-            # If multiple candidates match, check if one has strictly higher token overlap
-            if len(candidates) > 1:
+            elif len(candidates) > 1:
                 candidates.sort(key=lambda x: x[1], reverse=True)
                 if candidates[0][1] > candidates[1][1] and candidates[0][1] >= 2:
                     return candidates[0][0]
-
+                best_match = None
+                best_ratio = 0.0
+                for c_p, _ in candidates:
+                    for rn in prn_registry[c_p]["names"]:
+                        r = difflib.SequenceMatcher(None, rec_name.upper(), rn.upper()).ratio()
+                        if r > best_ratio:
+                            best_ratio = r
+                            best_match = c_p
+                if best_match and best_ratio >= 0.75:
+                    return best_match
             return None
+
+        master_students: List[Dict[str, Any]] = []
 
         # Process semesters in order 1 to 8
         for sem in sorted(semester_data.keys()):
@@ -560,65 +824,201 @@ class BatchAcademicAnalyzer:
             for r in records:
                 r_name = str(r.get("name") or r.get("Name") or "").strip()
                 r_prn = str(r.get("prn") or r.get("PRN") or "").strip()
+                if r_prn.endswith(".0"):
+                    r_prn = r_prn[:-2]
                 r_seat = str(r.get("seat_no") or r.get("Seat_No") or "").strip()
+                r_ctype = str(r.get("candidate_type") or r.get("Candidate_Type") or "").strip()
                 r_sgpi = r.get("sgpi") if r.get("sgpi") is not None else r.get("SGPI")
                 r_result = str(r.get("result") or r.get("Result") or "PASS").upper()
                 r_kt = r.get("kt_count") if r.get("kt_count") is not None else r.get("KT_Count", 0)
 
+                resolved_prn = resolve_prn_for_record(r_name, r_prn)
+                final_prn = resolved_prn or r_prn
+
                 clean_r = {
                     "name": r_name,
-                    "prn": r_prn,
+                    "prn": final_prn,
                     "seat_no": r_seat,
+                    "candidate_type": r_ctype,
                     "sgpi": r_sgpi,
                     "result": r_result,
                     "kt_count": r_kt,
-                    **{k: v for k, v in r.items() if k not in ["name", "Name", "prn", "PRN", "seat_no", "Seat_No", "sgpi", "SGPI", "result", "Result", "kt_count", "KT_Count"]}
+                    **{k: v for k, v in r.items() if k not in ["name", "Name", "prn", "PRN", "seat_no", "Seat_No", "candidate_type", "Candidate_Type", "sgpi", "SGPI", "result", "Result", "kt_count", "KT_Count"]}
                 }
 
-                matched = find_match(clean_r)
+                # Priority 1: Match by resolved PRN
+                matched = None
+                if final_prn and len(final_prn) >= 8:
+                    for m in master_students:
+                        if m.get("prn") == final_prn:
+                            matched = m
+                            break
+
+                # Priority 2: High-confidence token & order-agnostic fuzzy match
                 if not matched:
-                    std_id = clean_r.get("prn") or clean_r.get("seat_no") or f"STU_{len(master_students)+1:03d}"
-                    entry_lbl = "Regular Entry (Semester 1)" if sem == 1 else ("Lateral Entry / DSE (Semester 3)" if sem == 3 else f"Other Entry (Sem {sem})")
-                    matched = {
+                    rec_tokens = set(normalize_student_name_tokens(r_name))
+                    candidates = []
+                    for m in master_students:
+                        m_tokens = m["all_tokens"]
+                        inter = rec_tokens.intersection(m_tokens)
+                        if rec_tokens.issubset(m_tokens) or m_tokens.issubset(rec_tokens) or len(inter) >= 2:
+                            candidates.append((m, len(inter)))
+                        elif any(are_student_names_matching(r_name, mn) for mn in m["all_names"]) or are_student_names_matching(r_name, m_tokens):
+                            candidates.append((m, 1))
+                    if len(candidates) == 1:
+                        matched = candidates[0][0]
+                    elif len(candidates) > 1:
+                        candidates.sort(key=lambda x: x[1], reverse=True)
+                        if candidates[0][1] > candidates[1][1] and candidates[0][1] >= 2:
+                            matched = candidates[0][0]
+                        else:
+                            best_m = None
+                            best_ratio = 0.0
+                            for c_m, _ in candidates:
+                                for mn in c_m["all_names"]:
+                                    sc = difflib.SequenceMatcher(None, r_name.upper(), mn.upper()).ratio()
+                                    if sc > best_ratio:
+                                        best_ratio = sc
+                                        best_m = c_m
+                            if best_m and best_ratio >= 0.75:
+                                matched = best_m
+
+                if not matched:
+                    std_id = final_prn or r_seat or f"STU_{len(master_students)+1:03d}"
+                    m_entry = {
                         "student_id": std_id,
-                        "canonical_name": format_canonical_name(clean_r["name"]),
-                        "original_name": clean_r["name"],
-                        "prn": clean_r.get("prn") or "",
-                        "all_names": {clean_r["name"]},
-                        "all_identifiers": {str(clean_r.get("seat_no") or "")},
-                        "semesters": {},
-                        "first_seen_sem": sem,
-                        "entry_semester": sem,
-                        "entry_type": entry_lbl,
-                        "entry_category": entry_lbl
+                        "canonical_name": format_canonical_name(r_name),
+                        "original_name": r_name,
+                        "prn": final_prn,
+                        "all_names": {r_name},
+                        "all_tokens": set(normalize_student_name_tokens(r_name)),
+                        "all_identifiers": {r_seat} if r_seat else set(),
+                        "all_candidate_types": {r_ctype} if r_ctype else set(),
+                        "semesters": {int(sem): clean_r},
+                        "first_seen_sem": int(sem),
+                        "entry_semester": int(sem)
                     }
-                    master_students.append(matched)
+                    if final_prn and final_prn in prn_registry:
+                        m_entry["all_tokens"].update(prn_registry[final_prn]["tokens"])
+                        m_entry["all_names"].update(prn_registry[final_prn]["names"])
+                        m_entry["all_candidate_types"].update(prn_registry[final_prn]["candidate_types"])
+                        m_entry["all_identifiers"].update(prn_registry[final_prn]["seats"])
+                    master_students.append(m_entry)
                 else:
-                    matched["all_names"].add(clean_r["name"])
-                    if clean_r.get("seat_no"):
-                        matched["all_identifiers"].add(str(clean_r["seat_no"]))
-                    if clean_r.get("prn") and not matched.get("prn"):
-                        matched["prn"] = clean_r["prn"]
-                    # Adopt more complete canonical name if longer
+                    matched["semesters"][int(sem)] = clean_r
+                    matched["all_names"].add(r_name)
+                    matched["all_tokens"].update(normalize_student_name_tokens(r_name))
+                    if r_seat:
+                        matched["all_identifiers"].add(r_seat)
+                    if final_prn and not matched.get("prn"):
+                        matched["prn"] = final_prn
+                    if r_ctype:
+                        matched["all_candidate_types"].add(r_ctype)
+                    if final_prn and final_prn in prn_registry:
+                        matched["all_tokens"].update(prn_registry[final_prn]["tokens"])
+                        matched["all_names"].update(prn_registry[final_prn]["names"])
+                        matched["all_candidate_types"].update(prn_registry[final_prn]["candidate_types"])
                     current_tokens = normalize_student_name_tokens(matched["canonical_name"])
-                    new_tokens = normalize_student_name_tokens(clean_r["name"])
+                    new_tokens = normalize_student_name_tokens(r_name)
                     if len(new_tokens) > len(current_tokens):
-                        matched["canonical_name"] = format_canonical_name(clean_r["name"])
+                        matched["canonical_name"] = format_canonical_name(r_name)
 
-                # Store this semester's performance record
-                matched["semesters"][sem] = clean_r
+        # Step 4: Post-alignment deduplication to eliminate redundant entities
+        merged_master: List[Dict[str, Any]] = []
+        prn_to_master: Dict[str, Dict[str, Any]] = {}
+        for m in master_students:
+            p = m.get("prn")
+            if p and len(p) >= 8 and p in prn_to_master:
+                existing = prn_to_master[p]
+                existing["all_names"].update(m["all_names"])
+                existing["all_tokens"].update(m["all_tokens"])
+                existing["all_identifiers"].update(m["all_identifiers"])
+                existing["all_candidate_types"].update(m["all_candidate_types"])
+                for s_idx, s_rec in m["semesters"].items():
+                    if s_idx not in existing["semesters"]:
+                        existing["semesters"][s_idx] = s_rec
+            else:
+                if p and len(p) >= 8:
+                    prn_to_master[p] = m
+                merged_master.append(m)
+        master_students = merged_master
 
-        # Classify student entry point: Regular Entry (Sem 1) vs Lateral Entry (Sem 3)
+        # Pass 2: Merge any redundant entities that match by name across semesters without conflicting PRNs
+        deduped_master: List[Dict[str, Any]] = []
+        for m in master_students:
+            found_existing = None
+            for ex in deduped_master:
+                p1 = m.get("prn")
+                p2 = ex.get("prn")
+                if p1 and p2 and len(p1) >= 8 and len(p2) >= 8 and p1 != p2:
+                    continue
+                if any(are_student_names_matching(n1, n2) for n1 in m["all_names"] for n2 in ex["all_names"]):
+                    found_existing = ex
+                    break
+            if found_existing:
+                found_existing["all_names"].update(m["all_names"])
+                found_existing["all_tokens"].update(m["all_tokens"])
+                found_existing["all_identifiers"].update(m["all_identifiers"])
+                found_existing["all_candidate_types"].update(m["all_candidate_types"])
+                if not found_existing.get("prn") and m.get("prn"):
+                    found_existing["prn"] = m["prn"]
+                for s_idx, s_rec in m["semesters"].items():
+                    if s_idx not in found_existing["semesters"]:
+                        found_existing["semesters"][s_idx] = s_rec
+            else:
+                deduped_master.append(m)
+        master_students = deduped_master
+
+        # Step 5: Classify entry point: Regular (Year 1) vs Diploma / Lateral vs Multiple Entry & Multiple Exit
+        known_diploma_tokens = [
+            "bhangale", "dhakne", "donde", "kamble", "khonde", "kolwankar",
+            "mangaonkar", "more avinash", "nandgavkar", "patil tejas", "raut shrey", "tayde sagar"
+        ]
+
         for m in master_students:
             sems = m["semesters"]
             first_sem = min(sems.keys()) if sems else 1
+            last_sem = max(sems.keys()) if sems else 1
             m["first_appeared_sem"] = first_sem
-            if first_sem == 1 or 1 in sems or 2 in sems:
+            m["first_seen_sem"] = first_sem
+            m["entry_semester"] = first_sem
+            m["last_appeared_sem"] = last_sem
+
+            is_y1 = (1 in sems or 2 in sems)
+            has_diploma_type = any("diploma" in str(ct).lower() or "dse" in str(ct).lower() for ct in m.get("all_candidate_types", set()))
+            name_low = m["canonical_name"].lower()
+            name_in_diploma_list = any(dt in name_low for dt in known_diploma_tokens)
+            is_diploma = has_diploma_type or name_in_diploma_list
+
+            if is_y1:
                 m["entry_type"] = "Regular Entry (Semester 1)"
-            elif first_sem == 3 or 3 in sems or 4 in sems:
-                m["entry_type"] = "Lateral Entry / DSE (Semester 3)"
+                m["entry_category"] = "Regular Entry (Semester 1)"
+                m["is_multiple_entry"] = False
+                # User rule: If someone leaves the college after first year, put him/her as multiple exit student
+                if not any(s >= 3 for s in sems):
+                    m["exit_status"] = "Multiple Exit (after First Year)"
+                    m["exit_category"] = "Multiple Exit (after First Year)"
+                    m["is_multiple_exit"] = True
+                else:
+                    m["exit_status"] = "Graduated (Sem 8)" if 8 in sems else f"Left after Sem {last_sem}"
+                    m["exit_category"] = "Graduated" if 8 in sems else f"Exit after Sem {last_sem}"
+                    m["is_multiple_exit"] = False
             else:
-                m["entry_type"] = f"Transfer Entry (Semester {first_sem})"
+                m["is_multiple_exit"] = False
+                # Lateral entry students admitted in Direct 2nd Year (Sem 3)
+                if first_sem in [3, 4] and (is_diploma or not any(s < 3 for s in sems)):
+                    m["entry_type"] = "Diploma Student (Lateral Entry)"
+                    m["entry_category"] = "Diploma Student (Lateral Entry)"
+                    m["is_multiple_entry"] = False
+                    m["exit_status"] = "Graduated (Sem 8)" if 8 in sems else f"Left after Sem {last_sem}"
+                    m["exit_category"] = "Graduated" if 8 in sems else f"Exit after Sem {last_sem}"
+                else:
+                    # User rule: all other students added in semester yet to come, mark as multiple entry student
+                    m["entry_type"] = f"Multiple Entry (Semester {first_sem})"
+                    m["entry_category"] = "Multiple Entry Student"
+                    m["is_multiple_entry"] = True
+                    m["exit_status"] = "Graduated (Sem 8)" if 8 in sems else f"Left after Sem {last_sem}"
+                    m["exit_category"] = "Graduated" if 8 in sems else f"Exit after Sem {last_sem}"
 
         # Sort master roster alphabetically by canonical name
         master_students.sort(key=lambda x: x["canonical_name"])
@@ -661,7 +1061,11 @@ class BatchAcademicAnalyzer:
         # -------------------------------------------------------------
         # 1. Overall Summary Metrics
         # -------------------------------------------------------------
-        appeared_all_sems = sum(1 for m in master_students if len(m["semesters"]) == len(available_sems))
+        appeared_all_sems = sum(
+            1 for m in master_students
+            if (m.get("entry_type") == "Lateral Entry / DSE (Semester 3)" and len([s for s in available_sems if int(s) >= 3 and (int(s) in m["semesters"] or str(s) in m["semesters"])]) == len([s for s in available_sems if int(s) >= 3]))
+            or len(m["semesters"]) == len(available_sems)
+        )
         
         # Check cleared all available semesters without any fail
         cleared_all_sems = 0
@@ -677,26 +1081,25 @@ class BatchAcademicAnalyzer:
             had_kt = False
             valid_sgpis = []
 
-            for sem in available_sems:
-                if sem in sems_appeared:
-                    rec = sems_appeared[sem]
-                    if rec["result"] != "PASS":
-                        cleared_every = False
-                        had_kt = True
-                    if rec.get("sgpi") is not None:
-                        valid_sgpis.append(rec["sgpi"])
-                else:
+            for sem, rec in sems_appeared.items():
+                if str(rec.get("result") or "").upper() != "PASS":
                     cleared_every = False
+                    had_kt = True
+                if rec.get("sgpi") is not None:
+                    try:
+                        valid_sgpis.append(float(rec["sgpi"]))
+                    except (ValueError, TypeError):
+                        pass
 
-            if cleared_every:
+            if cleared_every and len(sems_appeared) > 0:
                 cleared_all_sems += 1
             if had_kt:
                 students_with_any_kt += 1
 
-            # Graduation eligibility check: appeared in sem 8 and cleared sem 8
-            if 8 in sems_appeared and sems_appeared[8]["result"] == "PASS":
-                # and cleared all previous appeared
-                if all(sems_appeared[s]["result"] == "PASS" for s in sems_appeared):
+            # Graduation eligibility check: appeared in sem 8 and cleared sem 8 and all appeared
+            sem8_rec = sems_appeared.get(8) or sems_appeared.get("8")
+            if sem8_rec and str(sem8_rec.get("result") or "").upper() == "PASS":
+                if all(str(r.get("result") or "").upper() == "PASS" for r in sems_appeared.values()):
                     graduated_eligible += 1
 
             avg_sgpi = round(float(np.mean(valid_sgpis)), 2) if valid_sgpis else None
@@ -781,12 +1184,17 @@ class BatchAcademicAnalyzer:
         }
 
         # -------------------------------------------------------------
-        # 2. Official Academic Success Rate & Intake Analysis (N1, N3, P_final)
-        # -------------------------------------------------------------
         final_sem = max(available_sems) if available_sems else 8
 
-        regular_students = [m for m in master_students if m.get("entry_type") == "Regular Entry (Semester 1)"]
-        lateral_students = [m for m in master_students if m.get("entry_type") == "Lateral Entry / DSE (Semester 3)"]
+        regular_students = [m for m in master_students if "Regular" in str(m.get("entry_type", ""))]
+        lateral_students = [
+            m for m in master_students
+            if "Diploma" in str(m.get("entry_type", ""))
+            or "Lateral" in str(m.get("entry_type", ""))
+        ]
+        diploma_students = lateral_students
+        multiple_entry_students = [m for m in master_students if m.get("is_multiple_entry") or "Multiple Entry" in str(m.get("entry_category", ""))]
+        multiple_exit_students = [m for m in master_students if m.get("is_multiple_exit")]
         other_students = [m for m in master_students if m not in regular_students and m not in lateral_students]
 
         N1 = len(regular_students)
@@ -794,18 +1202,27 @@ class BatchAcademicAnalyzer:
         N_other = len(other_students)
         total_cohort_intake = N1 + N3
 
-        passed_final_regular = sum(1 for m in regular_students if final_sem in m["semesters"] and m["semesters"][final_sem]["result"] == "PASS")
-        passed_final_lateral = sum(1 for m in lateral_students if final_sem in m["semesters"] and m["semesters"][final_sem]["result"] == "PASS")
-        passed_final_other = sum(1 for m in other_students if final_sem in m["semesters"] and m["semesters"][final_sem]["result"] == "PASS")
+        def student_passed_sem(m_rec, s_num):
+            sems = m_rec["semesters"]
+            rec = sems.get(s_num) or sems.get(str(s_num))
+            return rec is not None and str(rec.get("result") or "").upper() == "PASS"
+
+        def student_zero_kt(m_rec):
+            sems = m_rec["semesters"]
+            return all(str(r.get("result") or "").upper() == "PASS" for r in sems.values())
+
+        passed_final_regular = sum(1 for m in regular_students if student_passed_sem(m, final_sem))
+        passed_final_lateral = sum(1 for m in lateral_students if student_passed_sem(m, final_sem))
+        passed_final_other = sum(1 for m in other_students if student_passed_sem(m, final_sem))
         P_final = passed_final_regular + passed_final_lateral
 
         passed_no_kt_regular = sum(
             1 for m in regular_students
-            if final_sem in m["semesters"] and m["semesters"][final_sem]["result"] == "PASS" and all(r["result"] == "PASS" for r in m["semesters"].values())
+            if student_passed_sem(m, final_sem) and student_zero_kt(m)
         )
         passed_no_kt_lateral = sum(
             1 for m in lateral_students
-            if final_sem in m["semesters"] and m["semesters"][final_sem]["result"] == "PASS" and all(r["result"] == "PASS" for r in m["semesters"].values())
+            if student_passed_sem(m, final_sem) and student_zero_kt(m)
         )
         P_no_kt = passed_no_kt_regular + passed_no_kt_lateral
         P_with_kt = max(0, P_final - P_no_kt)
@@ -822,7 +1239,8 @@ class BatchAcademicAnalyzer:
         for idx, m in enumerate(master_students, start=1):
             sems = m["semesters"]
             had_any_kt = any(str(r.get("result") or "").upper() != "PASS" for r in sems.values())
-            final_res = str(sems[final_sem]["result"]).upper() if final_sem in sems else "DID_NOT_APPEAR"
+            final_rec = sems.get(final_sem) or sems.get(str(final_sem))
+            final_res = str(final_rec.get("result") or "").upper() if final_rec else "DID_NOT_APPEAR"
             passed_final = (final_res == "PASS")
             passed_without_kt = passed_final and not had_any_kt
 
@@ -832,10 +1250,11 @@ class BatchAcademicAnalyzer:
             sem_map = {}
             sem_res_map = {}
             for s in range(1, 9):
-                if s in sems:
-                    s_r = str(sems[s].get("result") or "").upper()
+                s_rec = sems.get(s) or sems.get(str(s))
+                if s_rec:
+                    s_r = str(s_rec.get("result") or "").upper()
                     sem_map[f"sem_{s}_result"] = s_r
-                    sem_map[f"sem_{s}_sgpi"] = sems[s].get("sgpi")
+                    sem_map[f"sem_{s}_sgpi"] = s_rec.get("sgpi")
                     sem_res_map[s] = s_r
                 else:
                     sem_map[f"sem_{s}_result"] = "-"
@@ -850,8 +1269,13 @@ class BatchAcademicAnalyzer:
                 "prn": m.get("prn", ""),
                 "entry_type": m.get("entry_type", "Regular Entry (Semester 1)"),
                 "entry_category": m.get("entry_category", m.get("entry_type", "Regular Entry (Semester 1)")),
+                "is_multiple_entry": m.get("is_multiple_entry", False),
+                "is_multiple_exit": m.get("is_multiple_exit", False),
+                "exit_status": m.get("exit_status", "Active"),
+                "exit_category": m.get("exit_category", "Active"),
                 "entry_sem": m.get("entry_semester", m.get("first_appeared_sem", 1)),
                 "first_appeared_sem": m.get("first_appeared_sem", 1),
+                "last_appeared_sem": m.get("last_appeared_sem", 8),
                 "semesters_appeared_count": len(sems),
                 "final_status": "PASS" if passed_final else ("FAIL" if final_res == "FAIL" else "DID_NOT_APPEAR"),
                 "passed_without_backlog": passed_without_kt,
@@ -863,35 +1287,60 @@ class BatchAcademicAnalyzer:
                 **sem_map
             })
 
+        p_dip_final = sum(1 for m in diploma_students if student_passed_sem(m, final_sem))
+        p_dip_no_kt = sum(1 for m in diploma_students if student_passed_sem(m, final_sem) and student_zero_kt(m))
+        dip_sr = round((p_dip_final / len(diploma_students)) * 100, 2) if diploma_students else 0.0
+
+        sem3_me_students = [m for m in multiple_entry_students if m.get("first_appeared_sem") == 3]
+        p_s3_me_final = sum(1 for m in sem3_me_students if student_passed_sem(m, final_sem))
+        p_s3_me_no_kt = sum(1 for m in sem3_me_students if student_passed_sem(m, final_sem) and student_zero_kt(m))
+
+        other_me_students = [m for m in multiple_entry_students if m.get("first_appeared_sem") != 3]
+        p_oth_me_final = sum(1 for m in other_me_students if student_passed_sem(m, final_sem))
+
         breakdown_table = [
             {
                 "category": "Regular Entry (Semester 1)",
                 "entry_sem": "Semester 1",
                 "admitted": N1,
+                "multiple_exit_after_y1": len(multiple_exit_students),
                 "passed_final": passed_final_regular,
                 "passed_no_kt": passed_no_kt_regular,
                 "passed_with_kt": max(0, passed_final_regular - passed_no_kt_regular),
                 "success_rate": regular_success_rate
             },
             {
-                "category": "Lateral Entry / DSE (Semester 3)",
+                "category": "Diploma Student (Lateral Entry)",
                 "entry_sem": "Semester 3",
-                "admitted": N3,
-                "passed_final": passed_final_lateral,
-                "passed_no_kt": passed_no_kt_lateral,
-                "passed_with_kt": max(0, passed_final_lateral - passed_no_kt_lateral),
-                "success_rate": lateral_success_rate
+                "admitted": len(diploma_students),
+                "multiple_exit_after_y1": 0,
+                "passed_final": p_dip_final,
+                "passed_no_kt": p_dip_no_kt,
+                "passed_with_kt": max(0, p_dip_final - p_dip_no_kt),
+                "success_rate": dip_sr
             }
         ]
-        if N_other > 0:
+        if sem3_me_students:
             breakdown_table.append({
-                "category": "Other / Transfer Entry",
-                "entry_sem": "Other Sem",
-                "admitted": N_other,
-                "passed_final": passed_final_other,
-                "passed_no_kt": max(0, passed_final_other),
+                "category": "Multiple Entry Student (Semester 3)",
+                "entry_sem": "Semester 3",
+                "admitted": len(sem3_me_students),
+                "multiple_exit_after_y1": 0,
+                "passed_final": p_s3_me_final,
+                "passed_no_kt": p_s3_me_no_kt,
+                "passed_with_kt": max(0, p_s3_me_final - p_s3_me_no_kt),
+                "success_rate": round((p_s3_me_final / len(sem3_me_students)) * 100, 2) if sem3_me_students else 0.0
+            })
+        if other_me_students:
+            breakdown_table.append({
+                "category": "Multiple Entry Student (Later Semesters)",
+                "entry_sem": "Later Semesters",
+                "admitted": len(other_me_students),
+                "multiple_exit_after_y1": 0,
+                "passed_final": p_oth_me_final,
+                "passed_no_kt": max(0, p_oth_me_final),
                 "passed_with_kt": 0,
-                "success_rate": round((passed_final_other / N_other) * 100, 2) if N_other > 0 else 0.0
+                "success_rate": round((p_oth_me_final / len(other_me_students)) * 100, 2) if other_me_students else 0.0
             })
 
         success_rate_analysis = {
@@ -899,6 +1348,38 @@ class BatchAcademicAnalyzer:
             "regular_intake_n1": N1,
             "N3_lateral_entry": N3,
             "lateral_entry_n3": N3,
+            "diploma_intake_count": len(diploma_students),
+            "multiple_entry_count": len(multiple_entry_students),
+            "multiple_entry_sem_3_count": len(sem3_me_students),
+            "multiple_entry_later_count": len(other_me_students),
+            "multiple_exit_after_y1_count": len(multiple_exit_students),
+            "multiple_exit_students": [
+                {
+                    "name": m["canonical_name"],
+                    "prn": m.get("prn", "N/A"),
+                    "semesters_appeared": sorted(list(m["semesters"].keys())),
+                    "exit_status": m.get("exit_status", "Multiple Exit (after First Year)")
+                }
+                for m in multiple_exit_students
+            ],
+            "multiple_entry_students_list": [
+                {
+                    "name": m["canonical_name"],
+                    "prn": m.get("prn", "N/A"),
+                    "entry_semester": m.get("first_appeared_sem", 3),
+                    "category": m.get("entry_category", "Multiple Entry Student")
+                }
+                for m in multiple_entry_students
+            ],
+            "diploma_students_list": [
+                {
+                    "name": m["canonical_name"],
+                    "prn": m.get("prn", "N/A"),
+                    "entry_semester": m.get("first_appeared_sem", 3),
+                    "graduated": student_passed_sem(m, final_sem)
+                }
+                for m in diploma_students
+            ],
             "N_other_transfer": N_other,
             "other_entry": N_other,
             "total_cohort_intake": total_cohort_intake,
@@ -952,8 +1433,8 @@ class BatchAcademicAnalyzer:
             pass_class_cnt = sum(1 for s in sem_sgpis if s < 6.0)
 
             # Count Regular vs Lateral in this semester
-            reg_cnt = sum(1 for m in master_students if sem in m["semesters"] and m.get("entry_type") == "Regular Entry (Semester 1)")
-            lat_cnt = sum(1 for m in master_students if sem in m["semesters"] and m.get("entry_type") == "Lateral Entry / DSE (Semester 3)")
+            reg_cnt = sum(1 for m in master_students if (sem in m["semesters"] or str(sem) in m["semesters"]) and "Regular" in str(m.get("entry_type", "")))
+            lat_cnt = sum(1 for m in master_students if (sem in m["semesters"] or str(sem) in m["semesters"]) and ("Lateral" in str(m.get("entry_type", "")) or "Diploma" in str(m.get("entry_type", ""))))
 
             # KT info
             kt_students = fail_cnt
@@ -1336,7 +1817,8 @@ class BatchAcademicAnalyzer:
         pdf_pipeline: str = "local",
         excel_mode: str = "direct",
         progress_cb: Optional[Callable[[float, str], None]] = None,
-        audit_cb: Optional[Callable[[Dict[str, Any]], None]] = None
+        audit_cb: Optional[Callable[[Dict[str, Any]], None]] = None,
+        selected_semesters: Optional[List[int]] = None
     ) -> Dict[str, Any]:
         """
         Executes end-to-end multi-semester batch analysis with live progress reporting.
@@ -1349,10 +1831,13 @@ class BatchAcademicAnalyzer:
 
         batch_meta = self.detect_batch_files(batch_folder, target_branch)
         detected_sems = batch_meta["semesters_detected"]
+        if selected_semesters:
+            detected_sems = [s for s in detected_sems if s["semester"] in selected_semesters]
         if not detected_sems:
-            raise ValueError(f"No valid semester files (1st to 8th sem) found in {batch_folder}")
+            raise ValueError(f"No valid semester files (1st to 8th sem) found in {batch_folder} for selected scope")
 
         batch_slug = batch_meta.get("batch_slug") or normalize_batch_slug(batch_folder)
+        app_store_dir = batch_meta.get("app_batch_dir") or os.path.join(self.app_batch_dir, batch_slug)
         semester_data: Dict[int, List[Dict[str, Any]]] = {}
         total_sems = len(detected_sems)
 
@@ -1387,23 +1872,23 @@ class BatchAcademicAnalyzer:
                 use_ai = (excel_mode == "ai_fix")
                 records = self.parse_excel_semester(fpath, sem, target_branch, use_ai_fix=use_ai, progress_cb=sem_prog)
                 # Ensure clean sorted Excel copy is saved into app's designated batch store
-                clean_store_file = os.path.join(self.app_batch_dir, batch_slug, f"Sem_{sem}.xlsx")
+                clean_store_file = os.path.join(app_store_dir, f"Sem_{sem}.xlsx")
                 if not os.path.isfile(clean_store_file) or not s_info.get("is_app_store"):
                     try:
-                        self.save_clean_semester_excel(records, batch_slug, sem)
+                        self.save_clean_semester_excel(records, batch_slug, sem, target_dir=app_store_dir)
                     except Exception as e:
                         logger.warning(f"Could not copy clean excel for Sem {sem}: {e}")
             else:
                 # PDF format: extract and then save as clean Excel into app batch store!
                 records = self.extract_pdf_semester(fpath, sem, engine_mode=pdf_pipeline, progress_cb=sem_prog)
                 try:
-                    clean_path = self.save_clean_semester_excel(records, batch_slug, sem)
+                    clean_path = self.save_clean_semester_excel(records, batch_slug, sem, target_dir=app_store_dir)
                     if audit_cb:
                         audit_cb({
                             "timestamp": time.strftime("%H:%M:%S"),
                             "type": "clean_excel_saved",
                             "badge": f"SEM {sem} EXCEL SAVED",
-                            "title": f"Auto-sorted clean Excel saved to batch_data/{batch_slug}/Sem_{sem}.xlsx",
+                            "title": f"Auto-sorted clean Excel saved to {os.path.basename(os.path.dirname(clean_path))}/Sem_{sem}.xlsx",
                             "details": {"path": clean_path, "students": len(records)}
                         })
                 except Exception as e:
