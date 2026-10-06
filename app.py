@@ -25,8 +25,10 @@ from werkzeug.utils import secure_filename
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(APP_DIR, ".."))
-BATCH_DATA_DIR = os.path.join(PROJECT_ROOT, "Batch Data")
-APP_BATCH_DATA_DIR = os.path.join(APP_DIR, "batch_data")
+DEPARTMENTS_DATA_DIR = os.path.join(APP_DIR, "departments_data")
+APP_DEPARTMENTS_DATA_DIR = DEPARTMENTS_DATA_DIR
+BATCH_DATA_DIR = DEPARTMENTS_DATA_DIR
+APP_BATCH_DATA_DIR = DEPARTMENTS_DATA_DIR
 INPUT_DIR = os.path.join(APP_DIR, "input")
 OUTPUT_DIR = os.path.join(APP_DIR, "output")
 KB_DIR = os.path.join(APP_DIR, "knowledge_base")
@@ -34,7 +36,8 @@ KB_DIR = os.path.join(APP_DIR, "knowledge_base")
 os.makedirs(INPUT_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(KB_DIR, exist_ok=True)
-os.makedirs(APP_BATCH_DATA_DIR, exist_ok=True)
+os.makedirs(os.path.join(DEPARTMENTS_DATA_DIR, "pdf"), exist_ok=True)
+os.makedirs(os.path.join(DEPARTMENTS_DATA_DIR, "excel"), exist_ok=True)
 
 import shutil
 
@@ -55,12 +58,31 @@ from core.ai_cross_checker import run_ai_cross_check, validate_patch_sandbox
 from core.excel_csv_ingester import TabularIngester, sanitize_dict_for_json
 from core.batch_analyzer import BatchAcademicAnalyzer, detect_semester_number, normalize_batch_slug
 from core.batch_excel_generator import BatchExcelReportGenerator
+from core.pdf_classifier import (
+    classify_pdf_first_page,
+    check_duplicate_dataset,
+    store_classified_pdf,
+    get_canonical_excel_path,
+    normalize_department,
+    normalize_batch,
+    normalize_semester
+)
+from core.dataset_database import (
+    get_default_db_path,
+    init_db,
+    save_dataset_to_db,
+    get_dataset_from_db,
+    list_datasets_from_db
+)
 from exporter import export_ai_extracted_data, write_csv_file, write_excel_file
 from core.execution_controller import ExtractionController
 from models import CourseCatalog, ExamMeta
 
+DB_PATH = get_default_db_path(DEPARTMENTS_DATA_DIR)
+init_db(DB_PATH)
+
 tabular_ingester = TabularIngester(OUTPUT_DIR)
-batch_analyzer = BatchAcademicAnalyzer(OUTPUT_DIR, app_batch_dir=APP_BATCH_DATA_DIR, root_batch_dir=BATCH_DATA_DIR)
+batch_analyzer = BatchAcademicAnalyzer(OUTPUT_DIR, app_batch_dir=APP_DEPARTMENTS_DATA_DIR, root_batch_dir=DEPARTMENTS_DATA_DIR)
 
 
 def safe_folder_name(name: str) -> str:
@@ -78,11 +100,13 @@ def auto_sort_into_app_batch_store(
     students: Optional[List[Dict[str, Any]]] = None,
     catalog: Optional[Any] = None,
     folder_name: Optional[str] = None,
-    app_batch_dir: Optional[str] = None
+    app_batch_dir: Optional[str] = None,
+    dataset_meta: Optional[Dict[str, Any]] = None
 ) -> Optional[str]:
     """
-    Automatically detects the batch and semester from extraction outputs,
-    and sorts/saves a clean Excel file into data_extractor_AI/batch_data/<batch>/Sem_<N>.xlsx.
+    Stores a clean Excel file into canonical structure:
+      departments_data/excel/<Department>/<Batch>/<Semester>.xlsx
+    and persists records into SQLite academic_records.db.
     """
     try:
         if folder_name and not source_path:
@@ -90,79 +114,111 @@ def auto_sort_into_app_batch_store(
         if catalog and not meta:
             meta = catalog
 
-        base_batch_store = app_batch_dir or APP_BATCH_DATA_DIR
-
-        # 1. Deduce semester number
-        sem_num = None
-        if meta:
-            sem_val = getattr(meta, "semester", None) if hasattr(meta, "semester") else (meta.get("semester") if isinstance(meta, dict) else None)
-            if sem_val:
-                m_s = re.search(r"(\d+)", str(sem_val))
-                if m_s:
-                    sem_num = int(m_s.group(1))
-            if not sem_num:
-                ex_name = getattr(meta, "exam_name", None) if hasattr(meta, "exam_name") else (meta.get("exam_name") if isinstance(meta, dict) else None)
-                if ex_name:
-                    sem_num = detect_semester_number(str(ex_name))
-        if not sem_num and source_path:
-            sem_num = detect_semester_number(source_path)
-        if not sem_num and excel_path:
-            sem_num = detect_semester_number(excel_path)
-        if not sem_num or not (1 <= sem_num <= 8):
-            return None
-
-        # 2. Deduce batch slug (e.g. '21-22')
-        batch_slug = None
-        if source_path:
-            parent_dir = os.path.basename(os.path.dirname(os.path.abspath(source_path)))
-            m_batch = re.search(r"(\d{2,4})[\s_\-/]+(\d{2,4})", parent_dir)
-            if m_batch:
-                batch_slug = normalize_batch_slug(parent_dir)
-            else:
-                m_file = re.search(r"(\d{2,4})[\s_\-/]+(\d{2,4})", os.path.basename(source_path))
-                if m_file:
-                    batch_slug = normalize_batch_slug(os.path.basename(source_path))
-
-        if not batch_slug and meta:
-            acad_yr = str(getattr(meta, "academic_year", "") or "") if hasattr(meta, "academic_year") else (meta.get("academic_year", "") if isinstance(meta, dict) else "")
-            ex_title = str(getattr(meta, "exam_title", "") or "") if hasattr(meta, "exam_title") else (meta.get("exam_title", "") if isinstance(meta, dict) else "")
-            m_ay = re.search(r"(\d{2,4})[\s_\-/]+(\d{2,4})", acad_yr or ex_title)
-            if m_ay:
-                batch_slug = normalize_batch_slug(acad_yr or ex_title)
-
-        if not batch_slug and excel_path:
-            batch_slug = normalize_batch_slug(os.path.basename(excel_path))
-
-        if not batch_slug or batch_slug == "batch":
-            batch_slug = "General"
-
+        # Extract or resolve canonical department, batch, semester
         dept_name = None
-        if source_path:
-            clean_sp = source_path.replace("\\", "/").strip("/")
-            parts = clean_sp.split("/")
-            if len(parts) >= 2:
-                for p in parts[:-1]:
-                    p_up = p.upper()
-                    if any(k in p_up for k in ["COMP", "AIDS", "AI_DS", "AI&DS", "IT", "MECH"]):
-                        dept_name = p
-                        break
+        batch_slug = None
+        sem_canonical = None
 
-        if dept_name:
-            dest_dir = os.path.join(base_batch_store, dept_name, batch_slug)
-        else:
-            dest_dir = os.path.join(base_batch_store, batch_slug)
+        if dataset_meta and isinstance(dataset_meta, dict):
+            dept_name = dataset_meta.get("department")
+            batch_slug = dataset_meta.get("batch")
+            sem_canonical = dataset_meta.get("semester")
 
-        os.makedirs(dest_dir, exist_ok=True)
-        dest_excel = os.path.join(dest_dir, f"Sem_{sem_num}.xlsx")
+        # 1. Resolve Semester
+        if not sem_canonical:
+            sem_val = None
+            if meta:
+                sem_val = getattr(meta, "semester", None) if hasattr(meta, "semester") else (meta.get("semester") if isinstance(meta, dict) else None)
+                if not sem_val:
+                    ex_name = getattr(meta, "exam_name", None) if hasattr(meta, "exam_name") else (meta.get("exam_name") if isinstance(meta, dict) else None)
+                    if ex_name:
+                        sem_val = ex_name
+            if not sem_val and source_path:
+                sem_val = source_path
+            if not sem_val and excel_path:
+                sem_val = excel_path
+            sem_canonical = normalize_semester(sem_val)
 
-        # Copy existing excel or write from students
-        if excel_path and os.path.isfile(excel_path):
-            shutil.copy2(excel_path, dest_excel)
-        elif students:
-            analyzer = BatchAcademicAnalyzer(output_dir=OUTPUT_DIR, app_batch_dir=base_batch_store)
-            analyzer.save_clean_semester_excel(students, batch_slug, sem_num, target_dir=dest_dir)
+        sem_num_match = re.search(r"\d+", sem_canonical)
+        sem_num = int(sem_num_match.group(0)) if sem_num_match else 1
 
-        return dest_excel
+        # 2. Resolve Department
+        if not dept_name:
+            cand_text = f"{source_path or ''} {excel_path or ''}"
+            if meta:
+                c_name = getattr(meta, "college_name", "") if hasattr(meta, "college_name") else (meta.get("college_name", "") if isinstance(meta, dict) else "")
+                e_title = getattr(meta, "exam_title", "") if hasattr(meta, "exam_title") else (meta.get("exam_title", "") if isinstance(meta, dict) else "")
+                cand_text += f" {c_name} {e_title}"
+            dept_name = normalize_department(cand_text)
+
+        # 3. Resolve Batch
+        if not batch_slug:
+            cand_batch = None
+            if meta:
+                cand_batch = getattr(meta, "academic_year", None) if hasattr(meta, "academic_year") else (meta.get("academic_year") if isinstance(meta, dict) else None)
+                if not cand_batch:
+                    cand_batch = getattr(meta, "exam_title", None) if hasattr(meta, "exam_title") else (meta.get("exam_title") if isinstance(meta, dict) else None)
+            if not cand_batch and source_path:
+                cand_batch = source_path
+            if not cand_batch and excel_path:
+                cand_batch = excel_path
+            batch_slug = normalize_batch(cand_batch, sem_num=sem_num)
+
+        # Target directory: app's departments_data
+        dest_dirs = [
+            os.path.join(DEPARTMENTS_DATA_DIR, "excel", dept_name, batch_slug)
+        ]
+        legacy_dirs = []
+        if app_batch_dir and app_batch_dir not in (APP_DEPARTMENTS_DATA_DIR, DEPARTMENTS_DATA_DIR):
+            dest_dirs.append(os.path.join(app_batch_dir, "excel", dept_name, batch_slug))
+            legacy_slug = normalize_batch_slug(batch_slug)
+            raw_source_slug = normalize_batch_slug(cand_batch) if cand_batch else legacy_slug
+            for s in set([legacy_slug, raw_source_slug]):
+                legacy_dirs.append(os.path.join(app_batch_dir, s))
+                legacy_dirs.append(os.path.join(app_batch_dir, dept_name, s))
+
+        canonical_excel = None
+        for d_dir in dest_dirs:
+            os.makedirs(d_dir, exist_ok=True)
+            target_f = os.path.join(d_dir, f"{sem_canonical}.xlsx")
+            if excel_path and os.path.isfile(excel_path):
+                shutil.copy2(excel_path, target_f)
+            elif students:
+                analyzer = BatchAcademicAnalyzer(output_dir=OUTPUT_DIR, app_batch_dir=APP_DEPARTMENTS_DATA_DIR, root_batch_dir=DEPARTMENTS_DATA_DIR)
+                analyzer.save_clean_semester_excel(students, batch_slug, sem_num, target_dir=d_dir)
+            if not canonical_excel:
+                canonical_excel = target_f
+
+        # Save legacy Sem_<N>.xlsx if custom app_batch_dir was provided
+        for l_dir in legacy_dirs:
+            os.makedirs(l_dir, exist_ok=True)
+            target_l = os.path.join(l_dir, f"Sem_{sem_num}.xlsx")
+            if excel_path and os.path.isfile(excel_path):
+                shutil.copy2(excel_path, target_l)
+            elif students:
+                analyzer = BatchAcademicAnalyzer(output_dir=OUTPUT_DIR, app_batch_dir=APP_DEPARTMENTS_DATA_DIR, root_batch_dir=DEPARTMENTS_DATA_DIR)
+                analyzer.save_clean_semester_excel(students, normalize_batch_slug(batch_slug), sem_num, target_dir=l_dir)
+
+        # Save to SQLite database
+        try:
+            pdf_path = os.path.join(DEPARTMENTS_DATA_DIR, "pdf", dept_name, batch_slug, f"{sem_canonical}.pdf")
+            if not os.path.isfile(pdf_path):
+                pdf_path = None
+            cat_payload = catalog if isinstance(catalog, dict) else (catalog.to_dict() if hasattr(catalog, "to_dict") else {})
+            save_dataset_to_db(
+                db_path=DB_PATH,
+                department=dept_name,
+                batch=batch_slug,
+                semester=sem_canonical,
+                excel_path=canonical_excel,
+                pdf_path=pdf_path,
+                students=students or [],
+                catalog=cat_payload
+            )
+        except Exception as db_err:
+            logger.warning(f"Failed to persist dataset to SQLite: {db_err}")
+
+        return canonical_excel
     except Exception as e:
         logger.warning(f"auto_sort_into_app_batch_store warning: {e}")
         return None
@@ -194,6 +250,14 @@ def update_job_progress(job_id: str, progress: float, message: str) -> None:
         if job_id in jobs:
             jobs[job_id]["progress"] = round(min(max(float(progress), 0.0), 100.0), 1)
             jobs[job_id]["message"] = message
+            m = re.search(r"[Pp]age\s+(\d+)\s*(?:/|of)\s*(\d+)", message)
+            if m:
+                curr_p = int(m.group(1))
+                tot_p = int(m.group(2))
+                jobs[job_id]["current_page"] = curr_p
+                jobs[job_id]["total_pages"] = tot_p
+                jobs[job_id]["pages_processed"] = curr_p
+                jobs[job_id]["pages_remaining"] = max(0, tot_p - curr_p)
 
 
 def update_batch_job_progress(job_id: str, progress: float, message: str) -> None:
@@ -505,13 +569,31 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosschec
         json_filename = csv_filename.replace("_extracted_data.csv", "_catalog.json")
 
         full_excel_path = os.path.join(des_dir, excel_filename)
-        # Auto-sort clean Excel into app batch store: data_extractor_AI/batch_data/<batch>/Sem_<N>.xlsx
+        with jobs_lock:
+            ds_meta = jobs.get(job_id, {}).get("dataset_meta")
+
+        # Auto-sort clean Excel into departments_data/excel/<Department>/<Batch>/<Semester>.xlsx and SQLite DB
         auto_sort_into_app_batch_store(
             excel_path=full_excel_path,
             meta=meta,
             source_path=target_pdf_path,
-            students=flat_records
+            students=flat_records,
+            catalog=meta.catalog if meta else None,
+            dataset_meta=ds_meta
         )
+
+        # Persist dataset_meta into catalog.json as persistent single source of truth
+        if ds_meta:
+            try:
+                cat_full = os.path.join(des_dir, json_filename)
+                if os.path.isfile(cat_full):
+                    with open(cat_full, "r", encoding="utf-8") as f:
+                        cat_content = json.load(f)
+                    cat_content["dataset_meta"] = ds_meta
+                    with open(cat_full, "w", encoding="utf-8") as f:
+                        json.dump(cat_content, f, indent=2)
+            except Exception as e:
+                logger.warning(f"Failed to append dataset_meta to catalog.json: {e}")
 
         # Save AI cross-check audit JSON if executed
         if ai_crosscheck_result:
@@ -550,6 +632,7 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosschec
             "academic_report_file": academic_filename,
             "archetype": archetype,
             "engine_used": engine_name,
+            "dataset_meta": ds_meta,
             "semester": meta.semester,
             "college_name": meta.college_name,
             "exam_title": meta.exam_title,
@@ -652,8 +735,21 @@ def _run_batch_analysis_worker(
 
 # --- Routes ---
 
-@app.route("/")
+@app.route("/", methods=["GET"])
+@app.route("/extract", methods=["GET"])
+@app.route("/historical", methods=["GET"])
+@app.route("/analysis", methods=["GET"])
+@app.route("/analysis/subject", methods=["GET"])
+@app.route("/reports", methods=["GET"])
+@app.route("/settings", methods=["GET"])
 def index_route():
+    return render_template("index.html")
+
+
+@app.errorhandler(404)
+def handle_404(e):
+    if request.path.startswith("/api/"):
+        return jsonify({"success": False, "error": "Endpoint not found"}), 404
     return render_template("index.html")
 
 
@@ -768,8 +864,26 @@ def inspect_batch():
 
     clean_batch_name = batch_name.replace("\\", "/").strip("/")
     slug = normalize_batch_slug(clean_batch_name)
+    norm_branch = normalize_department(branch) if branch else ""
+    norm_yr = normalize_batch(academic_year) if academic_year else ""
+    if not norm_branch and "/" in clean_batch_name:
+        p_b, p_y = clean_batch_name.split("/", 1)
+        norm_branch = normalize_department(p_b)
+        norm_yr = normalize_batch(p_y)
 
     candidates = [
+        os.path.join(DEPARTMENTS_DATA_DIR, "excel", norm_branch, norm_yr) if norm_branch and norm_yr else "",
+        os.path.join(DEPARTMENTS_DATA_DIR, "pdf", norm_branch, norm_yr) if norm_branch and norm_yr else "",
+        os.path.join(APP_DEPARTMENTS_DATA_DIR, "excel", norm_branch, norm_yr) if norm_branch and norm_yr else "",
+        os.path.join(APP_DEPARTMENTS_DATA_DIR, "pdf", norm_branch, norm_yr) if norm_branch and norm_yr else "",
+        os.path.join(DEPARTMENTS_DATA_DIR, "excel", clean_batch_name),
+        os.path.join(DEPARTMENTS_DATA_DIR, "pdf", clean_batch_name),
+        os.path.join(APP_DEPARTMENTS_DATA_DIR, "excel", clean_batch_name),
+        os.path.join(APP_DEPARTMENTS_DATA_DIR, "pdf", clean_batch_name),
+        os.path.join(DEPARTMENTS_DATA_DIR, "excel", branch, academic_year) if branch and academic_year else "",
+        os.path.join(DEPARTMENTS_DATA_DIR, "pdf", branch, academic_year) if branch and academic_year else "",
+        os.path.join(APP_DEPARTMENTS_DATA_DIR, "excel", branch, academic_year) if branch and academic_year else "",
+        os.path.join(APP_DEPARTMENTS_DATA_DIR, "pdf", branch, academic_year) if branch and academic_year else "",
         os.path.join(APP_BATCH_DATA_DIR, clean_batch_name),
         os.path.join(APP_BATCH_DATA_DIR, branch, academic_year) if branch and academic_year else "",
         os.path.join(APP_BATCH_DATA_DIR, slug),
@@ -828,8 +942,26 @@ def run_batch_analysis():
 
     clean_batch_name = batch_name.replace("\\", "/").strip("/")
     slug = normalize_batch_slug(clean_batch_name)
+    norm_branch = normalize_department(branch) if branch else ""
+    norm_yr = normalize_batch(academic_year) if academic_year else ""
+    if not norm_branch and "/" in clean_batch_name:
+        p_b, p_y = clean_batch_name.split("/", 1)
+        norm_branch = normalize_department(p_b)
+        norm_yr = normalize_batch(p_y)
 
     candidates = [
+        os.path.join(DEPARTMENTS_DATA_DIR, "excel", norm_branch, norm_yr) if norm_branch and norm_yr else "",
+        os.path.join(DEPARTMENTS_DATA_DIR, "pdf", norm_branch, norm_yr) if norm_branch and norm_yr else "",
+        os.path.join(APP_DEPARTMENTS_DATA_DIR, "excel", norm_branch, norm_yr) if norm_branch and norm_yr else "",
+        os.path.join(APP_DEPARTMENTS_DATA_DIR, "pdf", norm_branch, norm_yr) if norm_branch and norm_yr else "",
+        os.path.join(DEPARTMENTS_DATA_DIR, "excel", clean_batch_name),
+        os.path.join(DEPARTMENTS_DATA_DIR, "pdf", clean_batch_name),
+        os.path.join(APP_DEPARTMENTS_DATA_DIR, "excel", clean_batch_name),
+        os.path.join(APP_DEPARTMENTS_DATA_DIR, "pdf", clean_batch_name),
+        os.path.join(DEPARTMENTS_DATA_DIR, "excel", branch, academic_year) if branch and academic_year else "",
+        os.path.join(DEPARTMENTS_DATA_DIR, "pdf", branch, academic_year) if branch and academic_year else "",
+        os.path.join(APP_DEPARTMENTS_DATA_DIR, "excel", branch, academic_year) if branch and academic_year else "",
+        os.path.join(APP_DEPARTMENTS_DATA_DIR, "pdf", branch, academic_year) if branch and academic_year else "",
         os.path.join(APP_BATCH_DATA_DIR, clean_batch_name),
         os.path.join(APP_BATCH_DATA_DIR, branch, academic_year) if branch and academic_year else "",
         os.path.join(APP_BATCH_DATA_DIR, slug),
@@ -1040,8 +1172,83 @@ def load_history_entry(folder_name):
         "academic_report_file": academic_filename,
         "total_students": len(records),
         "students": records,
-        "meta": cat_meta
+        "meta": cat_meta,
+        "dataset_meta": cat_meta.get("dataset_meta")
     })
+
+
+@app.route("/api/classify", methods=["POST"])
+def classify_uploaded_document():
+    """
+    Vision AI classification step for uploaded PDF on Page 1.
+    Determines canonical Department, Batch, Semester.
+    Checks if a dataset with this Department, Batch, Semester already exists.
+    """
+    target_pdf_path = None
+    safe_name = None
+
+    for key in ["pdf_file", "file"]:
+        if key in request.files:
+            up = request.files[key]
+            if up and up.filename:
+                safe_name = secure_filename(up.filename)
+                ext = os.path.splitext(safe_name)[1].lower()
+                if ext != ".pdf":
+                    return jsonify({"success": False, "error": "Classification requires a PDF file."}), 400
+                saved_path = os.path.join(INPUT_DIR, safe_name)
+                up.save(saved_path)
+                target_pdf_path = saved_path
+                break
+
+    json_data = request.get_json(silent=True) or {}
+    if not target_pdf_path:
+        existing = request.form.get("input_file") or request.form.get("existing_input") or json_data.get("input_file") or json_data.get("pdf_file")
+        if existing:
+            safe_name = secure_filename(existing)
+            cand = os.path.join(INPUT_DIR, safe_name)
+            if os.path.isfile(cand):
+                target_pdf_path = cand
+
+    if not target_pdf_path or not os.path.isfile(target_pdf_path):
+        return jsonify({"success": False, "error": "No valid PDF file provided for classification."}), 400
+
+    if os.path.getsize(target_pdf_path) == 0:
+        return jsonify({"success": False, "error": "PDF file is empty (0 bytes)."}), 400
+
+    try:
+        import fitz
+        test_doc = fitz.open(target_pdf_path)
+        if len(test_doc) == 0:
+            test_doc.close()
+            return jsonify({"success": False, "error": "PDF file contains 0 pages or is empty."}), 400
+        test_doc.close()
+    except Exception:
+        return jsonify({"success": False, "error": "Malformed or corrupted PDF file header."}), 400
+
+    try:
+        res = classify_pdf_first_page(target_pdf_path)
+        dept = res["department"]
+        batch = res["batch"]
+        sem = res["semester"]
+
+        dup_info = check_duplicate_dataset(dept, batch, sem, DEPARTMENTS_DATA_DIR)
+
+        return jsonify({
+            "success": True,
+            "department": dept,
+            "batch": batch,
+            "semester": sem,
+            "pdf_rel_path": res.get("pdf_rel_path"),
+            "excel_rel_path": res.get("excel_rel_path"),
+            "is_duplicate": dup_info["duplicate"],
+            "pdf_exists": dup_info["pdf_exists"],
+            "excel_exists": dup_info["excel_exists"],
+            "classification_method": res.get("classification_method"),
+            "file_name": safe_name or os.path.basename(target_pdf_path)
+        })
+    except Exception as e:
+        logger.error(f"Classification failed: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route("/api/extract", methods=["POST"])
@@ -1110,14 +1317,100 @@ def start_extraction():
         batch_rel = request.form.get("batch_file") or json_data.get("batch_file") or json_data.get("pdf_path")
         if batch_rel:
             clean_rel = batch_rel.replace("\\", "/").strip().lstrip("/")
-            if clean_rel.lower().startswith("batch data/"):
-                clean_rel = clean_rel[11:].lstrip("/")
-            cand = os.path.abspath(os.path.join(BATCH_DATA_DIR, clean_rel))
-            if cand.startswith(BATCH_DATA_DIR) and os.path.isfile(cand):
-                target_pdf_path = cand
+            if clean_rel.lower().startswith("departments data/") or clean_rel.lower().startswith("departments_data/"):
+                clean_rel = clean_rel.split("/", 1)[1].lstrip("/")
+            elif clean_rel.lower().startswith("batch data/") or clean_rel.lower().startswith("batch_data/"):
+                clean_rel = clean_rel.split("/", 1)[1].lstrip("/")
+            candidate_dirs = [
+                DEPARTMENTS_DATA_DIR,
+                os.path.join(DEPARTMENTS_DATA_DIR, "pdf"),
+                os.path.join(PROJECT_ROOT, "Batch Data")
+            ]
+            for base_dir in candidate_dirs:
+                if not os.path.isdir(base_dir):
+                    continue
+                cand = os.path.abspath(os.path.join(base_dir, clean_rel))
+                if os.path.isfile(cand):
+                    target_pdf_path = cand
+                    break
 
     if not target_pdf_path or not os.path.isfile(target_pdf_path):
         return jsonify({"success": False, "error": "No valid PDF document or tabular file provided or found."}), 400
+
+    if os.path.getsize(target_pdf_path) == 0:
+        return jsonify({"success": False, "error": "PDF file is empty (0 bytes)."}), 400
+
+    try:
+        import fitz
+        test_doc = fitz.open(target_pdf_path)
+        if len(test_doc) == 0:
+            test_doc.close()
+            return jsonify({"success": False, "error": "PDF file contains 0 pages or is empty."}), 400
+        test_doc.close()
+    except Exception:
+        return jsonify({"success": False, "error": "Malformed or corrupted PDF file header."}), 400
+
+    # 1. Run single Vision AI classification step on Page 1 if dataset metadata not already provided
+    overwrite = (
+        request.form.get("overwrite") in ("1", "true", "yes")
+        or request.args.get("overwrite") in ("1", "true", "yes")
+        or json_data.get("overwrite") in (True, "1", 1)
+    )
+
+    dept = request.form.get("department") or json_data.get("department")
+    batch = request.form.get("batch") or json_data.get("batch")
+    sem = request.form.get("semester") or json_data.get("semester")
+
+    if not (dept and batch and sem):
+        try:
+            clf_res = classify_pdf_first_page(target_pdf_path)
+            dept = dept or clf_res["department"]
+            batch = batch or clf_res["batch"]
+            sem = sem or clf_res["semester"]
+        except Exception as clf_err:
+            logger.warning(f"Classification warning: {clf_err}")
+            dept = dept or "Artificial_Intelligence_and_Data_Science"
+            batch = batch or "2223"
+            sem = sem or "Semester_1"
+
+    # Normalize canonical names
+    dept = normalize_department(dept)
+    sem = normalize_semester(sem)
+    sem_num_val = int(re.search(r"\d+", sem).group(0)) if re.search(r"\d+", sem) else 1
+    batch = normalize_batch(batch, sem_num=sem_num_val)
+
+    # 2. Duplicate Detection: Check if <Department>/<Batch>/<Semester> already exists (for direct uploads)
+    is_direct_upload = bool(not request.form.get("batch_file") and not json_data.get("batch_file"))
+    if is_direct_upload:
+        dup_info = check_duplicate_dataset(dept, batch, sem, DEPARTMENTS_DATA_DIR)
+        if dup_info["duplicate"] and not overwrite:
+            return jsonify({
+                "success": False,
+                "duplicate": True,
+                "department": dept,
+                "batch": batch,
+                "semester": sem,
+                "pdf_exists": dup_info["pdf_exists"],
+                "excel_exists": dup_info["excel_exists"],
+                "message": f"Dataset for '{dept} / {batch} / {sem}' already exists. Please confirm replacement."
+            }), 409
+
+    # 3. Automatically create departments_data/pdf/<Department>/<Batch>/<Semester>.pdf
+    canonical_pdf = store_classified_pdf(
+        target_pdf_path, dept, batch, sem, DEPARTMENTS_DATA_DIR, overwrite=True
+    )
+    canonical_excel = get_canonical_excel_path(dept, batch, sem, DEPARTMENTS_DATA_DIR)
+
+    # Use the stored canonical PDF for the extraction pipeline
+    target_pdf_path = canonical_pdf
+
+    dataset_meta = {
+        "department": dept,
+        "batch": batch,
+        "semester": sem,
+        "pdf_path": canonical_pdf,
+        "excel_path": canonical_excel
+    }
 
     job_id = str(uuid.uuid4())
     ctrl = ExtractionController(job_id)
@@ -1134,6 +1427,7 @@ def start_extraction():
             "token_usage": {"input": 0, "output": 0, "total": 0},
             "live_students": [],
             "catalog": [],
+            "dataset_meta": dataset_meta,
             "is_paused": False,
             "is_stopped": False,
             "result": None,
@@ -1175,7 +1469,7 @@ def start_extraction():
         daemon=True
     )
     t.start()
-    return jsonify({"success": True, "job_id": job_id})
+    return jsonify({"success": True, "job_id": job_id, "dataset_meta": dataset_meta})
 
 
 @app.route("/api/jobs/<job_id>", methods=["GET"])
@@ -1194,6 +1488,10 @@ def get_job_status(job_id):
         resp["is_paused"] = ctrl.is_paused
         resp["is_stopped"] = ctrl.is_stopped
     resp["live_count"] = len(job.get("live_students", []))
+    resp["current_page"] = job.get("current_page")
+    resp["total_pages"] = job.get("total_pages")
+    resp["pages_processed"] = job.get("pages_processed")
+    resp["pages_remaining"] = job.get("pages_remaining")
     return jsonify(resp)
 
 
@@ -1586,12 +1884,26 @@ def sync_dataset():
 
     excel_filename = f"{clean_folder}_extracted_data.xlsx"
     excel_path = os.path.join(folder_path, excel_filename)
+    canonical_excel_path = None
+    ds_meta = data.get("dataset_meta") or existing_cat.get("dataset_meta")
+    if not ds_meta:
+        with jobs_lock:
+            for jid, job in jobs.items():
+                if job.get("folder_name") == clean_folder and job.get("dataset_meta"):
+                    ds_meta = job.get("dataset_meta")
+                    break
+
     try:
         meta_obj = ExamMeta(exam_title=clean_folder)
         write_excel_file(students, columns, None, meta_obj, excel_path)
-        meta_sem = existing_cat.get("semester")
-        meta_sync = ExamMeta(exam_title=clean_folder, semester=meta_sem)
-        auto_sort_into_app_batch_store(excel_path=excel_path, meta=meta_sync, source_path=clean_folder, students=students)
+        canonical_excel_path = auto_sort_into_app_batch_store(
+            excel_path=excel_path,
+            meta=meta_obj,
+            source_path=clean_folder,
+            students=students,
+            catalog=existing_cat,
+            dataset_meta=ds_meta
+        )
     except Exception as e:
         print(f"[!] Note: Excel export sync warning: {e}")
 
@@ -1610,9 +1922,12 @@ def sync_dataset():
         "csv_file": csv_filename,
         "excel_file": excel_filename,
         "json_file": cat_filename,
+        "canonical_excel_path": canonical_excel_path,
+        "db_saved": True,
+        "dataset_meta": ds_meta,
         "count": len(students),
         "columns_count": len(columns),
-        "message": f"Successfully saved {len(students)} records across {len(columns)} columns."
+        "message": f"Successfully saved {len(students)} records to Database and Excel."
     })
 
 

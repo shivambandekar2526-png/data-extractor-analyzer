@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Data Extractor AI — Autonomous Document Intelligence</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=3.8">
+  <link rel="stylesheet" href="/static/css/style.css?v=4.0">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
@@ -29,6 +29,13 @@
 <body class="dark-theme">
   <header class="app-header">
     <div class="header-left">
+      <button type="button" id="btnToggleDrawer" class="btn-drawer-toggle" title="Toggle Sidebar (Ctrl+B)" aria-label="Toggle Sidebar">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+      </button>
       <div class="logo-mark">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -92,264 +99,337 @@
     </div>
   </header>
 
-  <main class="app-main">
-    <!-- Master Workflow Mode Selector -->
-    <div class="mode-navigation-bar">
-      <button type="button" class="mode-nav-btn active" id="btnModeSingle">
-        <span class="mode-nav-icon">📄</span>
-        <div class="mode-nav-text">
-          <span class="mode-nav-title">Single Semester Extraction</span>
-          <span class="mode-nav-sub">Extract individual PDF Gazette, Ledger, or Spreadsheet</span>
-        </div>
-      </button>
-      <button type="button" class="mode-nav-btn" id="btnModeBatch">
-        <span class="mode-nav-icon">🏛️</span>
-        <div class="mode-nav-text">
-          <span class="mode-nav-title">Batch 1st–8th Sem Multi-Source Suite</span>
-          <span class="mode-nav-sub">Full degree cohort cross-analysis • PDF + Excel • 10-Sheet Workbook</span>
-        </div>
-        <span class="badge-new-feature">CORE FEATURE</span>
-      </button>
-    </div>
-
-    <!-- Single Semester Workspace Wrapper -->
-    <div id="singleWorkspaceSection">
-      <!-- Top Action Grid -->
-      <div class="action-grid">
-      <!-- Upload Card -->
-      <section class="card upload-card">
-        <div class="card-header">
-          <h2>1. Select or Upload Academic Results (PDF / Excel / CSV)</h2>
-          <span class="tag">Local + Cloud AI</span>
-        </div>
-        <label class="upload-area" id="dropArea" for="fileInput" tabindex="0">
-          <input type="file" id="fileInput" accept=".pdf,.xlsx,.xls,.csv" class="hidden-input">
-          <div class="upload-icon">
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="17 8 12 3 7 8"></polyline>
-              <line x1="12" y1="3" x2="12" y2="15"></line>
+  <!-- Persistent Desktop App Shell: Drawer + Main Workspace -->
+  <div class="app-layout-shell" id="appLayoutShell">
+    <!-- Persistent Left-Side Collapsible Drawer -->
+    <aside class="app-sidebar-drawer" id="appSidebarDrawer" aria-label="Application Navigation">
+      <div class="drawer-inner">
+        <!-- Drawer Brand Card -->
+        <div class="drawer-brand-card">
+          <div class="drawer-brand-text">
+            <span class="drawer-app-title">DATA EXTRACTOR</span>
+            <span class="drawer-app-version">AI V1.0</span>
+          </div>
+          <button type="button" id="btnDrawerPin" class="btn-drawer-collapse-icon" title="Collapse sidebar (Ctrl+B)" aria-label="Collapse sidebar">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="11 17 6 12 11 7"></polyline>
+              <polyline points="18 17 13 12 18 7"></polyline>
             </svg>
-          </div>
-          <p class="upload-prompt" id="uploadPrompt"><strong>Drag & Drop result PDF, Excel (.xlsx, .xls) or CSV</strong> or <span class="btn-link" id="browseBtn">browse files</span></p>
-          <div class="selected-file-badge hidden" id="selectedFileBadge">
-            <span class="selected-file-icon" id="selectedFileIcon">📄</span>
-            <div class="selected-file-info">
-              <span class="selected-file-name" id="selectedFileName"></span>
-              <span class="selected-file-size" id="selectedFileSize"></span>
-            </div>
-            <span class="change-file-pill">Change file</span>
-          </div>
-          <span class="upload-hint">Supports PDF Gazettes, Tabulation Ledgers, and Raw/Messy Excel/CSV Spreadsheets</span>
-          <div class="format-chips-row">
-            <span class="format-chip">📄 PDF Gazette</span>
-            <span class="format-chip">📊 Excel (.xlsx/.xls)</span>
-            <span class="format-chip">📑 CSV Sheet</span>
-          </div>
-        </label>
-
-        <div class="or-divider"><span>EXTRACTION & VERIFICATION PIPELINE</span></div>
-        <div class="pipeline-options-row">
-          <label class="pipeline-radio-card active" id="pipelineLocalLabel">
-            <input type="radio" name="extractionPipeline" id="pipelineLocal" value="local" checked>
-            <div class="pipeline-radio-body">
-              <span class="pipeline-radio-title">⚡ Standard Local AI</span>
-              <span class="pipeline-radio-desc">Local Ollama (Qwen2.5:7b) + deterministic rules (Fast & Private)</span>
-            </div>
-          </label>
-          <label class="pipeline-radio-card" id="pipelineCloudLabel">
-            <input type="radio" name="extractionPipeline" id="pipelineCloud" value="cloud">
-            <div class="pipeline-radio-body">
-              <span class="pipeline-radio-title">☁️ Pure Cloud AI Pipeline (No Local LLM)</span>
-              <span class="pipeline-radio-desc">Fast ledger ingestion + 100% Cloud LLM cross-checking & self-healing</span>
-            </div>
-          </label>
-          <label class="pipeline-radio-card" id="pipelineVisualLabel">
-            <input type="radio" name="extractionPipeline" id="pipelineVisual" value="visual_blueprint">
-            <div class="pipeline-radio-body">
-              <span class="pipeline-radio-title">👁️ Visual Blueprint & Sliced Stream (Universal AI)</span>
-              <span class="pipeline-radio-desc">Page 1 Image Blueprint + Sliced Page-by-Page Vision AI + Transactional Rollback</span>
-            </div>
-          </label>
-        </div>
-
-        <div class="or-divider"><span>OR SELECT FROM BATCH DATA</span></div>
-
-        <div class="batch-select-row">
-          <select id="batchSelect" class="form-select">
-            <option value="">-- Choose Historical Batch PDF --</option>
-          </select>
-          <button id="extractBtn" class="btn btn-primary" disabled>
-            <span>⚡ Extract with AI</span>
           </button>
         </div>
-      </section>
 
-      <!-- System Status / Knowledge Base Card -->
-      <section class="card kb-card">
-        <div class="card-header">
-          <h2>Self-Learning Engine Status</h2>
-          <span class="tag tag-accent" id="activeModelTag">qwen2.5:7b</span>
-        </div>
-        <div class="kb-metrics">
-          <div class="metric-box">
-            <span class="metric-val">4</span>
-            <span class="metric-label">Learned Possibilities</span>
+        <nav class="drawer-nav-sections">
+          <!-- Section 1: DATA EXTRACTION -->
+          <div class="drawer-group">
+            <div class="drawer-group-title">DATA EXTRACTION</div>
+            <ul class="drawer-nav-list">
+              <li>
+                <a href="/extract" class="drawer-nav-item active" data-route="/extract" title="Extract &amp; Audit">
+                  <span class="drawer-icon">⚡</span>
+                  <span class="drawer-label">Extract &amp; Audit</span>
+                </a>
+              </li>
+              <li>
+                <a href="/historical" class="drawer-nav-item" data-route="/historical" title="Historical Data">
+                  <span class="drawer-icon">📚</span>
+                  <span class="drawer-label">Historical Data</span>
+                </a>
+              </li>
+            </ul>
           </div>
-          <div class="metric-box">
-            <span class="metric-val">100%</span>
-            <span class="metric-label">Offline & Private</span>
-          </div>
-          <div class="metric-box">
-            <span class="metric-val" id="exemplarMetric">Ready</span>
-            <span class="metric-label">Few-Shot Exemplars</span>
-          </div>
-        </div>
-        <div class="archetype-chips">
-          <span class="chip chip-active">✓ Tabulation (Sem III-VI)</span>
-          <span class="chip chip-active">✓ Gazette Classic (Sem VIII)</span>
-          <span class="chip chip-active">✓ Gazette Spool (Sem VII)</span>
-          <span class="chip chip-active">✓ NEP 2020 Scheme</span>
-        </div>
-        <div class="auto-learn-notice">
-          <span>🧠 <strong>Incremental Learning Active:</strong> New verified student patterns are automatically incorporated into the knowledge base upon extraction.</span>
-        </div>
-      </section>
-    </div>
 
-    <!-- Live Progress Section -->
-    <div id="progressSection" class="progress-section hidden">
-      <div class="card progress-card">
-        <div class="progress-header">
-          <div class="progress-info">
-            <span class="spinner" id="progressSpinner"></span>
-            <strong id="progressMessage">Extracting records...</strong>
-            <span id="liveStatusBadge" class="status-pill status-live-pill hidden">
-              <span class="pulse-dot"></span>
-              <span id="liveCountText">0 records fetched live</span>
-            </span>
+          <div class="drawer-divider"></div>
+
+          <!-- Section 2: DATA ANALYSIS -->
+          <div class="drawer-group">
+            <div class="drawer-group-title">DATA ANALYSIS</div>
+            <ul class="drawer-nav-list">
+              <li>
+                <a href="/analysis" class="drawer-nav-item" data-route="/analysis" title="Analysis Overview">
+                  <span class="drawer-icon">📊</span>
+                  <span class="drawer-label">Analysis Overview</span>
+                </a>
+              </li>
+              <li>
+                <a href="/analysis/subject" class="drawer-nav-item" data-route="/analysis/subject" title="Subject-wise Analysis">
+                  <span class="drawer-icon">📘</span>
+                  <span class="drawer-label">Subject-wise Analysis</span>
+                </a>
+              </li>
+            </ul>
           </div>
-          <div class="progress-right-group">
-            <div class="extraction-controls-group" id="extractionControlsGroup">
-              <button type="button" id="btnPauseExtraction" class="btn-ctrl btn-ctrl-pause" title="Pause extraction temporarily">
-                <span class="ctrl-icon">⏸</span>
-                <span class="ctrl-label">Pause</span>
-              </button>
-              <button type="button" id="btnResumeExtraction" class="btn-ctrl btn-ctrl-resume hidden" title="Resume extraction">
-                <span class="ctrl-icon">▶</span>
-                <span class="ctrl-label">Resume</span>
-              </button>
-              <button type="button" id="btnStopExtraction" class="btn-ctrl btn-ctrl-stop" title="Stop extraction &amp; preserve all captured records">
-                <span class="ctrl-icon">⏹</span>
-                <span class="ctrl-label">Stop &amp; Save</span>
-              </button>
+
+          <div class="drawer-divider"></div>
+
+          <!-- Section 3: REPORTS -->
+          <div class="drawer-group">
+            <div class="drawer-group-title">REPORTS</div>
+            <ul class="drawer-nav-list">
+              <li>
+                <a href="/reports" class="drawer-nav-item" data-route="/reports" title="Generated Reports">
+                  <span class="drawer-icon">📄</span>
+                  <span class="drawer-label">Generated Reports</span>
+                </a>
+              </li>
+            </ul>
+          </div>
+
+          <div class="drawer-divider"></div>
+
+          <!-- Section 4: SYSTEM -->
+          <div class="drawer-group">
+            <div class="drawer-group-title">SYSTEM</div>
+            <ul class="drawer-nav-list">
+              <li>
+                <a href="/settings" class="drawer-nav-item" data-route="/settings" title="Settings">
+                  <span class="drawer-icon">⚙️</span>
+                  <span class="drawer-label">Settings</span>
+                </a>
+              </li>
+            </ul>
+          </div>
+        </nav>
+      </div>
+    </aside>
+
+    <!-- Main Workspace Container (renders only active workspace view) -->
+    <main class="app-workspace-container" id="appWorkspaceContainer">
+      <!-- VIEW 1: Extract & Audit (/extract) -->
+      <section id="viewExtract" class="workspace-view active" data-view="/extract">
+        <!-- Workspace Page Header -->
+        <div class="workspace-page-header">
+          <div class="workspace-title-group">
+            <div class="workspace-icon">⚡</div>
+            <div>
+              <h1 class="workspace-title">Extract &amp; Audit</h1>
+              <p class="workspace-subtitle">Extract, verify and manage academic result data from PDF gazettes and ledgers.</p>
             </div>
-            <span id="progressPercentage" class="progress-num">0%</span>
           </div>
         </div>
-        <div class="progress-bar-track">
-          <div id="progressBar" class="progress-bar-fill" style="width: 0%;"></div>
-        </div>
-      </div>
-    </div>
 
-    <!-- Live AI & GPU Inference Audit Console Window -->
-    <section class="card audit-card" id="aiAuditSection">
-      <div class="card-header audit-header">
-        <div class="audit-header-left">
-          <div class="terminal-dots">
-            <span class="dot red"></span>
-            <span class="dot yellow"></span>
-            <span class="dot green"></span>
+        <!-- Single Semester Workspace Wrapper -->
+        <div id="singleWorkspaceSection">
+      <!-- Top Workflow Grid: 1. INPUT / SOURCE & 2. EXTRACTION ENGINE -->
+      <div class="extraction-workflow-grid">
+        <!-- 1. INPUT / SOURCE CARD -->
+        <section class="card source-card" id="sourceCard">
+          <div class="card-header">
+            <div class="card-title-group">
+              <span class="workflow-step-badge">1</span>
+              <div>
+                <h2>Input / Source Document</h2>
+                <p class="card-subtitle">Upload result gazette, spreadsheet, or select an existing batch</p>
+              </div>
+            </div>
+            <span class="tag">PDF / Excel / CSV</span>
           </div>
-          <h2>Live AI &amp; GPU Inference Audit Console</h2>
-          <span class="audit-status-badge" id="auditGpuBadge">
-            <span class="status-dot green"></span>
-            <span id="auditGpuText">Ollama Ready</span>
-          </span>
-        </div>
-        <div class="audit-header-actions">
-          <button type="button" id="auditAutoScrollBtn" class="btn-sm btn-outline active" title="Toggle Auto-Scroll">Scroll: ON</button>
-          <button type="button" id="auditCopyBtn" class="btn-sm btn-outline" title="Copy Raw Audit Log">📋 Copy Log</button>
-          <button type="button" id="auditClearBtn" class="btn-sm btn-outline" title="Clear Console">✕ Clear</button>
-        </div>
-      </div>
-      
-      <!-- Mini Telemetry Strip -->
-      <div class="audit-telemetry-strip">
-        <div class="telemetry-item">
-          <span class="telemetry-label">INFERENCE ENGINE:</span>
-          <strong id="telemEngine" class="telemetry-val">Qwen 2.5 (7B) on RTX 4060 GPU</strong>
-        </div>
-        <div class="telemetry-item">
-          <span class="telemetry-label">PIPELINE STATUS:</span>
-          <strong id="telemStatus" class="telemetry-val text-success">STANDBY</strong>
-        </div>
-        <div class="telemetry-item">
-          <span class="telemetry-label">AI AUDIT EVENTS:</span>
-          <strong id="telemEventCount" class="telemetry-val">0</strong>
-        </div>
-        <div class="telemetry-item" id="telemTokenBox">
-          <span class="telemetry-label">TOKENS USED:</span>
-          <strong id="telemTokens" class="telemetry-val" style="color: #38bdf8;">In: 0 | Out: 0 (Tot: 0)</strong>
-        </div>
-      </div>
 
-      <!-- Scrollable Terminal Window -->
-      <div class="audit-terminal" id="auditTerminal">
-        <div class="audit-empty" id="auditEmptyMsg">
-          <span class="terminal-prompt">$</span> Waiting for extraction job. Real-time Cloud AI models, failover switches, LLM prompts/responses, token metrics, and checksum equations will stream here live.
-        </div>
-        <div id="auditLogStream" class="audit-stream"></div>
-      </div>
-    </section>
-
-    <!-- Interactive Chatbox for Ollama -->
-    <section class="card chat-card hidden" id="chatSection">
-      <div class="card-header chat-header">
-        <div class="chat-header-left">
-          <h2>💬 Chat with Ollama (Live Data Assistant)</h2>
-          <span class="tag tag-accent" id="chatModelTag">qwen2.5:7b</span>
-        </div>
-        <div class="chat-header-actions">
-          <button type="button" id="btnUndoChat" class="btn-sm btn-outline" disabled title="Revert last modification">↩ Undo</button>
-          <button type="button" id="btnResetData" class="btn-sm btn-outline" title="Reset dataset to original extracted state">↺ Reset Original</button>
-        </div>
-      </div>
-
-      <!-- Quick Action Chips -->
-      <div class="chat-suggestion-chips">
-        <button type="button" class="chip-btn" data-prompt="remove the first 2 records">✂️ Remove first 2 records</button>
-        <button type="button" class="chip-btn" data-prompt="update candidate type to Diploma for students with PRN starting with 2022">🎓 Mark 2022 PRN as Diploma</button>
-        <button type="button" class="chip-btn" data-prompt="remove failed students">✓ Remove Failed Students</button>
-        <button type="button" class="chip-btn" data-prompt="sort by SGPI descending">📊 Sort by SGPI (Highest First)</button>
-        <button type="button" class="chip-btn" data-prompt="how many students passed and failed?">❓ Passed vs Failed Count</button>
-        <button type="button" class="chip-btn" data-prompt="who is the topper?">🏆 Who is the Topper?</button>
-        <button type="button" class="chip-btn" data-prompt="what is the average SGPI?">📈 Average SGPI & Marks</button>
-        <button type="button" class="chip-btn" data-prompt="how many diploma students?">🎓 Diploma vs Regular Count</button>
-        <button type="button" class="chip-btn" data-prompt="who failed?">❌ List Failed Students</button>
-        <button type="button" class="chip-btn" data-prompt="give me an overview of the results">📋 Cohort Overview</button>
-        <button type="button" class="chip-btn" data-prompt="export academic analysis excel sheet">🏛️ Export Academic Analysis Excel (6 Sheets)</button>
-      </div>
-
-      <!-- Chat History Stream -->
-      <div class="chat-history-container" id="chatHistory">
-        <div class="chat-message msg-assistant">
-          <div class="msg-avatar">🤖</div>
-          <div class="msg-body">
-            <p><strong>Ollama Ready:</strong> Ask me anything about the extracted records, or request modifications like <em>"remove the first 2 records"</em>, <em>"sort by SGPI"</em>, or <em>"set candidate type to Diploma for PRN 2022*"</em>.</p>
+          <!-- Drag & Drop Upload Area -->
+          <input type="file" id="fileInput" accept=".pdf,.xlsx,.xls,.csv" class="hidden-input" style="display: none;">
+          <div class="upload-area" id="dropArea" tabindex="0" role="button" aria-label="Upload academic result document">
+            <div class="upload-icon">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+            </div>
+            <p class="upload-prompt" id="uploadPrompt"><strong>Drag &amp; Drop result PDF, Excel (.xlsx, .xls) or CSV</strong> or <span class="btn-link" id="browseBtn">browse files</span></p>
+            <div class="selected-file-badge hidden" id="selectedFileBadge">
+              <span class="selected-file-icon" id="selectedFileIcon">📄</span>
+              <div class="selected-file-info">
+                <span class="selected-file-name" id="selectedFileName"></span>
+                <span class="selected-file-size" id="selectedFileSize"></span>
+              </div>
+              <span class="change-file-pill">Change file</span>
+            </div>
+            <div class="format-chips-row">
+              <span class="format-chip">📄 PDF Gazette</span>
+              <span class="format-chip">📊 Excel (.xlsx/.xls)</span>
+              <span class="format-chip">📑 CSV Sheet</span>
+            </div>
           </div>
-        </div>
+
+          <!-- Divider & Historical Batch Selection -->
+          <div class="or-divider"><span>OR SELECT FROM HISTORICAL BATCHES</span></div>
+
+          <div class="batch-select-row">
+            <select id="batchSelect" class="form-select" aria-label="Select Historical Batch File">
+              <option value="">-- Choose Historical Batch PDF / Spreadsheet --</option>
+            </select>
+          </div>
+
+          <!-- Manual Metadata Override Controls (Department / Batch / Semester) -->
+          <div class="manual-meta-override-container">
+            <button type="button" class="btn-toggle-meta-override" id="btnToggleMetaOverride" title="Manually specify or correct department, batch, and semester">
+              <span id="metaOverrideIcon">⚙️</span>
+              <span>Dataset Details &amp; Metadata Override</span>
+              <span class="meta-override-badge" id="metaOverrideStatusBadge">Auto-detected by AI</span>
+            </button>
+            <div class="meta-override-drawer hidden" id="metaOverrideDrawer">
+              <p class="meta-override-hint">Auto-detected via AI on upload. You can adjust any values if needed before or after extraction:</p>
+              <div class="meta-override-grid">
+                <div class="meta-override-field">
+                  <label for="overrideDeptInput">Department / Branch:</label>
+                  <select id="overrideDeptInput" class="form-select form-select-sm">
+                    <option value="">-- Auto-detect from document --</option>
+                    <option value="Artificial_Intelligence_and_Data_Science">Artificial Intelligence &amp; Data Science (AIDS)</option>
+                    <option value="Computer_Engineering">Computer Engineering (COMPS)</option>
+                    <option value="Information_Technology">Information Technology (IT)</option>
+                    <option value="Electronics_and_Telecommunication">Electronics &amp; Telecommunication (EXTC)</option>
+                    <option value="Mechanical_Engineering">Mechanical Engineering (MECH)</option>
+                    <option value="Civil_Engineering">Civil Engineering (CIVIL)</option>
+                    <option value="Electrical_Engineering">Electrical Engineering (ELEC)</option>
+                    <option value="Instrumentation_Engineering">Instrumentation Engineering (INST)</option>
+                  </select>
+                </div>
+                <div class="meta-override-field">
+                  <label for="overrideBatchInput">Batch / Academic Year (e.g. 21-22):</label>
+                  <input type="text" id="overrideBatchInput" class="form-control form-control-sm" placeholder="e.g. 21-22, 22-23" pattern="^\d{2}-\d{2}$" title="Format: YY-YY (e.g. 21-22)">
+                </div>
+                <div class="meta-override-field">
+                  <label for="overrideSemInput">Semester:</label>
+                  <select id="overrideSemInput" class="form-select form-select-sm">
+                    <option value="">-- Auto-detect --</option>
+                    <option value="Semester_1">Semester 1</option>
+                    <option value="Semester_2">Semester 2</option>
+                    <option value="Semester_3">Semester 3</option>
+                    <option value="Semester_4">Semester 4</option>
+                    <option value="Semester_5">Semester 5</option>
+                    <option value="Semester_6">Semester 6</option>
+                    <option value="Semester_7">Semester 7</option>
+                    <option value="Semester_8">Semester 8</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. EXTRACTION ENGINE CARD -->
+        <section class="card engine-card" id="engineCard">
+          <div class="card-header">
+            <div class="card-title-group">
+              <span class="workflow-step-badge">2</span>
+              <div>
+                <h2>Extraction Engine</h2>
+                <p class="card-subtitle">Choose local neural intelligence, cloud failover, or multimodal vision</p>
+              </div>
+            </div>
+            <span class="tag tag-accent" id="activeEngineTag">Local AI Active</span>
+          </div>
+
+          <div class="pipeline-options-list">
+            <label class="pipeline-radio-card active" id="pipelineLocalLabel">
+              <input type="radio" name="extractionPipeline" id="pipelineLocal" value="local" checked>
+              <div class="pipeline-radio-body">
+                <div class="pipeline-radio-header">
+                  <span class="pipeline-radio-title">⚡ Standard Local AI</span>
+                  <span class="pipeline-badge">Fast &amp; Private GPU</span>
+                </div>
+                <span class="pipeline-radio-desc">Local Ollama (Qwen2.5:7b) + deterministic rules &amp; checksum equations. Completely offline privacy.</span>
+              </div>
+            </label>
+
+            <label class="pipeline-radio-card" id="pipelineCloudLabel">
+              <input type="radio" name="extractionPipeline" id="pipelineCloud" value="cloud">
+              <div class="pipeline-radio-body">
+                <div class="pipeline-radio-header">
+                  <span class="pipeline-radio-title">☁️ Pure Cloud AI Pipeline</span>
+                  <span class="pipeline-badge">Multi-Key Failover</span>
+                </div>
+                <span class="pipeline-radio-desc">Fast ledger ingestion + 100% Cloud LLM cross-checking &amp; self-healing (Groq / Gemini / Claude).</span>
+              </div>
+            </label>
+
+            <label class="pipeline-radio-card" id="pipelineVisualLabel">
+              <input type="radio" name="extractionPipeline" id="pipelineVisual" value="visual_blueprint">
+              <div class="pipeline-radio-body">
+                <div class="pipeline-radio-header">
+                  <span class="pipeline-radio-title">👁️ Visual Blueprint & Sliced Stream</span>
+                  <span class="pipeline-badge">Universal Layouts</span>
+                </div>
+                <span class="pipeline-radio-desc">Page 1 Image Blueprint + Sliced Page-by-Page Vision AI + Transactional Rollback.</span>
+              </div>
+            </label>
+          </div>
+
+          <!-- Start Extraction Action Bar -->
+          <div class="engine-action-bar">
+            <button id="extractBtn" class="btn btn-primary btn-extract-action" disabled>
+              <span class="btn-extract-icon">⚡</span>
+              <span>Start Extraction</span>
+            </button>
+            <span class="engine-action-hint" id="extractBtnHint">Select a source file or historical batch to start</span>
+          </div>
+
+          <!-- Knowledge Base Mini Banner -->
+          <div class="kb-mini-banner">
+            <span class="kb-pulse-dot"></span>
+            <span><strong>Incremental Learning Ready:</strong> 4 learned archetypes (Tabulation, Gazette Classic, Gazette Spool, NEP 2020 Scheme).</span>
+          </div>
+        </section>
       </div>
 
-      <!-- Chat Input Row -->
-      <form id="chatForm" class="chat-input-row">
-        <input type="text" id="chatInput" class="chat-input" placeholder="Ask Ollama to modify or analyze this dataset (e.g. 'remove first 2 records')..." autocomplete="off">
-        <button type="submit" id="chatSendBtn" class="btn btn-primary btn-chat-send">
-          <span>Send</span>
-        </button>
-      </form>
-    </section>
+      <!-- 3. EXTRACTION PROGRESS SECTION -->
+      <div id="progressSection" class="progress-section hidden">
+        <section class="card progress-card">
+          <div class="progress-card-header">
+            <div class="progress-header-left">
+              <span class="spinner" id="progressSpinner"></span>
+              <div>
+                <h3 class="progress-title">Extraction Progress</h3>
+                <p class="progress-message-text" id="progressMessage">Extracting records...</p>
+              </div>
+            </div>
+            <div class="progress-header-right">
+              <div class="extraction-controls-group" id="extractionControlsGroup">
+                <button type="button" id="btnPauseExtraction" class="btn-ctrl btn-ctrl-pause" title="Pause extraction temporarily">
+                  <span class="ctrl-icon">⏸</span>
+                  <span class="ctrl-label">Pause</span>
+                </button>
+                <button type="button" id="btnResumeExtraction" class="btn-ctrl btn-ctrl-resume hidden" title="Resume extraction">
+                  <span class="ctrl-icon">▶</span>
+                  <span class="ctrl-label">Resume</span>
+                </button>
+                <button type="button" id="btnStopExtraction" class="btn-ctrl btn-ctrl-stop" title="Stop extraction &amp; preserve captured records">
+                  <span class="ctrl-icon">⏹</span>
+                  <span class="ctrl-label">Stop &amp; Save</span>
+                </button>
+              </div>
+              <span id="progressPercentage" class="progress-num">0%</span>
+            </div>
+          </div>
+
+          <div class="progress-bar-track">
+            <div id="progressBar" class="progress-bar-fill" style="width: 0%;"></div>
+          </div>
+
+          <!-- Real-Time Extraction State Metrics Strip -->
+          <div class="progress-metrics-grid">
+            <div class="prog-metric-card">
+              <span class="prog-metric-label">CURRENT FILE / PAGE</span>
+              <strong class="prog-metric-val" id="progCurrentPage">Initializing...</strong>
+            </div>
+            <div class="prog-metric-card">
+              <span class="prog-metric-label">PAGES PROCESSED</span>
+              <strong class="prog-metric-val text-success" id="progPagesProcessed">0 pages processed</strong>
+            </div>
+            <div class="prog-metric-card">
+              <span class="prog-metric-label">PAGES REMAINING</span>
+              <strong class="prog-metric-val" id="progPagesRemaining">0 pages remaining</strong>
+            </div>
+            <div class="prog-metric-card">
+              <span class="prog-metric-label">RECORDS EXTRACTED</span>
+              <strong class="prog-metric-val text-accent" id="progRecordsExtracted">0 records extracted</strong>
+            </div>
+            <div class="prog-metric-card">
+              <span class="prog-metric-label">VERIFICATION STATUS</span>
+              <strong class="prog-metric-val text-success" id="progVerificationStatus">Verification Active</strong>
+            </div>
+          </div>
+        </section>
+      </div>
 
     <!-- Results Section -->
     <div id="resultsSection" class="results-section hidden">
@@ -361,21 +441,68 @@
                 <span class="pulse-dot"></span>
                 <span id="liveTableBadgeText">LIVE STREAMING</span>
               </span>
-              <h2 id="resultTitle">Academic Result Intelligence</h2>
+              <h2 id="resultTitle">Extracted Data</h2>
             </div>
             <p id="resultMeta" class="results-meta-text">Analyzing dataset...</p>
           </div>
           <div class="export-actions">
-            <button type="button" id="btnOpenDataCleaner" class="btn btn-outline" style="border-color: #10B981; color: #10B981; font-weight: 600;" title="Run AI-guided data cleaning, formatting, and discrepancy repair">
-              🧹 Clean Data &amp; Audit
+            <button type="button" id="btnSaveToDatabase" class="btn btn-primary" title="Save dataset and student records directly to SQLite Database and sync to canonical Excel mirror">
+              💾 Save to Database
+            </button>
+            <a id="btnDownloadAcademicReport" class="btn btn-outline" download title="Download official university academic analysis report (6 Sheets)">
+              🏛️ Analysis Report
+            </a>
+            <div class="export-dropdown-wrapper">
+              <button type="button" class="btn btn-outline" id="btnExportMenuToggle">
+                📥 Export As ▾
+              </button>
+              <div class="export-dropdown-menu hidden" id="exportDropdownMenu">
+                <a id="btnDownloadExcel" class="export-menu-item" download>📊 Excel Workbook (.xlsx)</a>
+                <a id="btnDownloadCsv" class="export-menu-item" download>📑 CSV Spreadsheet (.csv)</a>
+                <a id="btnDownloadJson" class="export-menu-item" download>📋 Schema Catalog (.json)</a>
+              </div>
+            </div>
+            <button type="button" id="btnOpenDataCleaner" class="btn btn-outline" title="Run AI-guided data cleaning, formatting, and discrepancy repair">
+              🧹 Clean
             </button>
             <button type="button" id="btnCrossCheckCloud" class="btn btn-ai-crosscheck" title="Cross-Check Extracted Records with Cloud AI">
-              🔍 Cross-Check with Cloud AI
+              🔍 Cross-Check
             </button>
-            <a id="btnDownloadAcademicReport" class="btn btn-primary" download title="Download official 6-sheet university audit report formatted like sample Google Sheet">🏛️ Academic Analysis (6 Sheets)</a>
-            <a id="btnDownloadCsv" class="btn btn-outline" download>📥 CSV</a>
-            <a id="btnDownloadExcel" class="btn btn-outline" download>📊 Excel (.xlsx)</a>
-            <a id="btnDownloadJson" class="btn btn-outline" download>📑 Catalog JSON</a>
+          </div>
+        </div>
+
+        <!-- 4. Extracted Data Key Summary Strip -->
+        <div class="extracted-data-summary-bar">
+          <div class="extracted-stat-badge stat-verified">
+            <span class="status-dot green"></span>
+            <span class="stat-badge-label">Verified Records:</span>
+            <strong id="auditPassedCount">0 / 0</strong>
+          </div>
+          <div class="extracted-stat-badge stat-total">
+            <span class="status-dot blue"></span>
+            <span class="stat-badge-label">Total Records:</span>
+            <strong id="extractedTotalCount">0</strong>
+          </div>
+          <div class="extracted-stat-badge stat-status">
+            <span class="stat-badge-label">Extraction Status:</span>
+            <strong id="extractionStatusBadge" class="badge-status-tag">Ready</strong>
+          </div>
+          <div class="extracted-stat-badge stat-classified hidden" id="classifiedMetaPill" title="Classified Dataset Metadata">
+            <span class="status-dot purple"></span>
+            <span class="stat-badge-label">Dataset:</span>
+            <strong id="classifiedMetaText">-</strong>
+          </div>
+
+          <!-- Corner Metadata: Live Stream & Tokens tucked into top-right corner -->
+          <div class="extracted-summary-corner" id="extractedSummaryCorner">
+            <div class="extracted-stat-badge stat-tokens-corner hidden" id="tokenPill" title="LLM Token Usage">
+              <span class="status-dot orange"></span>
+              <span id="tokenPillText">Tokens: 0 in / 0 out (0 tot)</span>
+            </div>
+            <div class="extracted-stat-badge stat-stream-corner hidden" id="liveStreamPill" title="Live Extraction Stream">
+              <span class="pulse-dot"></span>
+              <span id="liveStreamPillText">Streaming Live</span>
+            </div>
           </div>
         </div>
 
@@ -395,50 +522,44 @@
           <!-- Excel Ribbon / Action Toolbar -->
           <div class="excel-toolbar-wrapper">
             <div class="excel-ribbon">
-              <!-- Left Group: Search & Structure -->
+              <!-- Left Group: Search -->
               <div class="excel-ribbon-group">
                 <input type="text" id="searchInput" class="search-input excel-search-input" placeholder="🔍 Search records...">
+                <button type="button" id="btnToggleFindReplace" class="excel-btn excel-btn-outline" title="Find and Replace (Ctrl+F)">
+                  <span>Find &amp; Replace</span>
+                </button>
+              </div>
+
+              <!-- Middle Group: Edit & Structure -->
+              <div class="excel-ribbon-group">
                 <button type="button" id="btnExcelAddRow" class="excel-btn excel-btn-primary" title="Add a new row to table">
-                  <span>➕ Add Row</span>
+                  <span>➕ Row</span>
                 </button>
                 <button type="button" id="btnExcelAddCol" class="excel-btn excel-btn-outline" title="Add a new column to dataset">
-                  <span>➕ Add Column</span>
+                  <span>➕ Column</span>
                 </button>
                 <button type="button" id="btnExcelDeleteRows" class="excel-btn excel-btn-danger" title="Delete selected rows" disabled>
                   <span>🗑️ Delete <span id="excelSelectedBadge" class="excel-count-badge hidden">0</span></span>
                 </button>
-              </div>
-
-              <!-- Middle Group: History, AI Fix & Search/Replace -->
-              <div class="excel-ribbon-group">
                 <button type="button" id="btnExcelUndo" class="excel-btn excel-btn-icon" title="Undo (Ctrl+Z)" disabled>
-                  <span>↩ Undo</span>
+                  <span>↩</span>
                 </button>
                 <button type="button" id="btnExcelRedo" class="excel-btn excel-btn-icon" title="Redo (Ctrl+Y)" disabled>
-                  <span>↪ Redo</span>
+                  <span>↪</span>
                 </button>
-                <button type="button" id="btnExcelAiFix" class="excel-btn excel-btn-ai" title="Auto-repair formulas, course totals, SGPI discrepancies, and formatting issues with AI">
+                <button type="button" id="btnExcelAiFix" class="excel-btn excel-btn-ai" title="Auto-repair formulas, course totals, and discrepancies with AI">
                   <span>🪄 Fix with AI</span>
-                </button>
-                <button type="button" id="btnToggleFindReplace" class="excel-btn excel-btn-outline" title="Find and Replace (Ctrl+F)">
-                  <span>🔍 Find / Replace</span>
                 </button>
               </div>
 
-              <!-- Right Group: Persistence & Assistance -->
+              <!-- Right Group: State & Reset -->
               <div class="excel-ribbon-group excel-ribbon-right">
                 <div class="excel-save-status-pill" id="excelSaveStatus">
                   <span class="status-dot dot-synced" id="excelSaveDot"></span>
-                  <span id="excelSaveStatusText">All changes saved</span>
+                  <span id="excelSaveStatusText">Saved</span>
                 </div>
-                <button type="button" id="btnExcelSave" class="excel-btn excel-btn-success" title="Save and sync modifications to server CSV/Excel">
-                  <span>💾 Save</span>
-                </button>
                 <button type="button" id="btnExcelReset" class="excel-btn excel-btn-outline" title="Reset dataset to original extracted state">
                   <span>↺ Reset</span>
-                </button>
-                <button type="button" id="btnExcelShortcutsHelp" class="excel-btn excel-btn-icon" title="View Excel Keyboard Shortcuts">
-                  <span>⌨️ Guide</span>
                 </button>
               </div>
             </div>
@@ -477,20 +598,7 @@
             </div>
           </div>
 
-          <!-- Active Metadata Pill Strip -->
-          <div class="results-toolbar-sub">
-            <div class="audit-summary-pill" id="auditPill">
-              <span id="auditPassedCount">0</span> Verified Records
-            </div>
-            <div class="audit-summary-pill live-stream-pill hidden" id="liveStreamPill" style="background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.35); color: #10B981;">
-              ⚡ <span id="liveStreamPillText">Streaming Live</span>
-            </div>
-            <div class="audit-summary-pill token-summary-pill hidden" id="tokenPill" style="background: rgba(56, 189, 248, 0.12); border-color: rgba(56, 189, 248, 0.35); color: #38bdf8;">
-              🪙 <span id="tokenPillText">Tokens: 0 in / 0 out (0 tot)</span>
-            </div>
-          </div>
-
-          <!-- Excel Interactive Table Container -->
+          <!-- Excel Interactive Table Container (directly below ribbon) -->
           <div class="table-container excel-table-container" id="excelTableContainer" tabindex="0">
             <table class="data-table excel-data-table" id="dataTable">
               <thead>
@@ -760,25 +868,162 @@
             </div>
           </div>
         </div>
-      </section>
-    </div>
+    </div> <!-- /resultsSection -->
 
-    <!-- Historical Extractions Drawer -->
-    <section class="card history-card">
-      <div class="card-header">
-        <h2>Previous Extractions Archive</h2>
-        <button id="refreshHistoryBtn" class="btn-sm btn-outline">↻ Refresh</button>
+    <!-- Interactive Chatbox for Ollama -->
+    <section class="card chat-card hidden" id="chatSection">
+      <div class="card-header chat-header">
+        <div class="chat-header-left">
+          <h2>💬 Chat with Ollama (Live Data Assistant)</h2>
+          <span class="tag tag-accent" id="chatModelTag">qwen2.5:7b</span>
+        </div>
+        <div class="chat-header-actions">
+          <button type="button" id="btnUndoChat" class="btn-sm btn-outline" disabled title="Revert last modification">↩ Undo</button>
+          <button type="button" id="btnResetData" class="btn-sm btn-outline" title="Reset dataset to original extracted state">↺ Reset Original</button>
+        </div>
       </div>
-      <div id="historyList" class="history-list">
-        <p class="empty-text">No extractions recorded yet.</p>
+
+      <!-- Quick Action Chips -->
+      <div class="chat-suggestion-chips">
+        <button type="button" class="chip-btn" data-prompt="remove the first 2 records">✂️ Remove first 2 records</button>
+        <button type="button" class="chip-btn" data-prompt="update candidate type to Diploma for students with PRN starting with 2022">🎓 Mark 2022 PRN as Diploma</button>
+        <button type="button" class="chip-btn" data-prompt="remove failed students">✓ Remove Failed Students</button>
+        <button type="button" class="chip-btn" data-prompt="sort by SGPI descending">📊 Sort by SGPI (Highest First)</button>
+        <button type="button" class="chip-btn" data-prompt="how many students passed and failed?">❓ Passed vs Failed Count</button>
+        <button type="button" class="chip-btn" data-prompt="who is the topper?">🏆 Who is the Topper?</button>
+        <button type="button" class="chip-btn" data-prompt="what is the average SGPI?">📈 Average SGPI & Marks</button>
+        <button type="button" class="chip-btn" data-prompt="how many diploma students?">🎓 Diploma vs Regular Count</button>
+        <button type="button" class="chip-btn" data-prompt="who failed?">❌ List Failed Students</button>
+        <button type="button" class="chip-btn" data-prompt="give me an overview of the results">📋 Cohort Overview</button>
+        <button type="button" class="chip-btn" data-prompt="export academic analysis excel sheet">🏛️ Export Academic Analysis Excel (6 Sheets)</button>
+      </div>
+
+      <!-- Chat History Stream -->
+      <div class="chat-history-container" id="chatHistory">
+        <div class="chat-message msg-assistant">
+          <div class="msg-avatar">🤖</div>
+          <div class="msg-body">
+            <p><strong>Ollama Ready:</strong> Ask me anything about the extracted records, or request modifications like <em>"remove the first 2 records"</em>, <em>"sort by SGPI"</em>, or <em>"set candidate type to Diploma for PRN 2022*"</em>.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chat Input Row -->
+      <form id="chatForm" class="chat-input-row">
+        <input type="text" id="chatInput" class="chat-input" placeholder="Ask Ollama to modify or analyze this dataset (e.g. 'remove first 2 records')..." autocomplete="off">
+        <button type="submit" id="chatSendBtn" class="btn btn-primary btn-chat-send">
+          <span>Send</span>
+        </button>
+      </form>
+    </section>
+
+    <!-- 5. TECHNICAL AUDIT CONSOLE (DEFAULT STATE = COLLAPSED) -->
+    <section class="card audit-card audit-console-collapsed" id="aiAuditSection">
+      <div class="card-header audit-header" id="auditHeaderClickable">
+        <div class="audit-header-left">
+          <div class="terminal-dots">
+            <span class="dot red"></span>
+            <span class="dot yellow"></span>
+            <span class="dot green"></span>
+          </div>
+          <div class="audit-header-title-wrap">
+            <h2>Technical Audit Console</h2>
+            <div class="audit-collapsed-meta">
+              <span id="auditCollapsedEngine" class="audit-collapsed-chip">Engine: Qwen 2.5 7B</span>
+              <span id="auditCollapsedStatus" class="audit-collapsed-chip status-ready">Status: Ready</span>
+            </div>
+          </div>
+        </div>
+        <div class="audit-header-actions">
+          <button type="button" id="btnToggleAuditConsole" class="btn btn-sm btn-outline audit-toggle-btn" title="Expand or Collapse Technical Audit Console">
+            <span id="auditToggleBtnIcon">▼</span>
+            <span id="auditToggleBtnText">Expand</span>
+          </button>
+          <button type="button" id="auditAutoScrollBtn" class="btn-sm btn-outline active audit-expanded-only" title="Toggle Auto-Scroll">Scroll: ON</button>
+          <button type="button" id="auditCopyBtn" class="btn-sm btn-outline audit-expanded-only" title="Copy Raw Audit Log">📋 Copy Log</button>
+          <button type="button" id="auditClearBtn" class="btn-sm btn-outline audit-expanded-only" title="Clear Console">✕ Clear</button>
+        </div>
+      </div>
+
+      <!-- Expandable Body Container -->
+      <div class="audit-collapsible-body" id="auditCollapsibleBody">
+        <!-- Mini Telemetry Strip -->
+        <div class="audit-telemetry-strip">
+          <div class="telemetry-item">
+            <span class="telemetry-label">INFERENCE ENGINE:</span>
+            <strong id="telemEngine" class="telemetry-val">Qwen 2.5 (7B) on RTX 4060 GPU</strong>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-label">PIPELINE STATUS:</span>
+            <strong id="telemStatus" class="telemetry-val text-success">STANDBY</strong>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-label">AI AUDIT EVENTS:</span>
+            <strong id="telemEventCount" class="telemetry-val">0</strong>
+          </div>
+          <div class="telemetry-item" id="telemTokenBox">
+            <span class="telemetry-label">TOKENS USED:</span>
+            <strong id="telemTokens" class="telemetry-val" style="color: #38bdf8;">In: 0 | Out: 0 (Tot: 0)</strong>
+          </div>
+        </div>
+
+        <!-- Scrollable Terminal Window -->
+        <div class="audit-terminal" id="auditTerminal">
+          <div class="audit-empty" id="auditEmptyMsg">
+            <span class="terminal-prompt">$</span> Waiting for extraction job. Real-time Cloud AI models, failover switches, LLM prompts/responses, token metrics, and checksum equations will stream here live.
+          </div>
+          <div id="auditLogStream" class="audit-stream"></div>
+        </div>
       </div>
     </section>
-    </div> <!-- End singleWorkspaceSection -->
 
-    <!-- ====================================================================== -->
-    <!-- BATCH WORKSPACE SECTION (1ST TO 8TH SEMESTER SUITE)                    -->
-    <!-- ====================================================================== -->
-    <div id="batchWorkspaceSection" class="hidden">
+  </div> <!-- End singleWorkspaceSection -->
+      </section> <!-- End viewExtract -->
+
+      <!-- VIEW 2: Historical Data (/historical) -->
+      <section id="viewHistorical" class="workspace-view hidden" data-view="/historical">
+        <div class="workspace-page-header">
+          <div class="workspace-title-group">
+            <div class="workspace-icon">📚</div>
+            <div>
+              <h1 class="workspace-title">Historical Data</h1>
+              <p class="workspace-subtitle">Manage previously extracted academic datasets and archival records.</p>
+            </div>
+          </div>
+          <div class="workspace-header-actions">
+            <button type="button" id="refreshHistoryBtn" class="btn btn-sm btn-outline">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+              <span>Refresh Archive</span>
+            </button>
+          </div>
+        </div>
+
+        <section class="card history-workspace-card">
+          <div class="history-toolbar-row">
+            <div class="history-search-box">
+              <input type="text" id="historySearchInput" class="search-input" placeholder="Search archive by filename, archetype, semester, or academic year...">
+            </div>
+            <div class="history-status-indicator" id="historyCountBadge">Archive Active</div>
+          </div>
+          <div id="historyList" class="history-list">
+            <p class="empty-text">No extractions recorded yet.</p>
+          </div>
+        </section>
+      </section>
+
+      <!-- VIEW 3: Analysis Overview (/analysis) -->
+      <section id="viewAnalysis" class="workspace-view hidden" data-view="/analysis">
+        <div class="workspace-page-header">
+          <div class="workspace-title-group">
+            <div class="workspace-icon">📊</div>
+            <div>
+              <h1 class="workspace-title">Analysis Overview</h1>
+              <p class="workspace-subtitle">Review academic performance across stored datasets and multi-semester cohorts.</p>
+            </div>
+          </div>
+        </div>
+
+        <div id="batchWorkspaceSection">
       <!-- Batch Selection & Inspection Card -->
       <section class="card batch-workspace-card">
         <div class="card-header">
@@ -1463,8 +1708,179 @@
         </div>
       </section>
     </div>
+  </section> <!-- End viewAnalysis -->
 
-    <!-- Cloud AI & Hybrid Routing Settings Modal -->
+  <!-- VIEW 4: Subject-wise Analysis (/analysis/subject) -->
+  <section id="viewSubjectAnalysis" class="workspace-view hidden" data-view="/analysis/subject">
+    <div class="workspace-page-header">
+      <div class="workspace-title-group">
+        <div class="workspace-icon">📘</div>
+        <div>
+          <h1 class="workspace-title">Subject-wise Analysis</h1>
+          <p class="workspace-subtitle">Analyze performance, pass thresholds, grade distribution, and remedial alerts for individual subjects.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Subject Selection Card -->
+    <section class="card subject-controls-card">
+      <div class="card-header">
+        <h2>Select Academic Dataset &amp; Course Subject</h2>
+        <span class="tag">Subject Analytics</span>
+      </div>
+      <div class="subject-controls-grid">
+        <div class="form-group">
+          <label class="control-label" for="subjectDatasetSelect">1. Extracted Dataset / Cohort Batch:</label>
+          <select id="subjectDatasetSelect" class="form-select">
+            <option value="">-- Choose Dataset --</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="control-label" for="subjectSemesterSelect">2. Semester:</label>
+          <select id="subjectSemesterSelect" class="form-select" disabled>
+            <option value="">-- Choose Semester --</option>
+            <option value="1">Semester 1</option>
+            <option value="2">Semester 2</option>
+            <option value="3">Semester 3</option>
+            <option value="4">Semester 4</option>
+            <option value="5">Semester 5</option>
+            <option value="6">Semester 6</option>
+            <option value="7">Semester 7</option>
+            <option value="8">Semester 8</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="control-label" for="subjectItemSelect">3. Subject / Course:</label>
+          <select id="subjectItemSelect" class="form-select" disabled>
+            <option value="">-- Choose Subject --</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <!-- Subject Performance Placeholder / Shell Card -->
+    <section class="card subject-empty-card" id="subjectEmptyState">
+      <div class="workspace-empty-state">
+        <div class="empty-state-icon">📘</div>
+        <h3>Select a Dataset and Subject to Begin</h3>
+        <p>Choose an extracted examination ledger or cohort batch above to explore subject-wise grade distributions, passing percentages, faculty thresholds, and remedial alerts.</p>
+      </div>
+    </section>
+  </section>
+
+  <!-- VIEW 5: Generated Reports (/reports) -->
+  <section id="viewReports" class="workspace-view hidden" data-view="/reports">
+    <div class="workspace-page-header">
+      <div class="workspace-title-group">
+        <div class="workspace-icon">📄</div>
+        <div>
+          <h1 class="workspace-title">Generated Reports</h1>
+          <p class="workspace-subtitle">View and export generated academic reports, accreditation compliance sheets, and gazettes.</p>
+        </div>
+      </div>
+    </div>
+
+    <section class="card reports-empty-card">
+      <div class="workspace-empty-state">
+        <div class="empty-state-icon">📄</div>
+        <h3>No Generated Reports Stored Yet</h3>
+        <p>Official institutional accreditation summaries, NAAC/NBA compliance sheets, and graduation transcripts will be archived here when generated from your extraction and analysis runs.</p>
+        <div class="empty-state-actions">
+          <button type="button" class="btn btn-primary btn-sm" onclick="navigateTo('/extract')">
+            <span>⚡</span>
+            <span>Go to Extract &amp; Audit</span>
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="navigateTo('/analysis')">
+            <span>📊</span>
+            <span>Go to Analysis Overview</span>
+          </button>
+        </div>
+      </div>
+    </section>
+  </section>
+
+  <!-- VIEW 6: Settings (/settings) -->
+  <section id="viewSettings" class="workspace-view hidden" data-view="/settings">
+    <div class="workspace-page-header">
+      <div class="workspace-title-group">
+        <div class="workspace-icon">⚙️</div>
+        <div>
+          <h1 class="workspace-title">Settings</h1>
+          <p class="workspace-subtitle">Configure application, Local Ollama, and Cloud AI hybrid routing preferences.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-grid">
+      <!-- Settings Card 1: Local AI Engine -->
+      <section class="card settings-card">
+        <div class="card-header">
+          <h2>Local AI Engine (Ollama)</h2>
+          <span class="tag tag-accent">Local Inference</span>
+        </div>
+        <p class="settings-card-desc">Self-hosted local neural intelligence executing on GPU/CPU with complete local privacy.</p>
+        <div class="settings-control-row">
+          <label class="control-label" for="settingsModelSelect">Active Local Model:</label>
+          <select id="settingsModelSelect" class="form-select"></select>
+        </div>
+        <div class="settings-info-box">
+          <span class="info-dot green"></span>
+          <span>GPU Acceleration: RTX 4060 GPU Detected (CUDA / Local Engine Ready)</span>
+        </div>
+      </section>
+
+      <!-- Settings Card 2: Cloud AI Providers -->
+      <section class="card settings-card">
+        <div class="card-header">
+          <h2>Cloud AI &amp; Hybrid Orchestrator</h2>
+          <span class="tag">Multi-Provider</span>
+        </div>
+        <p class="settings-card-desc">Configure multi-provider failover pools across Groq, Gemini, Claude, DeepSeek, OpenAI, and OpenRouter.</p>
+        <div class="settings-control-row" style="margin-top: 1rem;">
+          <button type="button" id="btnOpenCloudModalFromSettings" class="btn btn-primary btn-sm" style="width: 100%;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+            <span>Configure Cloud Keys &amp; Routing Rules</span>
+          </button>
+        </div>
+        <div class="settings-info-box" style="margin-top: 1rem;">
+          <span>6 Providers Supported • Auto-Rotation on HTTP 429 • Session Stickiness</span>
+        </div>
+      </section>
+
+      <!-- Settings Card 3: Application Preferences -->
+      <section class="card settings-card">
+        <div class="card-header">
+          <h2>Application &amp; Interface</h2>
+          <span class="tag">UI Preferences</span>
+        </div>
+        <p class="settings-card-desc">Display theme and navigation behaviors.</p>
+        <div class="settings-control-row">
+          <span class="control-label">Color Theme Mode:</span>
+          <button type="button" id="btnThemeToggleSettings" class="btn btn-secondary btn-sm">
+            <span>Toggle Day / Night Mode</span>
+          </button>
+        </div>
+        <div class="settings-control-row" style="margin-top: 0.8rem;">
+          <span class="control-label">Persistent Side Drawer:</span>
+          <button type="button" id="btnDrawerToggleSettings" class="btn btn-secondary btn-sm">
+            <span>Toggle Drawer (Ctrl+B)</span>
+          </button>
+        </div>
+      </section>
+    </div>
+  </section>
+
+    <!-- App Workspace Footer -->
+    <footer class="app-footer">
+      <p>Data Extractor AI • Local GPU Acceleration • Independent Standalone Architecture</p>
+    </footer>
+  </main>
+</div> <!-- /appLayoutShell -->
+
+  <!-- Cloud AI & Hybrid Routing Settings Modal -->
     <div id="cloudModalOverlay" class="modal-overlay hidden">
       <div class="modal-card cloud-modal-card">
         <div class="modal-header cloud-modal-header">
@@ -2374,12 +2790,7 @@
       <div class="ctx-item" data-col-action="clear_col"><span>🧹 Clear All Values in Column</span></div>
       <div class="ctx-item text-danger" data-col-action="delete_col"><span>❌ Delete Column</span></div>
     </div>
-  </main>
 
-  <footer class="app-footer">
-    <p>Data Extractor AI • Local GPU Acceleration • Independent Standalone Architecture</p>
-  </footer>
-
-  <script src="/static/js/app.js?v=3.8"></script>
+  <script src="/static/js/app.js?v=4.0"></script>
 </body>
 </html>

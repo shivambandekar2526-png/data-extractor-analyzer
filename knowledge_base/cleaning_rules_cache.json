@@ -3037,5 +3037,412 @@
       }
     },
     "source": "ai_determined"
+  },
+  "4ce738ff699da08b": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "gender": "Gender",
+      "sgpi": "SGPI",
+      "cgpi": null,
+      "total_marks": "Total_Marks",
+      "max_marks": null,
+      "result": "Result_Result__P_F",
+      "candidate_type": null
+    },
+    "courses": {
+      "CSC801": {
+        "TH": "CSC801_TH",
+        "IA": "CSC801_IA",
+        "TOT": "CSC801_TOT",
+        "CG": "CSC801_CG"
+      },
+      "CSDO8013": {
+        "TH": "CSDO8013_TH",
+        "IA": "CSDO8013_IA",
+        "TOT": "CSDO8013_TOT",
+        "CG": "CSDO8013_CG"
+      },
+      "CSDO8023": {
+        "CREDITS": "CSDO8023_Credits",
+        "TH": "CSDO8023_TH",
+        "IA": "CSDO8023_IA",
+        "TOT": "CSDO8023_TOT",
+        "CG": "CSDO8023_CG"
+      },
+      "ILO8021": {
+        "CREDITS": "ILO8021_Credits",
+        "TH": "ILO8021_TH",
+        "IA": "ILO8021_IA",
+        "TOT": "ILO8021_TOT",
+        "CG": "ILO8021_CG"
+      },
+      "CSL801": {
+        "CREDITS": "CSL801_Credits",
+        "TH": "CSL801_TH",
+        "IA": "CSL801_IA",
+        "TOT": "CSL801_TOT",
+        "CG": "CSL801_CG"
+      },
+      "AIDSCSDOL8013": {
+        "CREDITS": "AIDSCSDOL8013_Credits",
+        "TH": "AIDSCSDOL8013_TH",
+        "IA": "AIDSCSDOL8013_IA",
+        "TOT": "AIDSCSDOL8013_TOT",
+        "CG": "AIDSCSDOL8013_CG"
+      },
+      "AIDSCSDOL8023": {
+        "CREDITS": "AIDSCSDOL8023_Credits",
+        "TH": "AIDSCSDOL8023_TH",
+        "IA": "AIDSCSDOL8023_IA",
+        "TOT": "AIDSCSDOL8023_TOT",
+        "CG": "AIDSCSDOL8023_CG"
+      },
+      "AIDSCSP801": {
+        "CREDITS": "AIDSCSP801_Credits",
+        "TH": "AIDSCSP801_TH",
+        "IA": "AIDSCSP801_IA",
+        "TOT": "AIDSCSP801_TOT",
+        "CG": "AIDSCSP801_CG"
+      },
+      "EC": {
+        "CREDITS": "EC_Credits"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "CSC801_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC801_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC801_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSDO8013_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSDO8013_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSDO8013_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSDO8023_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSDO8023_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSDO8023_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "ILO8021_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "ILO8021_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "ILO8021_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL801_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSL801_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSL801_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "AIDSCSDOL8013_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "AIDSCSDOL8013_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "AIDSCSDOL8013_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "AIDSCSDOL8023_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "AIDSCSDOL8023_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "AIDSCSDOL8023_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "AIDSCSP801_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "AIDSCSP801_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "AIDSCSP801_TOT": {
+        "min": 0.0,
+        "max": 150.0
+      }
+    },
+    "source": "ai_determined"
+  },
+  "10b6196305812ff0": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "gender": "Gender",
+      "sgpi": "SGPI",
+      "cgpi": "CGPI",
+      "total_marks": "Total_Marks",
+      "max_marks": "Max_Marks",
+      "result": "Result_Status",
+      "candidate_type": "Candidate_Type"
+    },
+    "courses": {
+      "FEC201": {
+        "TOT": "FEC201_TOT",
+        "GRADE": "FEC201_Grade",
+        "GP": "FEC201_GP",
+        "CREDITS": "FEC201_Credits",
+        "CG": "FEC201_CG"
+      },
+      "FEC202": {
+        "TOT": "FEC202_TOT",
+        "GRADE": "FEC202_Grade",
+        "GP": "FEC202_GP",
+        "CREDITS": "FEC202_Credits",
+        "CG": "FEC202_CG"
+      },
+      "FEL201": {
+        "TOT": "FEL201_TOT",
+        "GRADE": "FEL201_Grade",
+        "GP": "FEL201_GP",
+        "CREDITS": "FEL201_Credits",
+        "CG": "FEL201_CG"
+      },
+      "FEC203": {
+        "TOT": "FEC203_TOT",
+        "GRADE": "FEC203_Grade",
+        "GP": "FEC203_GP",
+        "CREDITS": "FEC203_Credits",
+        "CG": "FEC203_CG"
+      },
+      "FEL202": {
+        "TOT": "FEL202_TOT",
+        "GRADE": "FEL202_Grade",
+        "GP": "FEL202_GP",
+        "CREDITS": "FEL202_Credits",
+        "CG": "FEL202_CG"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "FEC201_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "FEC202_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "FEL201_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "FEC203_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "FEL202_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      }
+    },
+    "source": "ai_determined"
+  },
+  "8cce097bb8fa82e5": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "gender": "Gender",
+      "sgpi": "SGPI",
+      "cgpi": "CGPI",
+      "total_marks": "Total_Marks",
+      "max_marks": "Max_Marks",
+      "result": "Result_Status",
+      "candidate_type": "Candidate_Type"
+    },
+    "courses": {
+      "58651": {
+        "TOT": "58651_TOT",
+        "GRADE": "58651_Grade",
+        "GP": "58651_GP",
+        "CREDITS": "58651_Credits",
+        "CG": "58651_CG"
+      },
+      "FEC101": {
+        "TOT": "FEC101_TOT",
+        "GRADE": "FEC101_Grade",
+        "GP": "FEC101_GP",
+        "CREDITS": "FEC101_Credits",
+        "CG": "FEC101_CG"
+      },
+      "58652": {
+        "TOT": "58652_TOT",
+        "GRADE": "58652_Grade",
+        "GP": "58652_GP",
+        "CREDITS": "58652_Credits",
+        "CG": "58652_CG"
+      },
+      "FEL101": {
+        "TOT": "FEL101_TOT",
+        "GRADE": "FEL101_Grade",
+        "GP": "FEL101_GP",
+        "CREDITS": "FEL101_Credits",
+        "CG": "FEL101_CG"
+      },
+      "58655": {
+        "TOT": "58655_TOT",
+        "GRADE": "58655_Grade",
+        "GP": "58655_GP",
+        "CREDITS": "58655_Credits",
+        "CG": "58655_CG"
+      },
+      "FEL102": {
+        "TOT": "FEL102_TOT",
+        "GRADE": "FEL102_Grade",
+        "GP": "FEL102_GP",
+        "CREDITS": "FEL102_Credits",
+        "CG": "FEL102_CG"
+      },
+      "58653": {
+        "TOT": "58653_TOT",
+        "GRADE": "58653_Grade",
+        "GP": "58653_GP",
+        "CREDITS": "58653_Credits",
+        "CG": "58653_CG"
+      },
+      "FEL103": {
+        "TOT": "FEL103_TOT",
+        "GRADE": "FEL103_Grade",
+        "GP": "FEL103_GP",
+        "CREDITS": "FEL103_Credits",
+        "CG": "FEL103_CG"
+      },
+      "58654": {
+        "TOT": "58654_TOT",
+        "GRADE": "58654_Grade",
+        "GP": "58654_GP",
+        "CREDITS": "58654_Credits",
+        "CG": "58654_CG"
+      },
+      "FEL104": {
+        "TOT": "FEL104_TOT",
+        "GRADE": "FEL104_Grade",
+        "GP": "FEL104_GP",
+        "CREDITS": "FEL104_Credits",
+        "CG": "FEL104_CG"
+      },
+      "FEL105": {
+        "TOT": "FEL105_TOT",
+        "GRADE": "FEL105_Grade",
+        "GP": "FEL105_GP",
+        "CREDITS": "FEL105_Credits",
+        "CG": "FEL105_CG"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "58651_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "FEC101_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "58652_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "FEL101_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "58655_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "FEL102_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "58653_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "FEL103_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "58654_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "FEL104_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "FEL105_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      }
+    },
+    "source": "ai_determined"
   }
 }

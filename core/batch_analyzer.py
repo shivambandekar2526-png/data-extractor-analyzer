@@ -160,16 +160,21 @@ def format_branch_label(branch_name: str) -> str:
 
 
 def normalize_batch_slug(name: str) -> str:
-    """Normalize batch folder name to clean canonical slug (e.g. '21-22 data' -> '21-22', 'Batch 2021-2022' -> '21-22')."""
+    """Normalize batch folder name to clean canonical slug (e.g. '21-22 data' -> '21-22', 'Batch 2021-2022' -> '21-22', '2122' -> '21-22')."""
     if not name:
         return "batch"
     clean = os.path.basename(name).strip()
     clean = re.sub(r"[\s_\-]+data$", "", clean, flags=re.IGNORECASE).strip()
-    m = re.search(r"(\d{2,4})[\s_\-/]+(\d{2,4})", clean)
+    m = re.search(r"(\b20\d{2}|\b\d{2})[\s_\-/]+(\b20\d{2}|\b\d{2})", clean)
     if m:
         y1 = m.group(1)[-2:]
         y2 = m.group(2)[-2:]
         return f"{y1}-{y2}"
+    m4 = re.search(r"\b(1[89]|2[0-9]|3[0-5])(1[89]|2[0-9]|3[0-5])\b", clean)
+    if m4:
+        y1, y2 = int(m4.group(1)), int(m4.group(2))
+        if y2 == y1 + 1:
+            return f"{y1:02d}-{y2:02d}"
     return clean or "batch"
 
 
@@ -277,28 +282,40 @@ class BatchAcademicAnalyzer:
         # 1. Absolute path check
         if os.path.isabs(batch_folder) and os.path.isdir(batch_folder):
             candidate_dirs.append(batch_folder)
+            # Check mirror directory (pdf <-> excel)
+            bf_norm = batch_folder.replace("\\", "/")
+            if "/excel/" in bf_norm:
+                mirror_cand = os.path.normpath(bf_norm.replace("/excel/", "/pdf/"))
+                if os.path.isdir(mirror_cand) and mirror_cand not in candidate_dirs:
+                    candidate_dirs.append(mirror_cand)
+            elif "/pdf/" in bf_norm:
+                mirror_cand = os.path.normpath(bf_norm.replace("/pdf/", "/excel/"))
+                if os.path.isdir(mirror_cand) and mirror_cand not in candidate_dirs:
+                    candidate_dirs.append(mirror_cand)
         else:
-            # 2. Hierarchical or relative under app_batch_dir
-            app_sub = os.path.join(self.app_batch_dir, batch_folder_clean)
-            if os.path.isdir(app_sub):
-                candidate_dirs.append(app_sub)
-            elif os.path.isdir(batch_folder):
+            # 2. Hierarchical or relative under app_batch_dir (checking direct, excel/, and pdf/ stores)
+            for sub_store in ["", "excel", "pdf"]:
+                p_cand = os.path.join(self.app_batch_dir, sub_store, batch_folder_clean) if sub_store else os.path.join(self.app_batch_dir, batch_folder_clean)
+                if os.path.isdir(p_cand) and p_cand not in candidate_dirs:
+                    candidate_dirs.append(p_cand)
+            if not candidate_dirs and os.path.isdir(batch_folder):
                 candidate_dirs.append(os.path.abspath(batch_folder))
 
         # Determine target app store folder for outputs
         if candidate_dirs and os.path.abspath(candidate_dirs[0]).startswith(os.path.abspath(self.app_batch_dir)):
             app_store_dir = candidate_dirs[0]
         else:
-            app_store_dir = os.path.join(self.app_batch_dir, batch_slug)
+            app_store_dir = os.path.join(self.app_batch_dir, "excel", batch_slug) if os.path.isdir(os.path.join(self.app_batch_dir, "excel")) else os.path.join(self.app_batch_dir, batch_slug)
 
         if os.path.isdir(app_store_dir) and app_store_dir not in candidate_dirs:
             candidate_dirs.append(app_store_dir)
 
-        # Only check root Batch Data if candidate_dirs is empty or non-hierarchical slug
+        # Only check root store if needed
         if self.root_batch_dir and os.path.isdir(self.root_batch_dir):
-            r_hier = os.path.join(self.root_batch_dir, batch_folder_clean)
-            if os.path.isdir(r_hier) and r_hier not in candidate_dirs:
-                candidate_dirs.append(r_hier)
+            for sub_store in ["", "excel", "pdf"]:
+                r_cand = os.path.join(self.root_batch_dir, sub_store, batch_folder_clean) if sub_store else os.path.join(self.root_batch_dir, batch_folder_clean)
+                if os.path.isdir(r_cand) and r_cand not in candidate_dirs:
+                    candidate_dirs.append(r_cand)
 
             if not candidate_dirs or ("/" not in batch_folder_clean):
                 for candidate_name in [batch_folder, batch_slug, f"{batch_slug} data"]:
@@ -391,49 +408,69 @@ class BatchAcademicAnalyzer:
         """
         branches_dict: Dict[str, Dict[str, Any]] = {}
 
-        if not os.path.isdir(self.app_batch_dir):
-            return {"branches": [], "total_branches": 0, "total_batches": 0}
+        # Scan roots: check if app_batch_dir is organized with excel/ and pdf/ subtrees
+        scan_roots = []
+        for sub_store in ["excel", "pdf"]:
+            sub_p = os.path.join(self.app_batch_dir, sub_store)
+            if os.path.isdir(sub_p):
+                scan_roots.append(sub_p)
+        if not scan_roots:
+            scan_roots.append(self.app_batch_dir)
 
-        all_entries = sorted(os.listdir(self.app_batch_dir))
+        # Pass 1: Discover hierarchical Branch/Year folders across all scan roots
+        for s_root in scan_roots:
+            all_entries = sorted(os.listdir(s_root))
+            for entry in all_entries:
+                if entry.lower().endswith(".xlsx") or entry.lower().endswith(".csv") or entry.lower() in ("pdf", "excel"):
+                    continue
+                dir_path = os.path.join(s_root, entry)
+                if not os.path.isdir(dir_path):
+                    continue
 
-        # Pass 1: Discover hierarchical Branch/Year folders (directories containing subdirectories)
-        for entry in all_entries:
-            if entry.lower().endswith(".xlsx") or entry.lower().endswith(".csv"):
-                continue
-            dir_path = os.path.join(self.app_batch_dir, entry)
-            if not os.path.isdir(dir_path):
-                continue
+                sub_dirs = [d for d in sorted(os.listdir(dir_path)) if os.path.isdir(os.path.join(dir_path, d))]
+                if sub_dirs:
+                    branch_id = entry
+                    if branch_id not in branches_dict:
+                        branches_dict[branch_id] = {
+                            "id": branch_id,
+                            "name": branch_id,
+                            "display_name": format_branch_label(branch_id),
+                            "years": []
+                        }
 
-            sub_dirs = [d for d in sorted(os.listdir(dir_path)) if os.path.isdir(os.path.join(dir_path, d))]
-            if sub_dirs:
-                branch_id = entry
-                if branch_id not in branches_dict:
-                    branches_dict[branch_id] = {
-                        "id": branch_id,
-                        "name": branch_id,
-                        "display_name": format_branch_label(branch_id),
-                        "years": []
-                    }
-
-                for yr in sub_dirs:
-                    if yr.lower().endswith(".xlsx") or yr.lower().endswith(".csv"):
-                        continue
-                    yr_path = os.path.join(dir_path, yr)
-                    rel_folder = f"{branch_id}/{yr}"
-                    meta = self.detect_batch_files(rel_folder, target_branch=branch_id)
-                    branches_dict[branch_id]["years"].append({
-                        "year": yr,
-                        "batch_folder": rel_folder,
-                        "display_name": yr,
-                        "full_path": yr_path,
-                        "branch": branch_id,
-                        "total_semesters": meta["total_semesters"],
-                        "excel_count": meta["excel_count"],
-                        "pdf_count": meta["pdf_count"],
-                        "semesters": [s["semester"] for s in meta["semesters_detected"]],
-                        "semesters_detected": meta["semesters_detected"],
-                        "has_excel": meta["has_excel"]
-                    })
+                    for yr in sub_dirs:
+                        if yr.lower().endswith(".xlsx") or yr.lower().endswith(".csv"):
+                            continue
+                        yr_path = os.path.join(dir_path, yr)
+                        rel_folder = f"{branch_id}/{yr}"
+                        meta = self.detect_batch_files(rel_folder, target_branch=branch_id)
+                        
+                        # Avoid duplicate years if discovered in both excel and pdf
+                        existing_yr = next((y for y in branches_dict[branch_id]["years"] if y["year"] == yr), None)
+                        if existing_yr:
+                            if meta["excel_count"] > existing_yr["excel_count"]:
+                                existing_yr.update({
+                                    "total_semesters": meta["total_semesters"],
+                                    "excel_count": meta["excel_count"],
+                                    "pdf_count": meta["pdf_count"],
+                                    "semesters": [s["semester"] for s in meta["semesters_detected"]],
+                                    "semesters_detected": meta["semesters_detected"],
+                                    "has_excel": meta["has_excel"]
+                                })
+                        else:
+                            branches_dict[branch_id]["years"].append({
+                                "year": yr,
+                                "batch_folder": rel_folder,
+                                "display_name": yr,
+                                "full_path": yr_path,
+                                "branch": branch_id,
+                                "total_semesters": meta["total_semesters"],
+                                "excel_count": meta["excel_count"],
+                                "pdf_count": meta["pdf_count"],
+                                "semesters": [s["semester"] for s in meta["semesters_detected"]],
+                                "semesters_detected": meta["semesters_detected"],
+                                "has_excel": meta["has_excel"]
+                            })
 
         # Pass 2: Check any flat folders for backwards compatibility
         for entry in all_entries:

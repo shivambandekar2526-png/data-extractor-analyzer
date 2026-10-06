@@ -36,22 +36,35 @@ let currentFindMatchIdx = -1;
 let contextMenuTarget = { rowIndex: null, colKey: null };
 
 document.addEventListener("DOMContentLoaded", () => {
-  initTheme();
-  initStatus();
-  initBatches();
-  initHistory();
-  initUpload();
-  initSearch();
-  initAuditControls();
-  initExtractionControls();
-  initChatbox();
-  initCloudModal();
-  initResultsTabs();
-  initAiCrosscheckModal();
-  initTabularModal();
-  initBatchSuite();
-  initDataCleaningUI();
-  initInteractiveExcelGrid();
+  const initFns = [
+    ["initTheme", initTheme],
+    ["initAppRouting", initAppRouting],
+    ["initDrawerCollapse", initDrawerCollapse],
+    ["initStatus", initStatus],
+    ["initBatches", initBatches],
+    ["initHistory", initHistory],
+    ["initUpload", initUpload],
+    ["initSearch", initSearch],
+    ["initAuditControls", initAuditControls],
+    ["initExtractionControls", initExtractionControls],
+    ["initChatbox", initChatbox],
+    ["initCloudModal", initCloudModal],
+    ["initResultsTabs", initResultsTabs],
+    ["initAiCrosscheckModal", initAiCrosscheckModal],
+    ["initTabularModal", initTabularModal],
+    ["initBatchSuite", initBatchSuite],
+    ["initDataCleaningUI", initDataCleaningUI],
+    ["initInteractiveExcelGrid", initInteractiveExcelGrid],
+    ["initSubjectAnalysisUI", initSubjectAnalysisUI],
+    ["initSettingsView", initSettingsView]
+  ];
+  for (const [name, fn] of initFns) {
+    try {
+      if (typeof fn === "function") fn();
+    } catch (err) {
+      console.warn(`[Init] ${name} startup warning:`, err);
+    }
+  }
 });
 
 // 0. Theme Toggle & Palette Controller (Day / Night Mode)
@@ -145,6 +158,271 @@ function updateChartsTheme(theme) {
   });
 }
 
+// ==========================================================================
+// PHASE 1: APPLICATION SHELL, PERSISTENT COLLAPSIBLE SIDE DRAWER & ROUTING
+// ==========================================================================
+
+const APP_ROUTES = {
+  "/extract": { id: "viewExtract", title: "Extract & Audit" },
+  "/historical": { id: "viewHistorical", title: "Historical Data" },
+  "/analysis": { id: "viewAnalysis", title: "Analysis Overview" },
+  "/analysis/subject": { id: "viewSubjectAnalysis", title: "Subject-wise Analysis" },
+  "/reports": { id: "viewReports", title: "Generated Reports" },
+  "/settings": { id: "viewSettings", title: "Settings" }
+};
+
+let currentActiveRoute = "/extract";
+
+function normalizeRoute(path) {
+  if (!path || path === "/" || path === "") return "/extract";
+  // Strip trailing slash
+  const clean = path.replace(/\/+$/, "") || "/";
+  if (APP_ROUTES[clean]) return clean;
+  if (clean.startsWith("/analysis/")) return "/analysis/subject";
+  return "/extract";
+}
+
+function initAppRouting() {
+  // 1. Intercept drawer navigation item clicks
+  document.querySelectorAll(".drawer-nav-item, [data-route]").forEach(link => {
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      const target = link.getAttribute("data-route") || link.getAttribute("href");
+      if (target) {
+        navigateTo(target, true);
+      }
+    });
+  });
+
+  // 2. Intercept browser Back / Forward events
+  window.addEventListener("popstate", () => {
+    const route = window.location.pathname;
+    navigateTo(route, false);
+  });
+
+  // 3. Resolve initial route
+  const initialRoute = normalizeRoute(window.location.pathname);
+  navigateTo(initialRoute, false);
+}
+
+function navigateTo(route, pushState = true) {
+  const targetRoute = normalizeRoute(route);
+  currentActiveRoute = targetRoute;
+
+  // 1. Synchronize HTML5 History
+  if (pushState && window.location.pathname !== targetRoute) {
+    history.pushState({ route: targetRoute }, "", targetRoute);
+  }
+
+  // 2. Update persistent side drawer active indicator
+  document.querySelectorAll(".drawer-nav-item").forEach(item => {
+    const itemRoute = item.getAttribute("data-route");
+    if (itemRoute === targetRoute) {
+      item.classList.add("active");
+      item.setAttribute("aria-current", "page");
+    } else {
+      item.classList.remove("active");
+      item.removeAttribute("aria-current");
+    }
+  });
+
+  // 3. Render ONLY the active Workspace View (completely hide other workspaces)
+  const views = document.querySelectorAll(".workspace-view");
+  views.forEach(view => {
+    const viewRoute = view.getAttribute("data-view");
+    if (viewRoute === targetRoute) {
+      view.classList.remove("hidden");
+      view.classList.add("active");
+    } else {
+      view.classList.add("hidden");
+      view.classList.remove("active");
+    }
+  });
+
+  // 4. Synchronize Single vs Batch buttons
+  const btnSingle = document.getElementById("btnModeSingle");
+  const btnBatch = document.getElementById("btnModeBatch");
+  if (btnSingle && btnBatch) {
+    if (targetRoute === "/extract") {
+      btnSingle.classList.add("active");
+      btnBatch.classList.remove("active");
+    } else if (targetRoute === "/analysis") {
+      btnBatch.classList.add("active");
+      btnSingle.classList.remove("active");
+    }
+  }
+
+  // 5. Trigger view-specific data initializations
+  if (targetRoute === "/historical") {
+    if (typeof initHistory === "function") initHistory();
+  } else if (targetRoute === "/analysis") {
+    if (typeof loadBatchSuiteDatasets === "function") loadBatchSuiteDatasets();
+  } else if (targetRoute === "/analysis/subject") {
+    if (typeof initSubjectAnalysisUI === "function") initSubjectAnalysisUI();
+  } else if (targetRoute === "/settings") {
+    if (typeof initSettingsView === "function") initSettingsView();
+  }
+
+  // 6. Reset main workspace scroll position smoothly
+  const workspaceContainer = document.getElementById("appWorkspaceContainer");
+  if (workspaceContainer) {
+    workspaceContainer.scrollTop = 0;
+  }
+}
+
+// Drawer Collapsible Controller
+function initDrawerCollapse() {
+  const shell = document.getElementById("appLayoutShell");
+  const btnToggleDrawer = document.getElementById("btnToggleDrawer");
+  const btnDrawerPin = document.getElementById("btnDrawerPin");
+  const btnDrawerToggleSettings = document.getElementById("btnDrawerToggleSettings");
+
+  if (!shell) return;
+
+  // Retrieve saved preference or auto-collapse on small screens (<1024px)
+  const saved = localStorage.getItem("data-extractor-drawer-collapsed");
+  const shouldCollapse = saved !== null ? saved === "true" : (window.innerWidth < 1024);
+  applyDrawerCollapsed(shouldCollapse, false);
+
+  const toggle = () => {
+    const isCurrentlyCollapsed = shell.classList.contains("drawer-collapsed");
+    applyDrawerCollapsed(!isCurrentlyCollapsed, true);
+  };
+
+  if (btnToggleDrawer) btnToggleDrawer.addEventListener("click", toggle);
+  if (btnDrawerPin) btnDrawerPin.addEventListener("click", toggle);
+  if (btnDrawerToggleSettings) btnDrawerToggleSettings.addEventListener("click", toggle);
+
+  // Global Keyboard Shortcut: Ctrl+B or Cmd+B
+  document.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
+      const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : "";
+      if (tag === "input" || tag === "textarea") return;
+      e.preventDefault();
+      toggle();
+    }
+  });
+
+  // Responsive resize watcher: auto-collapse on small viewport if user didn't explicitly store
+  window.addEventListener("resize", () => {
+    if (localStorage.getItem("data-extractor-drawer-collapsed") === null) {
+      if (window.innerWidth < 1024 && !shell.classList.contains("drawer-collapsed")) {
+        applyDrawerCollapsed(true, false);
+      } else if (window.innerWidth >= 1024 && shell.classList.contains("drawer-collapsed")) {
+        applyDrawerCollapsed(false, false);
+      }
+    }
+  });
+}
+
+function applyDrawerCollapsed(collapsed, save = true) {
+  const shell = document.getElementById("appLayoutShell");
+  const btnToggleDrawer = document.getElementById("btnToggleDrawer");
+  const btnDrawerPin = document.getElementById("btnDrawerPin");
+  const drawer = document.getElementById("appSidebarDrawer");
+
+  if (!shell) return;
+
+  if (collapsed) {
+    shell.classList.add("drawer-collapsed");
+    if (drawer) drawer.setAttribute("aria-expanded", "false");
+    if (btnToggleDrawer) {
+      btnToggleDrawer.setAttribute("title", "Expand Sidebar (Ctrl+B)");
+      btnToggleDrawer.setAttribute("aria-label", "Expand Sidebar");
+    }
+    if (btnDrawerPin) {
+      btnDrawerPin.setAttribute("title", "Expand Sidebar (Ctrl+B)");
+      btnDrawerPin.setAttribute("aria-label", "Expand Sidebar");
+    }
+  } else {
+    shell.classList.remove("drawer-collapsed");
+    if (drawer) drawer.setAttribute("aria-expanded", "true");
+    if (btnToggleDrawer) {
+      btnToggleDrawer.setAttribute("title", "Collapse Sidebar (Ctrl+B)");
+      btnToggleDrawer.setAttribute("aria-label", "Collapse Sidebar");
+    }
+    if (btnDrawerPin) {
+      btnDrawerPin.setAttribute("title", "Collapse Sidebar (Ctrl+B)");
+      btnDrawerPin.setAttribute("aria-label", "Collapse Sidebar");
+    }
+  }
+
+  if (save) {
+    localStorage.setItem("data-extractor-drawer-collapsed", collapsed ? "true" : "false");
+  }
+}
+
+// Subject-wise Analysis View Controller
+async function initSubjectAnalysisUI() {
+  const datasetSelect = document.getElementById("subjectDatasetSelect");
+  const semSelect = document.getElementById("subjectSemesterSelect");
+  const subjectSelect = document.getElementById("subjectItemSelect");
+  if (!datasetSelect) return;
+
+  if (datasetSelect.dataset.initialized === "true") return;
+  datasetSelect.dataset.initialized = "true";
+
+  try {
+    const res = await fetch("/api/history");
+    const data = await res.json();
+    const history = data.history || [];
+
+    datasetSelect.innerHTML = `<option value="">-- Choose Dataset --</option>`;
+    history.forEach(item => {
+      const opt = document.createElement("option");
+      opt.value = item.folder_name;
+      opt.textContent = `${item.folder_name} (Sem ${item.semester} • ${item.total_students} students)`;
+      datasetSelect.appendChild(opt);
+    });
+  } catch (e) {
+    console.warn("Failed to load datasets for subject analysis:", e);
+  }
+
+  datasetSelect.addEventListener("change", () => {
+    const chosen = datasetSelect.value;
+    if (semSelect) semSelect.disabled = !chosen;
+    if (subjectSelect) subjectSelect.disabled = !chosen;
+  });
+}
+
+// Settings View Controller
+function initSettingsView() {
+  const modelSelect = document.getElementById("settingsModelSelect");
+  const topModelSelector = document.getElementById("modelSelector");
+  const btnCloudModal = document.getElementById("btnOpenCloudModalFromSettings");
+  const btnThemeToggle = document.getElementById("btnThemeToggleSettings");
+
+  if (modelSelect && topModelSelector && topModelSelector.options && topModelSelector.options.length > 0) {
+    modelSelect.innerHTML = topModelSelector.innerHTML;
+    modelSelect.value = topModelSelector.value;
+
+    if (!modelSelect.dataset.bound) {
+      modelSelect.dataset.bound = "true";
+      modelSelect.addEventListener("change", () => {
+        topModelSelector.value = modelSelect.value;
+        const event = new Event("change");
+        topModelSelector.dispatchEvent(event);
+      });
+    }
+  }
+
+  if (btnCloudModal && !btnCloudModal.dataset.bound) {
+    btnCloudModal.dataset.bound = "true";
+    btnCloudModal.addEventListener("click", () => {
+      const modal = document.getElementById("cloudModalOverlay");
+      if (modal) modal.classList.remove("hidden");
+    });
+  }
+
+  if (btnThemeToggle && !btnThemeToggle.dataset.bound) {
+    btnThemeToggle.dataset.bound = "true";
+    btnThemeToggle.addEventListener("click", () => {
+      const themeBtn = document.getElementById("themeToggleBtn");
+      if (themeBtn) themeBtn.click();
+    });
+  }
+}
+
 // 1. Status Polling & Model Switcher
 async function initStatus() {
   try {
@@ -177,15 +455,19 @@ async function initStatus() {
     }
 
     if (data.ollama_available) {
-      badge.className = "status-pill status-trained";
-      badge.querySelector(".status-dot").className = "status-dot green";
-      statusText.textContent = `Local AI Active (${data.active_model})`;
+      if (badge) {
+        badge.className = "status-pill status-trained";
+        const dot = badge.querySelector(".status-dot");
+        if (dot) dot.className = "status-dot green";
+      }
+      if (statusText) statusText.textContent = `Local AI Active (${data.active_model})`;
       if (modelTag) modelTag.textContent = data.active_model;
       if (chatModelTag) chatModelTag.textContent = data.active_model;
       if (auditGpuBadge) {
-        auditGpuBadge.querySelector(".status-dot").className = "status-dot green";
-        auditGpuText.textContent = `Ollama Online (${data.active_model} on GPU)`;
+        const dot = auditGpuBadge.querySelector(".status-dot");
+        if (dot) dot.className = "status-dot green";
       }
+      if (auditGpuText) auditGpuText.textContent = `Ollama Online (${data.active_model} on GPU)`;
       if (telemEngine) telemEngine.textContent = `${data.active_model} on Local GPU`;
 
       // Populate Model Picker Dropdown
@@ -227,15 +509,19 @@ async function initStatus() {
         }
       }
     } else {
-      badge.className = "status-pill status-trained";
-      badge.querySelector(".status-dot").className = "status-dot green";
-      statusText.textContent = "Possibility Engine Active (Fast Offline)";
+      if (badge) {
+        badge.className = "status-pill status-trained";
+        const dot = badge.querySelector(".status-dot");
+        if (dot) dot.className = "status-dot green";
+      }
+      if (statusText) statusText.textContent = "Possibility Engine Active (Fast Offline)";
       if (modelTag) modelTag.textContent = "Pre-Trained KB";
       if (pickerContainer) pickerContainer.style.display = "none";
       if (auditGpuBadge) {
-        auditGpuBadge.querySelector(".status-dot").className = "status-dot amber";
-        auditGpuText.textContent = "Possibility Engine (Fast Offline)";
+        const dot = auditGpuBadge.querySelector(".status-dot");
+        if (dot) dot.className = "status-dot amber";
       }
+      if (auditGpuText) auditGpuText.textContent = "Possibility Engine (Fast Offline)";
       if (telemEngine) telemEngine.textContent = "Deterministic Archetype Engine";
     }
   } catch (e) {
@@ -281,9 +567,35 @@ async function initBatches() {
       } else {
         btn.innerHTML = `<span>⚡ Extract Data</span>`;
       }
+      updateExtractionHint();
     });
   } catch (e) {
     console.error("Failed to load batches:", e);
+  }
+}
+
+// Helper: Dynamically update extraction hint based on selection and active pipeline
+function updateExtractionHint() {
+  const hint = document.getElementById("extractBtnHint");
+  if (!hint) return;
+  const fileInput = document.getElementById("fileInput");
+  const batchSelect = document.getElementById("batchSelect");
+  const selectedFile = (fileInput && fileInput.files && fileInput.files[0]) || window.currentSelectedFile;
+  const selectedBatch = batchSelect && batchSelect.value;
+
+  const pipelineRadio = document.querySelector('input[name="extractionPipeline"]:checked');
+  const pipelineVal = pipelineRadio ? pipelineRadio.value : "local";
+  let engineName = "Standard Local AI";
+  if (pipelineVal === "cloud") engineName = "Pure Cloud AI";
+  else if (pipelineVal === "visual_blueprint") engineName = "Vision AI";
+
+  if (selectedFile) {
+    hint.textContent = `Ready: ${selectedFile.name} (${engineName})`;
+  } else if (selectedBatch) {
+    const filename = selectedBatch.split(/[/\\]/).pop();
+    hint.textContent = `Ready: ${filename} (${engineName})`;
+  } else {
+    hint.textContent = "Select a source file or historical batch to start";
   }
 }
 
@@ -293,6 +605,7 @@ function resetFileUploadDisplay() {
   const selectedFileBadge = document.getElementById("selectedFileBadge");
   if (uploadPrompt) uploadPrompt.classList.remove("hidden");
   if (selectedFileBadge) selectedFileBadge.classList.add("hidden");
+  updateExtractionHint();
 }
 
 // 3. File Upload & Drop Area
@@ -301,18 +614,18 @@ function initUpload() {
   const fileInput = document.getElementById("fileInput");
   const extractBtn = document.getElementById("extractBtn");
 
-  // Clear value on mousedown so re-selecting the same file triggers 'change'
-  if (dropArea) {
-    dropArea.addEventListener("mousedown", () => {
+  if (dropArea && fileInput) {
+    // Unified click listener on dropArea (and browseBtn / change-file-pill inside it)
+    dropArea.addEventListener("click", () => {
       fileInput.value = "";
+      fileInput.click();
     });
-  }
 
-  // Keyboard navigation support for accessible dropArea label
-  if (dropArea) {
+    // Keyboard navigation support for accessible dropArea
     dropArea.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
+        fileInput.value = "";
         fileInput.click();
       }
     });
@@ -329,22 +642,19 @@ function initUpload() {
     dropArea.addEventListener("drop", (e) => {
       e.preventDefault();
       dropArea.classList.remove("dragover");
-      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-        try {
-          fileInput.files = e.dataTransfer.files;
-        } catch (err) {
-          // FileList assignment may be read-only in some legacy environments
-        }
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
         handleFileSelected(e.dataTransfer.files[0]);
       }
     });
   }
 
-  fileInput.addEventListener("change", (e) => {
-    if (e.target.files && e.target.files[0]) {
-      handleFileSelected(e.target.files[0]);
-    }
-  });
+  if (fileInput) {
+    fileInput.addEventListener("change", (e) => {
+      if (e.target.files && e.target.files[0]) {
+        handleFileSelected(e.target.files[0]);
+      }
+    });
+  }
 
   // Pipeline Radio Toggle Listeners
   const pipeLocal = document.getElementById("pipelineLocal");
@@ -355,29 +665,72 @@ function initUpload() {
   const pipeVisualLabel = document.getElementById("pipelineVisualLabel");
 
   function setPipelineActive(activeType) {
+    if (pipeLocal) pipeLocal.checked = (activeType === "local");
+    if (pipeCloud) pipeCloud.checked = (activeType === "cloud");
+    if (pipeVisual) pipeVisual.checked = (activeType === "visual_blueprint");
+
     if (pipeLocalLabel) pipeLocalLabel.classList.toggle("active", activeType === "local");
     if (pipeCloudLabel) pipeCloudLabel.classList.toggle("active", activeType === "cloud");
     if (pipeVisualLabel) pipeVisualLabel.classList.toggle("active", activeType === "visual_blueprint");
 
+    const activeEngineTag = document.getElementById("activeEngineTag");
+    const auditCollapsedEngine = document.getElementById("auditCollapsedEngine");
     const telemEngine = document.getElementById("telemEngine");
     const auditGpuText = document.getElementById("auditGpuText");
+
     if (activeType === "local") {
+      if (activeEngineTag) activeEngineTag.textContent = "Local AI Active";
+      if (auditCollapsedEngine) auditCollapsedEngine.textContent = "Engine: Qwen 2.5 7B";
       if (telemEngine) telemEngine.textContent = "Qwen 2.5 (7B) on RTX 4060 GPU";
       if (auditGpuText) auditGpuText.textContent = "Ollama Ready";
     } else if (activeType === "cloud") {
+      if (activeEngineTag) activeEngineTag.textContent = "Cloud AI Active";
+      if (auditCollapsedEngine) auditCollapsedEngine.textContent = "Engine: Cloud AI (Gemini/Groq)";
       if (telemEngine) telemEngine.textContent = "Cloud AI (Multi-Provider Orchestrator: Gemini / Groq)";
       if (auditGpuText) auditGpuText.textContent = "Cloud AI Ready";
     } else if (activeType === "visual_blueprint") {
+      if (activeEngineTag) activeEngineTag.textContent = "Vision AI Active";
+      if (auditCollapsedEngine) auditCollapsedEngine.textContent = "Engine: Multimodal Vision AI";
       if (telemEngine) telemEngine.textContent = "Visual Blueprint & Sliced Stream (Multimodal Vision AI)";
       if (auditGpuText) auditGpuText.textContent = "Vision AI Ready";
     }
+    updateExtractionHint();
   }
 
-  if (pipeLocal) pipeLocal.addEventListener("change", () => setPipelineActive("local"));
-  if (pipeCloud) pipeCloud.addEventListener("change", () => setPipelineActive("cloud"));
-  if (pipeVisual) pipeVisual.addEventListener("change", () => setPipelineActive("visual_blueprint"));
+  [
+    { radio: pipeLocal, label: pipeLocalLabel, val: "local" },
+    { radio: pipeCloud, label: pipeCloudLabel, val: "cloud" },
+    { radio: pipeVisual, label: pipeVisualLabel, val: "visual_blueprint" }
+  ].forEach(item => {
+    if (item.radio) {
+      item.radio.addEventListener("change", (e) => {
+        if (e.target.checked) setPipelineActive(item.val);
+      });
+    }
+    if (item.label) {
+      item.label.addEventListener("click", (e) => {
+        if (e.target.tagName !== "INPUT") {
+          setPipelineActive(item.val);
+        }
+      });
+    }
+  });
 
-  extractBtn.addEventListener("click", startExtraction);
+  // Toggle Manual Metadata Override Drawer
+  const btnToggleMeta = document.getElementById("btnToggleMetaOverride");
+  const metaDrawer = document.getElementById("metaOverrideDrawer");
+  if (btnToggleMeta && metaDrawer && !btnToggleMeta.dataset.bound) {
+    btnToggleMeta.dataset.bound = "true";
+    btnToggleMeta.addEventListener("click", (e) => {
+      e.preventDefault();
+      metaDrawer.classList.toggle("hidden");
+    });
+  }
+
+  if (extractBtn && !extractBtn.dataset.bound) {
+    extractBtn.dataset.bound = "true";
+    extractBtn.addEventListener("click", startExtraction);
+  }
 }
 
 function handleFileSelected(file) {
@@ -414,6 +767,38 @@ function handleFileSelected(file) {
     }
   }
 
+  updateExtractionHint();
+
+  // If PDF file, trigger quick classification probe
+  if (ext === "pdf") {
+    window.currentClassification = null;
+    const clfData = new FormData();
+    clfData.append("pdf_file", file);
+    fetch("/api/classify", { method: "POST", body: clfData })
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) {
+          window.currentClassification = d;
+          if (selectedFileSize) {
+            const dupWarning = d.is_duplicate ? " ⚠️ [Existing Dataset]" : "";
+            selectedFileSize.textContent = `(${mbSize} MB) • 🏷️ ${d.department} | ${d.batch} | ${d.semester}${dupWarning}`;
+          }
+
+          // Automatically sync detected values into the manual override inputs
+          const deptInp = document.getElementById("overrideDeptInput");
+          const batchInp = document.getElementById("overrideBatchInput");
+          const semInp = document.getElementById("overrideSemInput");
+          const statusBadge = document.getElementById("metaOverrideStatusBadge");
+
+          if (deptInp && d.department) deptInp.value = d.department;
+          if (batchInp && d.batch) batchInp.value = d.batch;
+          if (semInp && d.semester) semInp.value = d.semester;
+          if (statusBadge) statusBadge.textContent = "AI Classified";
+        }
+      })
+      .catch(err => console.warn("Background classification probe warning:", err));
+  }
+
   // If tabular file, launch Tabular Inspection Modal immediately
   if (["xlsx", "xls", "csv"].includes(ext)) {
     inspectTabularFile(file);
@@ -447,6 +832,19 @@ async function startExtraction() {
     alert("Please choose or upload an academic document or spreadsheet.");
     return;
   }
+
+  // Check manual overrides first, fallback to AI classification
+  const manualDept = document.getElementById("overrideDeptInput")?.value?.trim();
+  const manualBatch = document.getElementById("overrideBatchInput")?.value?.trim();
+  const manualSem = document.getElementById("overrideSemInput")?.value?.trim();
+
+  const deptToSend = manualDept || (window.currentClassification && window.currentClassification.department);
+  const batchToSend = manualBatch || (window.currentClassification && window.currentClassification.batch);
+  const semToSend = manualSem || (window.currentClassification && window.currentClassification.semester);
+
+  if (deptToSend) formData.append("department", deptToSend);
+  if (batchToSend) formData.append("batch", batchToSend);
+  if (semToSend) formData.append("semester", semToSend);
 
   // Pass Extraction Pipeline choice
   const selectedPipeline = document.querySelector('input[name="extractionPipeline"]:checked')?.value || 'local';
@@ -495,6 +893,17 @@ async function startExtraction() {
   extractBtn.disabled = true;
   showProgress("Initializing AI extraction pipeline...", 2);
 
+  const progCurrInit = document.getElementById("progCurrentPage");
+  const progProcInit = document.getElementById("progPagesProcessed");
+  const progRemInit = document.getElementById("progPagesRemaining");
+  const progRecsInit = document.getElementById("progRecordsExtracted");
+  const progVerifInit = document.getElementById("progVerificationStatus");
+  if (progCurrInit) progCurrInit.textContent = "Initializing...";
+  if (progProcInit) progProcInit.textContent = "0 pages processed";
+  if (progRemInit) progRemInit.textContent = "Calculating...";
+  if (progRecsInit) progRecsInit.textContent = "0 records extracted";
+  if (progVerifInit) progVerifInit.textContent = "Standby";
+
   try {
     const res = await fetch("/api/extract", {
       method: "POST",
@@ -503,14 +912,46 @@ async function startExtraction() {
     const data = await safeParseJson(res);
 
     if (!data.success) {
-      alert("Error starting extraction: " + (data.error || "Unknown error"));
+      if (data.duplicate) {
+        const replaceConfirm = confirm(
+          `Dataset already exists for:\nDepartment: ${data.department}\nBatch: ${data.batch}\nSemester: ${data.semester}\n\nDo you want to REPLACE / OVERWRITE the existing dataset?`
+        );
+        if (replaceConfirm) {
+          formData.append("overwrite", "1");
+          formData.append("department", data.department);
+          formData.append("batch", data.batch);
+          formData.append("semester", data.semester);
+          const retryRes = await fetch("/api/extract", {
+            method: "POST",
+            body: formData
+          });
+          const retryData = await safeParseJson(retryRes);
+          if (retryData.success) {
+            if (retryData.dataset_meta) {
+              window.currentDatasetMeta = retryData.dataset_meta;
+            }
+            currentJobId = retryData.job_id;
+            pollJob(retryData.job_id);
+            return;
+          } else {
+            alert("Error starting extraction: " + (retryData.error || retryData.message || "Unknown error"));
+          }
+        } else {
+          alert("Extraction cancelled. Existing dataset was kept unchanged.");
+        }
+      } else {
+        alert("Error starting extraction: " + (data.error || data.message || "Unknown error"));
+      }
       hideProgress();
       extractBtn.disabled = false;
-      document.getElementById("telemStatus").textContent = "ERROR";
+      document.getElementById("telemStatus").textContent = "STANDBY";
       setExportButtonsLiveState(false);
       return;
     }
 
+    if (data.dataset_meta) {
+      window.currentDatasetMeta = data.dataset_meta;
+    }
     currentJobId = data.job_id;
     pollJob(data.job_id);
   } catch (e) {
@@ -757,6 +1198,9 @@ function updateLiveTable(liveStudents, catalog) {
   const auditPassedCount = document.getElementById("auditPassedCount");
   if (auditPassedCount) auditPassedCount.textContent = `${newCount}`;
 
+  const extractedTotalCount = document.getElementById("extractedTotalCount");
+  if (extractedTotalCount) extractedTotalCount.textContent = `${newCount}`;
+
   const liveStreamPillText = document.getElementById("liveStreamPillText");
   if (liveStreamPillText && (!liveTableBadge || !liveTableBadge.classList.contains("paused"))) {
     liveStreamPillText.textContent = `Streaming Live (${newCount} record${newCount === 1 ? '' : 's'})`;
@@ -791,6 +1235,62 @@ function pollJob(jobId) {
       const job = await res.json();
 
       showProgress(job.message || "Extracting records...", job.progress || 0);
+
+      // Real-time extraction progress metrics strip
+      const progCurr = document.getElementById("progCurrentPage");
+      const progProc = document.getElementById("progPagesProcessed");
+      const progRem = document.getElementById("progPagesRemaining");
+      const progRecs = document.getElementById("progRecordsExtracted");
+      const progVerif = document.getElementById("progVerificationStatus");
+      const auditCollapsedStatus = document.getElementById("auditCollapsedStatus");
+
+      if (progCurr) {
+        if (job.current_page && job.total_pages) {
+          progCurr.textContent = `Page ${job.current_page} / ${job.total_pages}`;
+        } else if (job.current_page) {
+          progCurr.textContent = `Page ${job.current_page}`;
+        } else if (job.message) {
+          progCurr.textContent = job.message;
+        }
+      }
+      if (progProc && job.pages_processed != null) {
+        progProc.textContent = `${job.pages_processed} page${job.pages_processed === 1 ? '' : 's'} processed`;
+      }
+      if (progRem && job.pages_remaining != null) {
+        progRem.textContent = `${job.pages_remaining} page${job.pages_remaining === 1 ? '' : 's'} remaining`;
+      }
+      const liveCount = job.live_count || (job.live_students ? job.live_students.length : 0);
+      if (progRecs) {
+        progRecs.textContent = `${liveCount} record${liveCount === 1 ? '' : 's'} extracted`;
+      }
+      if (progVerif) {
+        if (job.discrepancies && job.discrepancies.length > 0) {
+          progVerif.textContent = `${job.discrepancies.length} discrepancy card(s) checked`;
+        } else if (job.status === "completed") {
+          progVerif.textContent = "Verified & Passed";
+        } else {
+          progVerif.textContent = "Verification Active";
+        }
+      }
+      if (auditCollapsedStatus) {
+        if (job.is_paused) {
+          auditCollapsedStatus.textContent = "Status: Paused";
+          auditCollapsedStatus.className = "audit-collapsed-chip status-warning";
+        } else if (job.is_stopped) {
+          auditCollapsedStatus.textContent = "Status: Stopping";
+          auditCollapsedStatus.className = "audit-collapsed-chip status-warning";
+        } else if (job.status === "completed") {
+          auditCollapsedStatus.textContent = "Status: Completed";
+          auditCollapsedStatus.className = "audit-collapsed-chip status-ready";
+        } else if (job.status === "error") {
+          auditCollapsedStatus.textContent = "Status: Failed";
+          auditCollapsedStatus.className = "audit-collapsed-chip status-danger";
+        } else {
+          const pct = Math.round(job.progress || 0);
+          auditCollapsedStatus.textContent = `Status: Processing (${pct}%)`;
+          auditCollapsedStatus.className = "audit-collapsed-chip status-ready";
+        }
+      }
 
       // Handle Live Paused / Resumed button synchronization from backend
       const btnPause = document.getElementById("btnPauseExtraction");
@@ -935,6 +1435,33 @@ function pollJob(jobId) {
 
 // 5b. Live AI Audit Controls & Renderer
 function initAuditControls() {
+  const toggleBtn = document.getElementById("btnToggleAuditConsole");
+  const auditSec = document.getElementById("aiAuditSection");
+  const toggleIcon = document.getElementById("auditToggleBtnIcon");
+  const toggleText = document.getElementById("auditToggleBtnText");
+
+  function toggleAuditConsole() {
+    if (!auditSec) return;
+    const isCollapsed = auditSec.classList.toggle("audit-console-collapsed");
+    if (toggleText) toggleText.textContent = isCollapsed ? "Expand" : "Collapse";
+    if (toggleIcon) toggleIcon.textContent = isCollapsed ? "▼" : "▲";
+  }
+
+  if (toggleBtn) {
+    toggleBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleAuditConsole();
+    });
+  }
+
+  const auditHeader = document.getElementById("auditHeaderClickable");
+  if (auditHeader) {
+    auditHeader.addEventListener("click", (e) => {
+      if (e.target.closest("button") && e.target.closest("button") !== toggleBtn) return;
+      toggleAuditConsole();
+    });
+  }
+
   const autoScrollBtn = document.getElementById("auditAutoScrollBtn");
   const copyBtn = document.getElementById("auditCopyBtn");
   const clearBtn = document.getElementById("auditClearBtn");
@@ -1134,9 +1661,32 @@ function renderResults(result) {
   const undoBtn = document.getElementById("btnUndoChat");
   if (undoBtn) undoBtn.disabled = true;
 
+  if (result.dataset_meta) {
+    window.currentDatasetMeta = result.dataset_meta;
+  }
+  const dsMeta = window.currentDatasetMeta || result.dataset_meta;
+  const metaBadgeStr = dsMeta ? ` • Dept: ${dsMeta.department} • Batch: ${dsMeta.batch} • Sem: ${dsMeta.semester}` : "";
   const engineInfo = result.engine_used ? `Engine: ${result.engine_used} • ` : "";
   document.getElementById("resultMeta").textContent =
-    `${engineInfo}Archetype: ${result.archetype} • Semester: ${result.semester || '--'} • Students: ${result.total_students} • Processed in ${result.duration_seconds}s`;
+    `${engineInfo}Archetype: ${result.archetype} • Semester: ${result.semester || (dsMeta ? dsMeta.semester : '--')} • Students: ${result.total_students}${metaBadgeStr} • Processed in ${result.duration_seconds}s`;
+
+  const classifiedMetaPill = document.getElementById("classifiedMetaPill");
+  const classifiedMetaText = document.getElementById("classifiedMetaText");
+  if (classifiedMetaPill && classifiedMetaText) {
+    if (dsMeta) {
+      classifiedMetaPill.classList.remove("hidden");
+      classifiedMetaText.textContent = `${dsMeta.department} | ${dsMeta.batch} | ${dsMeta.semester}`;
+
+      const deptInp = document.getElementById("overrideDeptInput");
+      const batchInp = document.getElementById("overrideBatchInput");
+      const semInp = document.getElementById("overrideSemInput");
+      if (deptInp && dsMeta.department) deptInp.value = dsMeta.department;
+      if (batchInp && dsMeta.batch) batchInp.value = dsMeta.batch;
+      if (semInp && dsMeta.semester) semInp.value = dsMeta.semester;
+    } else {
+      classifiedMetaPill.classList.add("hidden");
+    }
+  }
 
   if (result.audit_logs && result.audit_logs.length > 0) {
     updateAuditLogs(result.audit_logs);
@@ -1170,9 +1720,26 @@ function renderResults(result) {
     }
   }
 
-  // Checksum summary pill
+  // Checksum summary pill & extracted data summary strip
   const sum = result.checksum_summary || {};
-  document.getElementById("auditPassedCount").textContent = `${sum.all_passed || result.total_students}/${result.total_students}`;
+  const auditPassedCount = document.getElementById("auditPassedCount");
+  if (auditPassedCount) {
+    auditPassedCount.textContent = `${sum.all_passed != null ? sum.all_passed : result.total_students} / ${result.total_students}`;
+  }
+  const extractedTotalCount = document.getElementById("extractedTotalCount");
+  if (extractedTotalCount) {
+    extractedTotalCount.textContent = result.total_students || (result.students ? result.students.length : 0);
+  }
+  const extractionStatusBadge = document.getElementById("extractionStatusBadge");
+  if (extractionStatusBadge) {
+    extractionStatusBadge.textContent = "Completed & Verified";
+    extractionStatusBadge.className = "badge-status-tag status-success";
+  }
+  const auditCollapsedStatus = document.getElementById("auditCollapsedStatus");
+  if (auditCollapsedStatus) {
+    auditCollapsedStatus.textContent = "Status: Completed";
+    auditCollapsedStatus.className = "audit-collapsed-chip status-ready";
+  }
 
   // Token usage summary pill & telemetry update
   const tokenPill = document.getElementById("tokenPill");
@@ -1821,6 +2388,22 @@ async function saveDatasetToServer() {
   }
 
   try {
+    // Check if user manually typed or modified department, batch, or semester
+    const manualDept = document.getElementById("overrideDeptInput")?.value?.trim();
+    const manualBatch = document.getElementById("overrideBatchInput")?.value?.trim();
+    const manualSem = document.getElementById("overrideSemInput")?.value?.trim();
+
+    let metaToPersist = window.currentDatasetMeta || (currentResultObj && currentResultObj.dataset_meta) || {};
+    if (manualDept || manualBatch || manualSem) {
+      metaToPersist = {
+        ...metaToPersist,
+        department: manualDept || metaToPersist.department || "Artificial_Intelligence_and_Data_Science",
+        batch: manualBatch || metaToPersist.batch || "22-23",
+        semester: manualSem || metaToPersist.semester || "Semester_1"
+      };
+      window.currentDatasetMeta = metaToPersist;
+    }
+
     const res = await fetch("/api/dataset/sync", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1828,7 +2411,8 @@ async function saveDatasetToServer() {
         folder_name: currentFolderName || "live_edited_results",
         students: currentRecords,
         columns: activeColumns,
-        catalog: currentCatalog
+        catalog: currentCatalog,
+        dataset_meta: metaToPersist
       })
     });
     const data = await res.json();
@@ -1862,6 +2446,9 @@ async function saveDatasetToServer() {
     if (badge) {
       badge.style.transform = "scale(1.08)";
       setTimeout(() => { badge.style.transform = "scale(1)"; }, 300);
+    }
+    if (data.db_saved) {
+      appendChatMessage("assistant", `💾 <strong>Dataset Saved to Database:</strong> Persisted ${data.count} student records to SQLite database (<code>academic_records.db</code>) and generated deterministic Excel mirror at <code>${data.canonical_excel_path || data.excel_file}</code>.`);
     }
   } catch (err) {
     console.error("Error saving dataset:", err);
@@ -2582,6 +3169,35 @@ function initInteractiveExcelGrid() {
     btnSave.addEventListener("click", saveDatasetToServer);
   }
 
+  const btnSaveDb = document.getElementById("btnSaveToDatabase");
+  if (btnSaveDb) {
+    btnSaveDb.addEventListener("click", saveDatasetToServer);
+  }
+
+  // Toggle Manual Metadata Override Drawer
+  const btnToggleMeta = document.getElementById("btnToggleMetaOverride");
+  const metaDrawer = document.getElementById("metaOverrideDrawer");
+  if (btnToggleMeta && metaDrawer) {
+    btnToggleMeta.addEventListener("click", () => {
+      metaDrawer.classList.toggle("hidden");
+    });
+  }
+
+  // Export dropdown menu toggle
+  const exportToggle = document.getElementById("btnExportMenuToggle");
+  const exportMenu = document.getElementById("exportDropdownMenu");
+  if (exportToggle && exportMenu) {
+    exportToggle.addEventListener("click", (e) => {
+      e.stopPropagation();
+      exportMenu.classList.toggle("hidden");
+    });
+    document.addEventListener("click", (e) => {
+      if (!exportToggle.contains(e.target) && !exportMenu.contains(e.target)) {
+        exportMenu.classList.add("hidden");
+      }
+    });
+  }
+
   const btnReset = document.getElementById("btnExcelReset");
   if (btnReset) {
     btnReset.addEventListener("click", () => {
@@ -2886,34 +3502,67 @@ function openRenameColModal(colKey) {
 }
 
 // 8. History Drawer
+let cachedHistoryItems = [];
+
 async function initHistory() {
   const list = document.getElementById("historyList");
+  const searchInput = document.getElementById("historySearchInput");
+  const refreshBtn = document.getElementById("refreshHistoryBtn");
+
   try {
     const res = await fetch("/api/history");
     const data = await res.json();
-    const history = data.history || [];
-
-    if (history.length === 0) {
-      list.innerHTML = `<p class="empty-text">No previous extractions stored.</p>`;
-      return;
-    }
-
-    list.innerHTML = "";
-    history.forEach(item => {
-      const card = document.createElement("div");
-      card.className = "history-item";
-      card.innerHTML = `
-        <div class="history-title">${item.folder_name}</div>
-        <div class="history-meta">Archetype: ${item.archetype} • Sem: ${item.semester} • ${item.total_students} records${item.timestamp ? ' • ' + item.timestamp : ''}</div>
-      `;
-      card.addEventListener("click", () => loadHistoryItem(item.folder_name));
-      list.appendChild(card);
-    });
+    cachedHistoryItems = data.history || [];
+    renderHistoryList(cachedHistoryItems);
   } catch (e) {
     console.error("Failed to fetch history:", e);
   }
 
-  document.getElementById("refreshHistoryBtn").addEventListener("click", initHistory);
+  if (refreshBtn && !refreshBtn.dataset.bound) {
+    refreshBtn.dataset.bound = "true";
+    refreshBtn.addEventListener("click", initHistory);
+  }
+
+  if (searchInput && !searchInput.dataset.bound) {
+    searchInput.dataset.bound = "true";
+    searchInput.addEventListener("input", (e) => {
+      const q = (e.target.value || "").toLowerCase().trim();
+      if (!q) {
+        renderHistoryList(cachedHistoryItems);
+        return;
+      }
+      const filtered = cachedHistoryItems.filter(item => {
+        const title = (item.folder_name || "").toLowerCase();
+        const arch = (item.archetype || "").toLowerCase();
+        const sem = String(item.semester || "").toLowerCase();
+        const count = String(item.total_students || "").toLowerCase();
+        return title.includes(q) || arch.includes(q) || sem.includes(q) || count.includes(q);
+      });
+      renderHistoryList(filtered);
+    });
+  }
+}
+
+function renderHistoryList(items) {
+  const list = document.getElementById("historyList");
+  if (!list) return;
+
+  if (!items || items.length === 0) {
+    list.innerHTML = `<p class="empty-text">No previous extractions found.</p>`;
+    return;
+  }
+
+  list.innerHTML = "";
+  items.forEach(item => {
+    const card = document.createElement("div");
+    card.className = "history-item";
+    card.innerHTML = `
+      <div class="history-title">${item.folder_name}</div>
+      <div class="history-meta">Archetype: ${item.archetype} • Sem: ${item.semester} • ${item.total_students} records${item.timestamp ? ' • ' + item.timestamp : ''}</div>
+    `;
+    card.addEventListener("click", () => loadHistoryItem(item.folder_name));
+    list.appendChild(card);
+  });
 }
 
 async function loadHistoryItem(folderName) {
@@ -2940,8 +3589,12 @@ async function loadHistoryItem(folderName) {
       total_students: data.total_students,
       checksum_summary: (data.meta && data.meta.checksum_verification) || {},
       students: data.students,
-      duration_seconds: 0.0
+      duration_seconds: 0.0,
+      dataset_meta: data.dataset_meta || (data.meta && data.meta.dataset_meta) || null
     });
+
+    // Navigate to Extract & Audit workspace to view loaded dataset
+    navigateTo("/extract");
   } catch (e) {
     hideProgress();
     alert("Error loading historical record: " + e.message);
@@ -5201,10 +5854,9 @@ function initBatchSuite() {
 
   if (!btnSingle || !btnBatch) return;
 
-  // 1. Mode Switching
+  // 1. Mode Switching via Router
   btnSingle.addEventListener("click", () => {
-    btnSingle.classList.add("active");
-    btnBatch.classList.remove("active");
+    navigateTo("/extract");
     if (singleSec) singleSec.classList.remove("hidden");
     if (batchSec) batchSec.classList.add("hidden");
     if (batchProgressSec) batchProgressSec.classList.add("hidden");
@@ -5215,8 +5867,7 @@ function initBatchSuite() {
   });
 
   btnBatch.addEventListener("click", () => {
-    btnBatch.classList.add("active");
-    btnSingle.classList.remove("active");
+    navigateTo("/analysis");
     if (singleSec) singleSec.classList.add("hidden");
     if (batchSec) batchSec.classList.remove("hidden");
     if (singleResultsSec) singleResultsSec.classList.add("hidden");
@@ -6933,6 +7584,12 @@ async function acceptCleaningChanges() {
       auditPill.style.background = "rgba(16, 185, 129, 0.15)";
       auditPill.style.borderColor = "rgba(16, 185, 129, 0.4)";
       auditPill.style.color = "#10B981";
+    }
+
+    const extStatusBadge = document.getElementById("extractionStatusBadge");
+    if (extStatusBadge) {
+      extStatusBadge.textContent = "Cleaned & Verified";
+      extStatusBadge.className = "badge-status-tag status-success";
     }
 
     activeCleaningData = null;
