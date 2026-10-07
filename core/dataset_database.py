@@ -183,3 +183,24 @@ def list_datasets_from_db(db_path: str) -> List[Dict[str, Any]]:
         return [dict(r) for r in cur.fetchall()]
     finally:
         conn.close()
+
+
+def delete_dataset_from_db(db_path: str, department: str, batch: str, semester: str) -> bool:
+    """Delete a dataset and its students from the SQLite database."""
+    if not os.path.isfile(db_path):
+        return False
+
+    conn = sqlite3.connect(db_path)
+    try:
+        cur = conn.cursor()
+        cur.execute("PRAGMA foreign_keys = ON;")
+        cur.execute(
+            "DELETE FROM datasets WHERE department = ? AND batch = ? AND semester = ?",
+            (department, batch, semester)
+        )
+        deleted = cur.rowcount > 0
+        conn.commit()
+        return deleted
+    finally:
+        conn.close()
+

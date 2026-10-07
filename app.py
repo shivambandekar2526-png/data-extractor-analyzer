@@ -73,7 +73,8 @@ from core.dataset_database import (
     init_db,
     save_dataset_to_db,
     get_dataset_from_db,
-    list_datasets_from_db
+    list_datasets_from_db,
+    delete_dataset_from_db
 )
 from exporter import export_ai_extracted_data, write_csv_file, write_excel_file
 from core.execution_controller import ExtractionController
@@ -1119,10 +1120,16 @@ def download_batch_json(job_id):
 
 @app.route("/api/history", methods=["GET"])
 def list_history():
-    """List historical extractions with atomic iteration retention and timestamps."""
-    history = []
+    """
+    List historical extractions with comprehensive metadata.
+    Combines output/ job records with SQLite academic_records.db datasets,
+    sorted by most recently extracted/saved first.
+    """
+    history_entries = []
+    seen_keys = set()
+
+    # 1. Inspect output/ directory (direct extraction jobs)
     if os.path.isdir(OUTPUT_DIR):
-        entries = []
         for entry in os.listdir(OUTPUT_DIR):
             fpath = os.path.join(OUTPUT_DIR, entry)
             if not os.path.isdir(fpath):
@@ -1135,36 +1142,159 @@ def list_history():
                         meta = json.load(f)
                 except Exception:
                     pass
+
             mtime = os.path.getmtime(fpath)
             created_str = (
                 meta.get("created_at")
                 or meta.get("timestamp")
                 or time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(mtime))
             )
-            entries.append({
+
+            ds_meta = meta.get("dataset_meta") or {}
+            dept = ds_meta.get("department") or meta.get("department") or meta.get("college_name") or "Artificial_Intelligence_and_Data_Science"
+            batch = ds_meta.get("batch") or meta.get("academic_year") or "21-22"
+            sem = ds_meta.get("semester") or meta.get("semester") or "Semester_1"
+            total_students = meta.get("total_students", 0)
+
+            # Check if CSV exists to verify records count
+            csv_path = os.path.join(fpath, f"{entry}_extracted_data.csv")
+            if os.path.isfile(csv_path) and not total_students:
+                try:
+                    with open(csv_path, "r", encoding="utf-8-sig") as cf:
+                        total_students = max(0, sum(1 for _ in cf) - 1)
+                except Exception:
+                    pass
+
+            item_key = f"{dept}_{batch}_{sem}".lower()
+            seen_keys.add(item_key)
+
+            history_entries.append({
+                "id": entry,
                 "folder_name": entry,
-                "archetype": meta.get("archetype", "unknown"),
-                "semester": meta.get("semester", "--"),
-                "total_students": meta.get("total_students", 0),
-                "exam_title": meta.get("exam_title", entry),
-                "timestamp": created_str,
+                "display_name": entry.replace("_", " "),
+                "department": dept,
+                "batch": batch,
+                "semester": sem,
+                "total_students": total_students,
+                "archetype": meta.get("archetype", "gazette_spool"),
+                "source_type": "PDF" if (ds_meta.get("pdf_path") or os.path.isfile(os.path.join(fpath, f"{entry}.pdf"))) else "Excel / Ingested",
+                "status": "Verified",
                 "created_at": created_str,
+                "timestamp": created_str,
+                "pdf_path": ds_meta.get("pdf_path"),
+                "excel_path": ds_meta.get("excel_path") or os.path.join(fpath, f"{entry}_extracted_data.xlsx"),
                 "_mtime": mtime
             })
-        entries.sort(key=lambda x: x["_mtime"], reverse=True)
-        for e in entries:
-            e.pop("_mtime", None)
-        history = entries
-    return jsonify({"history": history})
+
+    # 2. Also incorporate saved SQLite datasets from academic_records.db if not already in history
+    try:
+        db_datasets = list_datasets_from_db(DB_PATH)
+        for ds in db_datasets:
+            d_dept = ds.get("department")
+            d_batch = ds.get("batch")
+            d_sem = ds.get("semester")
+            ds_key = f"{d_dept}_{d_batch}_{d_sem}".lower()
+            if ds_key in seen_keys:
+                continue
+
+            upd_time = ds.get("updated_at") or time.strftime("%Y-%m-%d %H:%M:%S")
+            # Parse approximate timestamp for sorting
+            try:
+                import datetime
+                mtime_approx = datetime.datetime.strptime(upd_time, "%Y-%m-%d %H:%M:%S").timestamp()
+            except Exception:
+                mtime_approx = 0.0
+
+            synth_id = f"db_{d_dept}_{d_batch}_{d_sem}"
+            history_entries.append({
+                "id": synth_id,
+                "folder_name": synth_id,
+                "display_name": f"{d_dept} - {d_batch} ({d_sem})",
+                "department": d_dept,
+                "batch": d_batch,
+                "semester": d_sem,
+                "total_students": ds.get("total_students", 0),
+                "archetype": "tabulation",
+                "source_type": "Database / Excel",
+                "status": "Verified",
+                "created_at": upd_time,
+                "timestamp": upd_time,
+                "pdf_path": ds.get("pdf_path"),
+                "excel_path": ds.get("excel_path"),
+                "_mtime": mtime_approx
+            })
+    except Exception as e:
+        logger.warning(f"Error querying SQLite datasets for history: {e}")
+
+    # Sort most recent extractions first
+    history_entries.sort(key=lambda x: x.get("_mtime", 0), reverse=True)
+    for e in history_entries:
+        e.pop("_mtime", None)
+
+    return jsonify({"success": True, "history": history_entries})
 
 
 @app.route("/api/history/<folder_name>", methods=["GET"])
 def load_history_entry(folder_name):
-    """Load extracted CSV records from history."""
+    """
+    Load extracted records from history.
+    Supports either output/ directory folder names or SQLite synth_ids (db_<dept>_<batch>_<sem>).
+    """
     clean_folder = safe_folder_name(folder_name)
+
+    # 1. If it's a database synth_id: db_<dept>_<batch>_<sem>
+    if clean_folder.startswith("db_"):
+        parts = clean_folder[3:].split("_")
+        # Try finding match in SQLite database
+        try:
+            db_datasets = list_datasets_from_db(DB_PATH)
+            matched = None
+            for ds in db_datasets:
+                test_id = f"db_{ds['department']}_{ds['batch']}_{ds['semester']}"
+                if test_id.lower() == clean_folder.lower():
+                    matched = ds
+                    break
+            if matched:
+                db_data = get_dataset_from_db(
+                    DB_PATH,
+                    matched["department"],
+                    matched["batch"],
+                    matched["semester"]
+                )
+                if db_data:
+                    students = db_data.get("students", [])
+                    ds_meta = {
+                        "department": matched["department"],
+                        "batch": matched["batch"],
+                        "semester": matched["semester"],
+                        "pdf_path": matched.get("pdf_path"),
+                        "excel_path": matched.get("excel_path")
+                    }
+                    return jsonify({
+                        "success": True,
+                        "folder_name": clean_folder,
+                        "csv_file": f"{clean_folder}_extracted_data.csv",
+                        "excel_file": f"{clean_folder}_extracted_data.xlsx",
+                        "json_file": f"{clean_folder}_catalog.json",
+                        "academic_report_file": f"{clean_folder}_Academic_Report.xlsx",
+                        "total_students": len(students),
+                        "students": students,
+                        "dataset_meta": ds_meta,
+                        "meta": {
+                            "exam_title": f"{matched['department']} {matched['batch']} {matched['semester']}",
+                            "semester": matched["semester"],
+                            "college_name": matched["department"],
+                            "archetype": "tabulation",
+                            "dataset_meta": ds_meta
+                        }
+                    })
+        except Exception as e:
+            logger.warning(f"Failed loading DB dataset for history item {clean_folder}: {e}")
+
+    # 2. Otherwise load from output/<folder_name>
     folder_path = os.path.join(OUTPUT_DIR, clean_folder)
     if not os.path.isdir(folder_path):
-        return jsonify({"success": False, "error": "History folder not found."}), 404
+        return jsonify({"success": False, "error": f"History dataset '{folder_name}' not found."}), 404
 
     csv_path = os.path.join(folder_path, f"{clean_folder}_extracted_data.csv")
     cat_path = os.path.join(folder_path, f"{clean_folder}_catalog.json")
@@ -1196,6 +1326,65 @@ def load_history_entry(folder_name):
         "meta": cat_meta,
         "dataset_meta": cat_meta.get("dataset_meta")
     })
+
+
+@app.route("/api/history/<folder_name>", methods=["DELETE"])
+def delete_history_entry(folder_name):
+    """
+    Delete an extraction record from history.
+    Requires explicit user confirmation from UI.
+    Removes output/ entry folder and removes SQLite datasets entry if applicable.
+    Safely leaves original source documents intact.
+    """
+    clean_folder = safe_folder_name(folder_name)
+    deleted_any = False
+
+    # 1. If it's a DB item (e.g. db_<dept>_<batch>_<sem>)
+    if clean_folder.startswith("db_"):
+        try:
+            db_datasets = list_datasets_from_db(DB_PATH)
+            for ds in db_datasets:
+                test_id = f"db_{ds['department']}_{ds['batch']}_{ds['semester']}"
+                if test_id.lower() == clean_folder.lower():
+                    delete_dataset_from_db(DB_PATH, ds["department"], ds["batch"], ds["semester"])
+                    deleted_any = True
+                    break
+        except Exception as e:
+            logger.warning(f"Error removing dataset from SQLite: {e}")
+
+    # 2. Check output/ directory
+    folder_path = os.path.join(OUTPUT_DIR, clean_folder)
+    if os.path.isdir(folder_path):
+        try:
+            # Check catalog.json if it references a DB dataset
+            cat_file = os.path.join(folder_path, f"{clean_folder}_catalog.json")
+            if os.path.isfile(cat_file):
+                try:
+                    with open(cat_file, "r", encoding="utf-8") as f:
+                        meta = json.load(f)
+                    dsm = meta.get("dataset_meta")
+                    if dsm and isinstance(dsm, dict):
+                        d_dept = dsm.get("department")
+                        d_batch = dsm.get("batch")
+                        d_sem = dsm.get("semester")
+                        if d_dept and d_batch and d_sem:
+                            delete_dataset_from_db(DB_PATH, d_dept, d_batch, d_sem)
+                except Exception:
+                    pass
+
+            shutil.rmtree(folder_path)
+            deleted_any = True
+        except Exception as e:
+            return jsonify({"success": False, "error": f"Failed deleting folder: {str(e)}"}), 500
+
+    if not deleted_any:
+        return jsonify({"success": False, "error": f"Dataset '{folder_name}' not found."}), 404
+
+    return jsonify({
+        "success": True,
+        "message": f"Successfully deleted historical extraction '{folder_name}'."
+    })
+
 
 
 @app.route("/api/classify", methods=["POST"])

@@ -3699,15 +3699,19 @@ function openRenameColModal(colKey) {
 let cachedHistoryItems = [];
 
 async function initHistory() {
-  const list = document.getElementById("historyList");
-  const searchInput = document.getElementById("historySearchInput");
   const refreshBtn = document.getElementById("refreshHistoryBtn");
+  const searchInput = document.getElementById("historySearchInput");
+  const filterDept = document.getElementById("historyFilterDept");
+  const filterBatch = document.getElementById("historyFilterBatch");
+  const filterSem = document.getElementById("historyFilterSem");
+  const filterSource = document.getElementById("historyFilterSource");
+  const btnResetFilters = document.getElementById("btnResetHistoryFilters");
 
   try {
     const res = await fetch("/api/history");
     const data = await res.json();
     cachedHistoryItems = data.history || [];
-    renderHistoryList(cachedHistoryItems);
+    applyHistoryFilters();
   } catch (e) {
     console.error("Failed to fetch history:", e);
   }
@@ -3719,42 +3723,191 @@ async function initHistory() {
 
   if (searchInput && !searchInput.dataset.bound) {
     searchInput.dataset.bound = "true";
-    searchInput.addEventListener("input", (e) => {
-      const q = (e.target.value || "").toLowerCase().trim();
-      if (!q) {
-        renderHistoryList(cachedHistoryItems);
-        return;
-      }
-      const filtered = cachedHistoryItems.filter(item => {
-        const title = (item.folder_name || "").toLowerCase();
-        const arch = (item.archetype || "").toLowerCase();
-        const sem = String(item.semester || "").toLowerCase();
-        const count = String(item.total_students || "").toLowerCase();
-        return title.includes(q) || arch.includes(q) || sem.includes(q) || count.includes(q);
-      });
-      renderHistoryList(filtered);
+    searchInput.addEventListener("input", () => applyHistoryFilters());
+  }
+
+  [filterDept, filterBatch, filterSem, filterSource].forEach(el => {
+    if (el && !el.dataset.bound) {
+      el.dataset.bound = "true";
+      el.addEventListener("change", () => applyHistoryFilters());
+    }
+  });
+
+  if (btnResetFilters && !btnResetFilters.dataset.bound) {
+    btnResetFilters.dataset.bound = "true";
+    btnResetFilters.addEventListener("click", () => {
+      if (searchInput) searchInput.value = "";
+      if (filterDept) filterDept.value = "";
+      if (filterBatch) filterBatch.value = "";
+      if (filterSem) filterSem.value = "";
+      if (filterSource) filterSource.value = "";
+      applyHistoryFilters();
     });
   }
 }
 
+function applyHistoryFilters() {
+  const searchInput = document.getElementById("historySearchInput");
+  const filterDept = document.getElementById("historyFilterDept");
+  const filterBatch = document.getElementById("historyFilterBatch");
+  const filterSem = document.getElementById("historyFilterSem");
+  const filterSource = document.getElementById("historyFilterSource");
+
+  const q = (searchInput?.value || "").toLowerCase().trim();
+  const selDept = filterDept?.value || "";
+  const selBatch = filterBatch?.value || "";
+  const selSem = filterSem?.value || "";
+  const selSource = filterSource?.value || "";
+
+  let filtered = cachedHistoryItems.filter(item => {
+    if (selDept && item.department !== selDept) return false;
+    if (selBatch && item.batch !== selBatch) return false;
+    if (selSem && item.semester !== selSem) return false;
+    if (selSource && !(item.source_type || "").toLowerCase().includes(selSource.toLowerCase())) return false;
+
+    if (q) {
+      const hay = [
+        item.folder_name,
+        item.display_name,
+        item.department,
+        item.batch,
+        item.semester,
+        item.archetype,
+        item.source_type,
+        String(item.total_students)
+      ].join(" ").toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  renderHistoryList(filtered);
+}
+
 function renderHistoryList(items) {
   const list = document.getElementById("historyList");
+  const badge = document.getElementById("historyCountBadge");
   if (!list) return;
 
+  if (badge) {
+    const total = cachedHistoryItems.length;
+    badge.textContent = `Showing ${items.length} of ${total} extraction${total === 1 ? '' : 's'}`;
+  }
+
   if (!items || items.length === 0) {
-    list.innerHTML = `<p class="empty-text">No previous extractions found.</p>`;
+    list.innerHTML = `
+      <div class="history-empty-state">
+        <div class="empty-icon">📂</div>
+        <h3>No extraction history found.</h3>
+        <p>No extractions matched your search or filters.</p>
+        <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('btnResetHistoryFilters')?.click()">Reset Filters</button>
+      </div>
+    `;
     return;
   }
 
   list.innerHTML = "";
   items.forEach(item => {
     const card = document.createElement("div");
-    card.className = "history-item";
+    card.className = "history-card-item";
+
+    const deptPretty = (item.department || "Artificial_Intelligence_and_Data_Science").replace(/_/g, " ");
+    const semPretty = (item.semester || "Semester 1").replace(/_/g, " ");
+    const batchPretty = item.batch || "21-22";
+    const studentsCount = item.total_students != null ? item.total_students : "--";
+    const archPretty = (item.archetype || "Gazette Spool").replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
+    const sourcePretty = item.source_type || "PDF";
+    const datePretty = item.created_at || item.timestamp || "Recently";
+
     card.innerHTML = `
-      <div class="history-title">${item.folder_name}</div>
-      <div class="history-meta">Archetype: ${item.archetype} • Sem: ${item.semester} • ${item.total_students} records${item.timestamp ? ' • ' + item.timestamp : ''}</div>
+      <div>
+        <div class="history-card-header">
+          <div class="history-card-title">${deptPretty} — ${semPretty}</div>
+          <div class="history-badge-row">
+            <span class="history-pill pill-verified">✓ Verified</span>
+            <span class="history-pill pill-source">${sourcePretty}</span>
+          </div>
+        </div>
+
+        <div class="history-card-meta-grid" style="margin-top: 0.65rem;">
+          <div class="history-meta-field">
+            <span class="history-meta-label">Academic Year / Batch</span>
+            <span class="history-meta-value">${batchPretty}</span>
+          </div>
+          <div class="history-meta-field">
+            <span class="history-meta-label">Students Recorded</span>
+            <span class="history-meta-value">${studentsCount}</span>
+          </div>
+          <div class="history-meta-field">
+            <span class="history-meta-label">Gazette Archetype</span>
+            <span class="history-meta-value">${archPretty}</span>
+          </div>
+          <div class="history-meta-field">
+            <span class="history-meta-label">Semester</span>
+            <span class="history-meta-value">${semPretty}</span>
+          </div>
+        </div>
+
+        <div class="history-card-date-row" style="margin-top: 0.55rem;">
+          <span>🕒 Extracted:</span>
+          <strong>${datePretty}</strong>
+        </div>
+      </div>
+
+      <div class="history-card-actions">
+        <button type="button" class="history-action-btn history-btn-open" data-action="open" title="Open and inspect extracted records in the Data Table">
+          📂 Open
+        </button>
+        <button type="button" class="history-action-btn history-btn-analyze" data-action="analyze" title="Select this extraction for academic analysis">
+          📊 Use for Analysis
+        </button>
+        <div class="export-dropdown-wrapper">
+          <button type="button" class="history-action-btn history-btn-export" data-action="export-toggle" title="Export this extraction">
+            📥 Export ▾
+          </button>
+          <div class="export-dropdown-menu hidden" style="bottom: 100%; top: auto; margin-bottom: 4px;">
+            <a class="export-menu-item" href="/api/download/${encodeURIComponent(item.folder_name)}/${encodeURIComponent(item.folder_name)}_extracted_data.xlsx" download>📊 Excel Workbook (.xlsx)</a>
+            <a class="export-menu-item" href="/api/download/${encodeURIComponent(item.folder_name)}/${encodeURIComponent(item.folder_name)}_extracted_data.csv" download>📑 CSV Spreadsheet (.csv)</a>
+            <a class="export-menu-item" href="/api/download/${encodeURIComponent(item.folder_name)}/${encodeURIComponent(item.folder_name)}_catalog.json" download>📋 Schema Catalog (.json)</a>
+            <a class="export-menu-item" href="/api/export/academic-analysis/${encodeURIComponent(item.folder_name)}" download>🏛️ Official University Report</a>
+          </div>
+        </div>
+        <button type="button" class="history-action-btn history-btn-delete" data-action="delete" title="Delete this extraction from history">
+          🗑️ Delete
+        </button>
+      </div>
     `;
-    card.addEventListener("click", () => loadHistoryItem(item.folder_name));
+
+    // Wire Card Buttons
+    const btnOpen = card.querySelector('[data-action="open"]');
+    if (btnOpen) {
+      btnOpen.addEventListener("click", () => loadHistoryItem(item.folder_name));
+    }
+
+    const btnAnalyze = card.querySelector('[data-action="analyze"]');
+    if (btnAnalyze) {
+      btnAnalyze.addEventListener("click", () => useHistoryForAnalysis(item));
+    }
+
+    const exportBtn = card.querySelector('[data-action="export-toggle"]');
+    const exportMenu = card.querySelector('.export-dropdown-menu');
+    if (exportBtn && exportMenu) {
+      exportBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        exportMenu.classList.toggle("hidden");
+      });
+      document.addEventListener("click", (e) => {
+        if (!exportBtn.contains(e.target) && !exportMenu.contains(e.target)) {
+          exportMenu.classList.add("hidden");
+        }
+      });
+    }
+
+    const btnDelete = card.querySelector('[data-action="delete"]');
+    if (btnDelete) {
+      btnDelete.addEventListener("click", () => deleteHistoryItem(item));
+    }
+
     list.appendChild(card);
   });
 }
@@ -3762,7 +3915,7 @@ function renderHistoryList(items) {
 async function loadHistoryItem(folderName) {
   try {
     showProgress(`Loading archive '${folderName}'...`, 50);
-    const res = await fetch(`/api/history/${folderName}`);
+    const res = await fetch(`/api/history/${encodeURIComponent(folderName)}`);
     const data = await res.json();
     hideProgress();
 
@@ -3776,8 +3929,9 @@ async function loadHistoryItem(folderName) {
       csv_file: data.csv_file,
       excel_file: data.excel_file,
       json_file: data.json_file,
+      academic_report_file: data.academic_report_file,
       archetype: (data.meta && data.meta.archetype) || "tabulation",
-      semester: (data.meta && data.meta.semester) || "--",
+      semester: (data.meta && data.meta.semester) || (data.dataset_meta && data.dataset_meta.semester) || "--",
       college_name: (data.meta && data.meta.college_name) || "",
       exam_title: (data.meta && data.meta.exam_title) || data.folder_name,
       total_students: data.total_students,
@@ -3787,11 +3941,63 @@ async function loadHistoryItem(folderName) {
       dataset_meta: data.dataset_meta || (data.meta && data.meta.dataset_meta) || null
     });
 
-    // Navigate to Extract & Audit workspace to view loaded dataset
+    // Seamlessly navigate to Extract & Audit workspace to view loaded dataset
     navigateTo("/extract");
   } catch (e) {
     hideProgress();
     alert("Error loading historical record: " + e.message);
+  }
+}
+
+function useHistoryForAnalysis(item) {
+  // Transfer selection into Subject-wise Analysis or Batch Suite
+  const subjectDatasetSelect = document.getElementById("subjectDatasetSelect");
+  if (subjectDatasetSelect) {
+    let opt = Array.from(subjectDatasetSelect.options).find(o => o.value === item.folder_name);
+    if (!opt) {
+      opt = document.createElement("option");
+      opt.value = item.folder_name;
+      opt.textContent = `${item.folder_name} (${item.semester || 'Sem'} • ${item.total_students || 0} students)`;
+      subjectDatasetSelect.appendChild(opt);
+    }
+    subjectDatasetSelect.value = item.folder_name;
+    const evt = new Event("change");
+    subjectDatasetSelect.dispatchEvent(evt);
+  }
+
+  // Navigate directly to Subject-wise Analysis workspace
+  navigateTo("/analysis/subject");
+}
+
+async function deleteHistoryItem(item) {
+  const confirmMsg = `Are you sure you want to delete this extraction from history?\n\n` +
+    `• Dataset: ${item.folder_name}\n` +
+    `• Department: ${item.department}\n` +
+    `• Batch: ${item.batch}\n` +
+    `• Semester: ${item.semester}\n\n` +
+    `This action removes the historical extraction entry safely.`;
+
+  if (!confirm(confirmMsg)) {
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/history/${encodeURIComponent(item.folder_name)}`, {
+      method: "DELETE"
+    });
+    const data = await res.json();
+    if (!data.success) {
+      alert("Failed to delete extraction: " + (data.error || "Unknown error"));
+      return;
+    }
+
+    // Refresh history list and batch dropdown
+    initHistory();
+    if (typeof initBatches === "function") {
+      initBatches();
+    }
+  } catch (err) {
+    alert("Network error deleting extraction: " + err.message);
   }
 }
 
