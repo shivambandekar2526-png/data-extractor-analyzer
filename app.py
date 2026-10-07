@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 import numpy as np
 
-from flask import Flask, jsonify, render_template, request, send_from_directory
+from flask import Flask, Response, jsonify, render_template, request, send_file, send_from_directory
 from werkzeug.utils import secure_filename
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -93,6 +93,15 @@ init_db(DB_PATH)
 
 tabular_ingester = TabularIngester(OUTPUT_DIR)
 batch_analyzer = BatchAcademicAnalyzer(OUTPUT_DIR, app_batch_dir=APP_DEPARTMENTS_DATA_DIR, root_batch_dir=DEPARTMENTS_DATA_DIR)
+
+from core.folder_watcher import folder_watcher
+# Configure live folder watcher paths
+folder_watcher.add_watch_path("departments_excel", os.path.join(DEPARTMENTS_DATA_DIR, "excel"))
+folder_watcher.add_watch_path("departments_pdf", os.path.join(DEPARTMENTS_DATA_DIR, "pdf"))
+folder_watcher.add_watch_path("output", OUTPUT_DIR)
+if os.path.isdir(BATCH_DATA_DIR) and os.path.abspath(BATCH_DATA_DIR) != os.path.abspath(DEPARTMENTS_DATA_DIR):
+    folder_watcher.add_watch_path("batch_data", BATCH_DATA_DIR)
+folder_watcher.start()
 
 
 def safe_folder_name(name: str) -> str:
@@ -3115,6 +3124,87 @@ def _standardize_semester_label(raw_sem: Any) -> str:
     return roman_map.get(s, s.replace("_", " ").title() if s else "Semester VIII")
 
 
+def get_dept_excel_base_dir() -> str:
+    """Finds the base directory for department_data/excel or departments_data/excel."""
+    candidates = [
+        os.path.join(DEPARTMENTS_DATA_DIR, "excel"),
+        os.path.join(APP_DIR, "departments_data", "excel"),
+        os.path.join(APP_DIR, "department_data", "excel"),
+        os.path.join(PROJECT_ROOT, "departments_data", "excel"),
+        os.path.join(PROJECT_ROOT, "department_data", "excel"),
+    ]
+    for c in candidates:
+        if os.path.isdir(c):
+            return os.path.abspath(c)
+    return os.path.abspath(os.path.join(DEPARTMENTS_DATA_DIR, "excel"))
+
+
+def get_departments_data_excel_hierarchy() -> List[Dict[str, Any]]:
+    """
+    Scans department_data/excel (or departments_data/excel) and returns
+    the structured 3-tier hierarchy:
+    Department Folder -> Batch Folder -> Semester Excel File (.xlsx).
+    """
+    base_dir = get_dept_excel_base_dir()
+    departments = []
+    if not os.path.isdir(base_dir):
+        return departments
+
+    for dept_entry in sorted(os.listdir(base_dir)):
+        dept_path = os.path.join(base_dir, dept_entry)
+        if not os.path.isdir(dept_path) or dept_entry.startswith("."):
+            continue
+
+        dept_folder = dept_entry
+        dept_label = dept_folder.replace("_", " ")
+
+        batches = []
+        for batch_entry in sorted(os.listdir(dept_path)):
+            batch_path = os.path.join(dept_path, batch_entry)
+            if not os.path.isdir(batch_path) or batch_entry.startswith("."):
+                continue
+
+            batch_folder = batch_entry
+            ay_label = _standardize_academic_year(batch_folder)
+            batch_display = f"{ay_label} ({batch_folder})" if ay_label != batch_folder else batch_folder
+
+            semesters = []
+            for f in sorted(os.listdir(batch_path)):
+                if not (f.endswith(".xlsx") or f.endswith(".xls")) or f.startswith("~$"):
+                    continue
+                fpath = os.path.join(batch_path, f)
+                rel_path = os.path.relpath(fpath, base_dir).replace("\\", "/")
+                sem_base = os.path.splitext(f)[0]
+                sem_label = _standardize_semester_label(sem_base)
+
+                semesters.append({
+                    "file_name": f,
+                    "display_name": f"{sem_label} ({f})",
+                    "semester_name": sem_label,
+                    "rel_path": rel_path,
+                    "dataset_id": f"excel_{rel_path}"
+                })
+
+            if semesters:
+                batches.append({
+                    "id": batch_folder,
+                    "folder": batch_folder,
+                    "name": batch_display,
+                    "academic_year": ay_label,
+                    "semesters": semesters
+                })
+
+        if batches:
+            departments.append({
+                "id": dept_folder,
+                "folder": dept_folder,
+                "name": dept_label,
+                "batches": batches
+            })
+
+    return departments
+
+
 def resolve_subject_dataset(dataset_id: str) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]], Dict[str, Any]]:
     """
     Loads student records, catalog, and dataset metadata for a given dataset ID.
@@ -3195,16 +3285,26 @@ def resolve_subject_dataset(dataset_id: str) -> Tuple[List[Dict[str, Any]], Opti
         }
         return records, catalog, meta
 
-    # Case 3: Excel file from departments_data/excel
+
+    # Case 3: Excel file from departments_data/excel or department_data/excel
     rel_path = clean_id[6:] if clean_id.startswith("excel_") else clean_id
-    excel_full_path = os.path.join(DEPARTMENTS_DATA_DIR, "excel", rel_path)
+    base_excel = get_dept_excel_base_dir()
+    
+    excel_full_path = os.path.join(base_excel, rel_path)
+    if not os.path.isfile(excel_full_path):
+        excel_full_path = os.path.join(base_excel, rel_path.replace("/", os.sep).replace("\\", os.sep))
     if not os.path.isfile(excel_full_path):
         excel_full_path = os.path.join(DEPARTMENTS_DATA_DIR, "excel", rel_path.replace("/", os.sep).replace("\\", os.sep))
+    if not os.path.isfile(excel_full_path) and os.path.isfile(clean_id):
+        excel_full_path = clean_id
 
     if os.path.isfile(excel_full_path):
         try:
             xl = pd.ExcelFile(excel_full_path)
-            sheet_to_use = "Extracted Data" if "Extracted Data" in xl.sheet_names else ("Student Results" if "Student Results" in xl.sheet_names else xl.sheet_names[0])
+            sheet_to_use = (
+                "Extracted Data" if "Extracted Data" in xl.sheet_names
+                else ("Student Results" if "Student Results" in xl.sheet_names else xl.sheet_names[0])
+            )
             df = xl.parse(sheet_to_use)
             records = df.to_dict(orient="records")
 
@@ -3215,19 +3315,27 @@ def resolve_subject_dataset(dataset_id: str) -> Tuple[List[Dict[str, Any]], Opti
                     c_code = str(r.get("Course Code") or "").strip()
                     c_name = str(r.get("Official Course Name") or "").strip()
                     if c_code:
-                        courses.append({"code": c_code, "name": c_name})
+                        courses.append({
+                            "code": c_code,
+                            "name": c_name,
+                            "official_course_name": c_name
+                        })
                 catalog = {"courses": courses}
 
-            rel_norm = os.path.relpath(excel_full_path, os.path.join(DEPARTMENTS_DATA_DIR, "excel"))
+            try:
+                rel_norm = os.path.relpath(excel_full_path, base_excel)
+            except Exception:
+                rel_norm = os.path.basename(excel_full_path)
+
             parts = rel_norm.split(os.sep)
-            dept = parts[0].replace("_", " ")
+            dept = parts[0].replace("_", " ") if len(parts) > 1 else "Engineering"
             batch = parts[1] if len(parts) > 1 else "21-22"
             sem_name = os.path.splitext(os.path.basename(excel_full_path))[0]
 
             meta = {
-                "dataset_id": f"excel_{rel_norm}",
+                "dataset_id": f"excel_{rel_norm.replace(os.sep, '/')}",
                 "dataset_name": f"{dept} ({batch} {sem_name.replace('_', ' ')})",
-                "department": parts[0],
+                "department": parts[0] if len(parts) > 1 else dept,
                 "branch": dept,
                 "academic_year": _standardize_academic_year(batch),
                 "semester": _standardize_semester_label(sem_name),
@@ -3243,13 +3351,35 @@ def resolve_subject_dataset(dataset_id: str) -> Tuple[List[Dict[str, Any]], Opti
 @app.route("/api/subject-analysis/options", methods=["GET"])
 def get_subject_analysis_options():
     """
-    Returns available Academic Years, Branches, Semesters, and Datasets
-    to power the cascading 5-tier selection panel.
+    Returns available Department -> Batch -> Semester hierarchy
+    from department_data/excel along with cascading options.
     """
+    # 1. Hierarchical department structure from department_data/excel
+    dept_hierarchy = get_departments_data_excel_hierarchy()
+
     dataset_list = []
     seen_ids = set()
 
-    # 1. Output directory gazettes
+    # Flatten department hierarchy into dataset_list for backward compatibility
+    for d in dept_hierarchy:
+        for b in d.get("batches", []):
+            for s in b.get("semesters", []):
+                item_id = s["dataset_id"]
+                if item_id in seen_ids:
+                    continue
+                seen_ids.add(item_id)
+                dataset_list.append({
+                    "id": item_id,
+                    "display_name": f"{s['file_name']} ({d['name']} • {b['folder']})",
+                    "academic_year": b["academic_year"],
+                    "branch": d["name"],
+                    "semester": s["semester_name"],
+                    "source_type": "Excel Spreadsheet",
+                    "total_students": 0,
+                    "rel_path": s["rel_path"]
+                })
+
+    # Output directory gazettes (for historical PDF viewing)
     if os.path.isdir(OUTPUT_DIR):
         for entry in os.listdir(OUTPUT_DIR):
             fpath = os.path.join(OUTPUT_DIR, entry)
@@ -3275,7 +3405,6 @@ def get_subject_analysis_options():
                     except Exception:
                         pass
 
-            # Map 2122-8th to both Computer Engineering & AIDS for convenience
             is_8th = "8th" in f_clean or "VIII" in str(cat_meta.get("semester", "")).upper()
             branches_for_entry = ["Computer Engineering", "Artificial Intelligence and Data Science"] if is_8th else ["Artificial Intelligence and Data Science"]
             ay = "2024–2025" if is_8th else "2021–2022"
@@ -3297,40 +3426,7 @@ def get_subject_analysis_options():
                     "folder_name": f_clean
                 })
 
-    # 2. Departments Data Excel Spreadsheets
-    dept_excel_dir = os.path.join(DEPARTMENTS_DATA_DIR, "excel")
-    if os.path.isdir(dept_excel_dir):
-        for root, dirs, files in os.walk(dept_excel_dir):
-            for f in files:
-                if not f.endswith(".xlsx"):
-                    continue
-                fpath = os.path.join(root, f)
-                rel = os.path.relpath(fpath, dept_excel_dir)
-                parts = rel.split(os.sep)
-                dept_raw = parts[0]
-                dept_label = dept_raw.replace("_", " ")
-                batch_raw = parts[1] if len(parts) > 1 else "21-22"
-                ay_label = _standardize_academic_year(batch_raw)
-                sem_raw = os.path.splitext(f)[0]
-                sem_label = _standardize_semester_label(sem_raw)
-
-                item_id = f"excel_{rel}"
-                if item_id in seen_ids:
-                    continue
-                seen_ids.add(item_id)
-
-                dataset_list.append({
-                    "id": item_id,
-                    "display_name": f"{f} ({dept_label} • {batch_raw})",
-                    "academic_year": ay_label,
-                    "branch": dept_label,
-                    "semester": sem_label,
-                    "source_type": "Excel Spreadsheet",
-                    "total_students": 0,
-                    "rel_path": rel
-                })
-
-    # 3. Database Datasets
+    # Database Datasets
     try:
         db_entries = list_datasets_from_db(DB_PATH)
         for ds in db_entries:
@@ -3357,7 +3453,6 @@ def get_subject_analysis_options():
     unique_years = sorted(list({d["academic_year"] for d in dataset_list}), reverse=True)
     unique_branches = sorted(list({d["branch"] for d in dataset_list}))
 
-    # Canonical semester order
     sem_order = [
         "Semester I", "Semester II", "Semester III", "Semester IV",
         "Semester V", "Semester VI", "Semester VII", "Semester VIII"
@@ -3367,6 +3462,7 @@ def get_subject_analysis_options():
 
     return jsonify({
         "success": True,
+        "departments": dept_hierarchy,
         "academic_years": unique_years,
         "branches": unique_branches,
         "semesters": unique_semesters,
@@ -3377,14 +3473,25 @@ def get_subject_analysis_options():
 @app.route("/api/subject-analysis/subjects", methods=["POST"])
 def get_subject_analysis_subjects():
     """
-    Dynamically returns ONLY the subjects that exist in the selected gazette/dataset.
-    Does NOT use a global hardcoded subject list.
+    Dynamically returns ONLY the subjects that exist in the selected Excel sheet.
+    Accepts dataset_id, rel_path, or (department, batch, semester_file).
+    List subjects smartly using _Subject columns.
     """
     data = request.get_json(silent=True) or {}
     dataset_id = data.get("dataset_id", "").strip()
+    rel_path = data.get("rel_path", "").strip()
+
+    if not dataset_id and rel_path:
+        dataset_id = f"excel_{rel_path}"
+
+    dept = data.get("department", "").strip()
+    batch = data.get("batch", "").strip()
+    sem_file = (data.get("semester_file") or data.get("file_name") or "").strip()
+    if not dataset_id and dept and batch and sem_file:
+        dataset_id = f"excel_{dept}/{batch}/{sem_file}"
 
     if not dataset_id:
-        return jsonify({"success": False, "error": "dataset_id is required."}), 400
+        return jsonify({"success": False, "error": "dataset_id or relative path is required."}), 400
 
     records, catalog, meta = resolve_subject_dataset(dataset_id)
     if not records:
@@ -3413,12 +3520,22 @@ def run_subject_analysis():
     """
     data = request.get_json(silent=True) or {}
     dataset_id = data.get("dataset_id", "").strip()
+    rel_path = data.get("rel_path", "").strip()
+    if not dataset_id and rel_path:
+        dataset_id = f"excel_{rel_path}"
+
+    dept = data.get("department", "").strip()
+    batch = data.get("batch", "").strip()
+    sem_file = (data.get("semester_file") or data.get("file_name") or "").strip()
+    if not dataset_id and dept and batch and sem_file:
+        dataset_id = f"excel_{dept}/{batch}/{sem_file}"
+
     subject_code = data.get("subject_code", "").strip()
 
     if not dataset_id or not subject_code:
         return jsonify({
             "success": False,
-            "error": "Both 'dataset_id' and 'subject_code' are required."
+            "error": "Both 'dataset_id' (or Excel path) and 'subject_code' are required."
         }), 400
 
     records, catalog, meta = resolve_subject_dataset(dataset_id)
@@ -3452,8 +3569,160 @@ def run_subject_analysis():
         }), 500
 
 
+@app.route("/api/subject-analysis/export-docx", methods=["POST"])
+def export_subject_analysis_docx():
+    """
+    Exports a 1-page institutional Microsoft Word document (.docx)
+    for Terna Engineering College, including Theory summary, Term Work,
+    Practical/Oral analysis, and Top 5 subject merit leaders.
+    """
+    from core.subject_docx_exporter import generate_subject_analysis_docx
+
+    data = request.get_json(silent=True) or {}
+    analysis_data = data.get("analysis_data")
+    department = data.get("department", "").strip()
+    batch = data.get("batch", "").strip()
+    semester = data.get("semester", "").strip()
+
+    if not analysis_data:
+        # Resolve via dataset_id & subject_code if analysis_data not directly posted
+        dataset_id = data.get("dataset_id", "").strip()
+        rel_path = data.get("rel_path", "").strip()
+        if not dataset_id and rel_path:
+            dataset_id = f"excel_{rel_path}"
+
+        dept = data.get("department", "").strip()
+        b_val = data.get("batch", "").strip()
+        sem_file = (data.get("semester_file") or data.get("file_name") or "").strip()
+        if not dataset_id and dept and b_val and sem_file:
+            dataset_id = f"excel_{dept}/{b_val}/{sem_file}"
+
+        subject_code = data.get("subject_code", "").strip()
+
+        if not dataset_id or not subject_code:
+            return jsonify({
+                "success": False,
+                "error": "Either 'analysis_data' or ('dataset_id' and 'subject_code') is required."
+            }), 400
+
+        records, catalog, meta = resolve_subject_dataset(dataset_id)
+        if not records:
+            return jsonify({
+                "success": False,
+                "error": f"Dataset '{dataset_id}' not found."
+            }), 404
+
+        if department:
+            meta["department"] = department
+            meta["branch"] = department
+        if batch:
+            meta["batch"] = batch
+        if semester:
+            meta["semester"] = semester
+
+        try:
+            analysis_data = analyze_subject_performance(records, catalog, subject_code, dataset_meta=meta)
+        except Exception as e:
+            return jsonify({"success": False, "error": f"Failed to compute analysis for docx export: {e}"}), 500
+
+    try:
+        hdr = analysis_data.get("header", {})
+        dept_val = department or hdr.get("department") or hdr.get("branch") or "Engineering"
+        batch_val = batch or hdr.get("batch") or hdr.get("academic_year") or "Batch"
+        sem_val = semester or hdr.get("semester") or "Semester"
+
+        buf = generate_subject_analysis_docx(
+            analysis_data=analysis_data,
+            department_name=dept_val,
+            batch_name=batch_val,
+            semester_name=sem_val
+        )
+
+        safe_subj = "".join(c for c in (hdr.get("theory_code") or hdr.get("subject_code") or "Subject") if c.isalnum() or c in ("_", "-"))
+        safe_batch = "".join(c for c in batch_val if c.isalnum() or c in ("_", "-"))
+        filename = f"Terna_Subject_Analysis_{safe_subj}_{safe_batch}.docx"
+
+        return send_file(
+            buf,
+            mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            as_attachment=True,
+            download_name=filename
+        )
+    except Exception as e:
+        logger.error(f"Docx export failed: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": f"Docx generation failed: {str(e)}"
+        }), 500
+
+
+
 # =================================================================
-# End of Phase 4 Subject-wise Academic Analysis Routes
+# LIVE FOLDER WATCHER & ACTION LISTENER ROUTES
+# =================================================================
+
+@app.route("/api/live-watcher/status", methods=["GET"])
+def get_live_watcher_status():
+    """Returns current live filesystem watch status, version, and recent change events."""
+    folder_watcher.check_for_changes()
+    return jsonify({
+        "success": True,
+        **folder_watcher.get_status()
+    })
+
+
+@app.route("/api/live-watcher/check-now", methods=["POST"])
+def trigger_live_watcher_check():
+    """Forces an immediate filesystem scan and returns any detected events."""
+    events = folder_watcher.check_for_changes()
+    return jsonify({
+        "success": True,
+        "events_count": len(events),
+        "events": events,
+        "version": folder_watcher.get_status().get("version", 0)
+    })
+
+
+@app.route("/api/live-watcher/stream", methods=["GET"])
+def stream_live_watcher_events():
+    """
+    Server-Sent Events (SSE) stream broadcasting real-time filesystem updates
+    (e.g. newly dropped or modified Excel sheets, PDFs, or output directories).
+    """
+    def event_stream():
+        last_version = folder_watcher.get_status().get("version", 0)
+        yield f"event: connected\ndata: {json.dumps({'status': 'listening', 'version': last_version})}\n\n"
+
+        while True:
+            has_event = folder_watcher.wait_for_event(timeout=15.0)
+            if has_event:
+                events = folder_watcher.check_for_changes()
+                status = folder_watcher.get_status()
+                curr_version = status.get("version", 0)
+                if curr_version != last_version or events:
+                    last_version = curr_version
+                    payload = {
+                        "version": curr_version,
+                        "timestamp": status.get("last_change_time"),
+                        "events": events
+                    }
+                    yield f"event: folder_update\ndata: {json.dumps(payload)}\n\n"
+            else:
+                yield ": ping\n\n"
+
+    return Response(
+        event_stream(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive"
+        }
+    )
+
+
+# =================================================================
+# End of Routes
 # =================================================================
 
 

@@ -61,7 +61,9 @@ document.addEventListener("DOMContentLoaded", () => {
     ["initDataCleaningUI", initDataCleaningUI],
     ["initInteractiveExcelGrid", initInteractiveExcelGrid],
     ["initSubjectAnalysisUI", initSubjectAnalysisUI],
-    ["initSettingsView", initSettingsView]
+    ["initSettingsView", initSettingsView],
+    ["initLiveFolderActionListener", initLiveFolderActionListener],
+    ["initSubjectPrintAndExportHandlers", initSubjectPrintAndExportHandlers]
   ];
   for (const [name, fn] of initFns) {
     try {
@@ -365,159 +367,129 @@ function applyDrawerCollapsed(collapsed, save = true) {
 // ==========================================================================
 
 async function initSubjectAnalysisUI() {
-  const yearSelect = document.getElementById("subYearSelect");
-  const branchSelect = document.getElementById("subBranchSelect");
-  const semSelect = document.getElementById("subSemSelect");
-  const datasetSelect = document.getElementById("subDatasetSelect");
+  const deptSelect = document.getElementById("subDepartmentSelect") || document.getElementById("subBranchSelect");
+  const batchSelect = document.getElementById("subBatchSelect") || document.getElementById("subYearSelect");
+  const semSelect = document.getElementById("subSemesterSelect") || document.getElementById("subSemSelect");
   const courseSelect = document.getElementById("subCourseSelect");
   const btnRun = document.getElementById("btnRunSubjectAnalysis");
   const statusHint = document.getElementById("subStatusHint");
 
-  if (!yearSelect || !btnRun) return;
+  if (!deptSelect || !btnRun) return;
 
   // Prevent duplicate binding
-  if (yearSelect.dataset.initialized === "true") return;
-  yearSelect.dataset.initialized = "true";
+  if (deptSelect.dataset.initialized === "true") return;
+  deptSelect.dataset.initialized = "true";
+
+  let hierarchyCache = [];
+  let selectedDeptObj = null;
+  let selectedBatchObj = null;
 
   try {
-    statusHint.textContent = "Loading available academic cohorts...";
+    statusHint.textContent = "Loading departments from department_data/excel...";
     const res = await fetch("/api/subject-analysis/options");
     const data = await res.json();
     if (!data.success) throw new Error(data.error || "Failed to load options");
 
     subjectOptionsCache = data;
+    hierarchyCache = data.departments || [];
 
-    // 1. Populate Academic Years
-    yearSelect.innerHTML = `<option value="">-- Select Academic Year --</option>`;
-    (data.academic_years || []).forEach(y => {
+    // 1. Populate Department Folders
+    deptSelect.innerHTML = `<option value="">-- Select Department --</option>`;
+    hierarchyCache.forEach(d => {
       const opt = document.createElement("option");
-      opt.value = y;
-      opt.textContent = y;
-      yearSelect.appendChild(opt);
+      opt.value = d.id;
+      opt.textContent = `${d.name} (${d.folder})`;
+      deptSelect.appendChild(opt);
     });
 
-    statusHint.textContent = "Select Academic Year to begin";
+    statusHint.textContent = "Select Department folder to begin";
   } catch (err) {
     console.error("Error loading subject analysis options:", err);
-    statusHint.textContent = "Failed to load datasets. Please refresh.";
+    statusHint.textContent = "Failed to load department hierarchy. Please refresh.";
     return;
   }
 
-  // 2. Cascade: Academic Year -> Branch
-  yearSelect.addEventListener("change", () => {
-    const selYear = yearSelect.value;
-    branchSelect.innerHTML = `<option value="">-- Select Branch --</option>`;
-    semSelect.innerHTML = `<option value="">-- Select Semester --</option>`;
-    datasetSelect.innerHTML = `<option value="">-- Select Gazette / Dataset --</option>`;
+  // 2. Cascade: Department -> Batch Folder
+  deptSelect.addEventListener("change", () => {
+    const selDeptId = deptSelect.value;
+    batchSelect.innerHTML = `<option value="">-- Select Batch --</option>`;
+    semSelect.innerHTML = `<option value="">-- Select Semester Sheet --</option>`;
     courseSelect.innerHTML = `<option value="">-- Select Subject --</option>`;
 
-    branchSelect.disabled = !selYear;
+    batchSelect.disabled = !selDeptId;
     semSelect.disabled = true;
-    datasetSelect.disabled = true;
     courseSelect.disabled = true;
     btnRun.disabled = true;
+    selectedDeptObj = null;
+    selectedBatchObj = null;
 
-    if (!selYear || !subjectOptionsCache) {
-      statusHint.textContent = "Select Academic Year to continue";
+    if (!selDeptId) {
+      statusHint.textContent = "Select Department folder to continue";
       return;
     }
 
-    // Filter branches available in selected year
-    const matchedDatasets = subjectOptionsCache.datasets.filter(d => d.academic_year === selYear);
-    const availBranches = Array.from(new Set(matchedDatasets.map(d => d.branch))).sort();
+    selectedDeptObj = hierarchyCache.find(d => d.id === selDeptId);
+    if (!selectedDeptObj || !selectedDeptObj.batches || selectedDeptObj.batches.length === 0) {
+      statusHint.textContent = "No batch folders found inside selected department.";
+      return;
+    }
 
-    availBranches.forEach(b => {
+    selectedDeptObj.batches.forEach(b => {
       const opt = document.createElement("option");
-      opt.value = b;
-      opt.textContent = b;
-      branchSelect.appendChild(opt);
+      opt.value = b.folder;
+      opt.textContent = b.name;
+      batchSelect.appendChild(opt);
     });
 
-    statusHint.textContent = `Academic Year ${selYear} selected. Choose Branch.`;
+    statusHint.textContent = `Department selected. Select Batch folder inside ${selectedDeptObj.folder}.`;
   });
 
-  // 3. Cascade: Branch -> Semester
-  branchSelect.addEventListener("change", () => {
-    const selYear = yearSelect.value;
-    const selBranch = branchSelect.value;
-    semSelect.innerHTML = `<option value="">-- Select Semester --</option>`;
-    datasetSelect.innerHTML = `<option value="">-- Select Gazette / Dataset --</option>`;
+  // 3. Cascade: Batch -> Semester Excel Sheet
+  batchSelect.addEventListener("change", () => {
+    const selBatchFolder = batchSelect.value;
+    semSelect.innerHTML = `<option value="">-- Select Semester Excel Sheet --</option>`;
     courseSelect.innerHTML = `<option value="">-- Select Subject --</option>`;
 
-    semSelect.disabled = !selBranch;
-    datasetSelect.disabled = true;
+    semSelect.disabled = !selBatchFolder;
     courseSelect.disabled = true;
     btnRun.disabled = true;
+    selectedBatchObj = null;
 
-    if (!selBranch || !subjectOptionsCache) {
-      statusHint.textContent = "Select Branch to continue";
+    if (!selBatchFolder || !selectedDeptObj) {
+      statusHint.textContent = "Select Batch folder to continue";
       return;
     }
 
-    // Filter semesters for year + branch
-    const matched = subjectOptionsCache.datasets.filter(
-      d => d.academic_year === selYear && d.branch === selBranch
-    );
-    const availSems = Array.from(new Set(matched.map(d => d.semester)));
-
-    (subjectOptionsCache.semesters || []).forEach(s => {
-      if (availSems.includes(s)) {
-        const opt = document.createElement("option");
-        opt.value = s;
-        opt.textContent = s;
-        semSelect.appendChild(opt);
-      }
-    });
-
-    statusHint.textContent = `Branch ${selBranch} selected. Choose Semester.`;
-  });
-
-  // 4. Cascade: Semester -> Gazette / Dataset
-  semSelect.addEventListener("change", () => {
-    const selYear = yearSelect.value;
-    const selBranch = branchSelect.value;
-    const selSem = semSelect.value;
-    datasetSelect.innerHTML = `<option value="">-- Select Gazette / Dataset --</option>`;
-    courseSelect.innerHTML = `<option value="">-- Select Subject --</option>`;
-
-    datasetSelect.disabled = !selSem;
-    courseSelect.disabled = true;
-    btnRun.disabled = true;
-
-    if (!selSem || !subjectOptionsCache) {
-      statusHint.textContent = "Select Semester to continue";
+    selectedBatchObj = (selectedDeptObj.batches || []).find(b => b.folder === selBatchFolder);
+    if (!selectedBatchObj || !selectedBatchObj.semesters || selectedBatchObj.semesters.length === 0) {
+      statusHint.textContent = "No Excel sheets found inside selected batch.";
       return;
     }
 
-    // Filter datasets for year + branch + sem
-    const matched = subjectOptionsCache.datasets.filter(
-      d => d.academic_year === selYear && d.branch === selBranch && d.semester === selSem
-    );
-
-    matched.forEach(d => {
+    selectedBatchObj.semesters.forEach(s => {
       const opt = document.createElement("option");
-      opt.value = d.id;
-      opt.textContent = d.display_name;
-      datasetSelect.appendChild(opt);
+      opt.value = s.dataset_id;
+      opt.dataset.relPath = s.rel_path;
+      opt.textContent = s.display_name;
+      semSelect.appendChild(opt);
     });
 
-    statusHint.textContent = `Found ${matched.length} dataset(s) for ${selSem}. Choose Gazette / Dataset.`;
+    statusHint.textContent = `Batch ${selBatchFolder} selected. Select Semester Excel sheet.`;
   });
 
-  // 5. Cascade: Gazette / Dataset -> Dynamic Subjects
-  datasetSelect.addEventListener("change", async () => {
-    const datasetId = datasetSelect.value;
-    courseSelect.innerHTML = `<option value="">-- Loading Subjects... --</option>`;
+  // Modular Subject Loader for dataset
+  async function loadSubjectsForDataset(datasetId, preselectSubject = null) {
+    courseSelect.innerHTML = `<option value="">-- Loading Subjects from Excel Sheet... --</option>`;
     courseSelect.disabled = true;
     btnRun.disabled = true;
 
     if (!datasetId) {
       courseSelect.innerHTML = `<option value="">-- Select Subject --</option>`;
-      statusHint.textContent = "Select Dataset to discover subjects.";
+      statusHint.textContent = "Select Semester Excel sheet to discover subjects.";
       return;
     }
 
-    statusHint.textContent = "Discovering subjects from selected dataset...";
+    statusHint.textContent = "Scanning Excel sheet and extracting subjects smartly...";
 
     try {
       const res = await fetch("/api/subject-analysis/subjects", {
@@ -530,10 +502,10 @@ async function initSubjectAnalysisUI() {
       if (!data.success) throw new Error(data.error || "Failed to load subjects");
 
       const subjects = data.subjects || [];
-      courseSelect.innerHTML = `<option value="">-- Select Subject (${subjects.length} Available) --</option>`;
+      courseSelect.innerHTML = `<option value="">-- Select Subject (${subjects.length} Discovered) --</option>`;
 
       if (subjects.length === 0) {
-        statusHint.textContent = "No subject breakdown found in this dataset.";
+        statusHint.textContent = "No subject columns (e.g. *_Subject) found in this Excel sheet.";
         return;
       }
 
@@ -545,15 +517,90 @@ async function initSubjectAnalysisUI() {
       });
 
       courseSelect.disabled = false;
-      statusHint.textContent = `Discovered ${subjects.length} subjects from gazette. Select Subject.`;
+      if (preselectSubject && subjects.some(s => s.code === preselectSubject)) {
+        courseSelect.value = preselectSubject;
+        btnRun.disabled = false;
+        statusHint.textContent = `Subjects synced live. Ready to analyze ${preselectSubject}.`;
+      } else {
+        statusHint.textContent = `Smartly extracted ${subjects.length} subjects from Excel sheet. Select a subject to analyze.`;
+      }
     } catch (err) {
-      console.error("Error discovering subjects:", err);
+      console.error("Error discovering subjects from Excel:", err);
       courseSelect.innerHTML = `<option value="">-- Error Loading Subjects --</option>`;
-      statusHint.textContent = "Failed to load subjects for this dataset.";
+      statusHint.textContent = `Failed to load subjects: ${err.message}`;
     }
+  }
+
+  // Live Action Hierarchy Reloader (Dispatched automatically when folders update)
+  window.reloadSubjectAnalysisHierarchy = async function(preserveCurrentSelection = true) {
+    const prevDept = preserveCurrentSelection ? deptSelect.value : "";
+    const prevBatch = preserveCurrentSelection ? batchSelect.value : "";
+    const prevSem = preserveCurrentSelection ? semSelect.value : "";
+    const prevCourse = preserveCurrentSelection ? courseSelect.value : "";
+
+    try {
+      const res = await fetch("/api/subject-analysis/options");
+      const data = await res.json();
+      if (!data.success) return;
+
+      subjectOptionsCache = data;
+      hierarchyCache = data.departments || [];
+
+      // Re-render Departments
+      deptSelect.innerHTML = `<option value="">-- Select Department --</option>`;
+      hierarchyCache.forEach(d => {
+        const opt = document.createElement("option");
+        opt.value = d.id;
+        opt.textContent = `${d.name} (${d.folder})`;
+        deptSelect.appendChild(opt);
+      });
+
+      if (prevDept && hierarchyCache.some(d => d.id === prevDept)) {
+        deptSelect.value = prevDept;
+        selectedDeptObj = hierarchyCache.find(d => d.id === prevDept);
+
+        // Re-render Batches
+        batchSelect.innerHTML = `<option value="">-- Select Batch --</option>`;
+        (selectedDeptObj.batches || []).forEach(b => {
+          const opt = document.createElement("option");
+          opt.value = b.folder;
+          opt.textContent = b.name;
+          batchSelect.appendChild(opt);
+        });
+        batchSelect.disabled = false;
+
+        if (prevBatch && (selectedDeptObj.batches || []).some(b => b.folder === prevBatch)) {
+          batchSelect.value = prevBatch;
+          selectedBatchObj = (selectedDeptObj.batches || []).find(b => b.folder === prevBatch);
+
+          // Re-render Semesters
+          semSelect.innerHTML = `<option value="">-- Select Semester Excel Sheet --</option>`;
+          (selectedBatchObj.semesters || []).forEach(s => {
+            const opt = document.createElement("option");
+            opt.value = s.dataset_id;
+            opt.dataset.relPath = s.rel_path;
+            opt.textContent = s.display_name;
+            semSelect.appendChild(opt);
+          });
+          semSelect.disabled = false;
+
+          if (prevSem && (selectedBatchObj.semesters || []).some(s => s.dataset_id === prevSem)) {
+            semSelect.value = prevSem;
+            await loadSubjectsForDataset(prevSem, prevCourse);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[SubjectAnalysis] Live reload error:", e);
+    }
+  };
+
+  // 4. Cascade: Semester Excel Sheet -> Dynamic Subjects
+  semSelect.addEventListener("change", () => {
+    loadSubjectsForDataset(semSelect.value);
   });
 
-  // 6. Subject Selection -> Enable Generate Button
+  // 5. Subject Selection -> Enable Generate Button
   courseSelect.addEventListener("change", () => {
     const hasSubject = Boolean(courseSelect.value);
     btnRun.disabled = !hasSubject;
@@ -564,13 +611,13 @@ async function initSubjectAnalysisUI() {
     }
   });
 
-  // 7. Generate Analysis Action
+  // 6. Generate Analysis Action
   btnRun.addEventListener("click", async () => {
-    const datasetId = datasetSelect.value;
+    const datasetId = semSelect.value;
     const subjectCode = courseSelect.value;
-    const selYear = yearSelect.value;
-    const selBranch = branchSelect.value;
-    const selSem = semSelect.value;
+    const selDeptText = deptSelect.options[deptSelect.selectedIndex]?.text || "";
+    const selBatchText = batchSelect.options[batchSelect.selectedIndex]?.text || "";
+    const selSemText = semSelect.options[semSelect.selectedIndex]?.text || "";
 
     if (!datasetId || !subjectCode) return;
 
@@ -583,7 +630,7 @@ async function initSubjectAnalysisUI() {
     if (loadingCard) loadingCard.classList.remove("hidden");
 
     btnRun.disabled = true;
-    statusHint.textContent = "Computing deterministic analysis...";
+    statusHint.textContent = "Computing deterministic subject analysis from Excel...";
 
     try {
       const res = await fetch("/api/subject-analysis/analyze", {
@@ -592,9 +639,9 @@ async function initSubjectAnalysisUI() {
         body: JSON.stringify({
           dataset_id: datasetId,
           subject_code: subjectCode,
-          academic_year: selYear,
-          branch: selBranch,
-          semester: selSem
+          academic_year: selBatchText,
+          branch: selDeptText,
+          semester: selSemText
         })
       });
 
@@ -636,7 +683,8 @@ function renderSubjectAnalysisResults(data) {
   const val = data.validation || {};
   const th = data.theory || {};
   const tw = data.term_work || {};
-  const pr = data.practical_oral || {};
+  const pr = data.practical || data.practical_oral || {};
+  const oral = data.oral || {};
   const topStudents = data.top_students || [];
 
   // 1. Header Card
@@ -664,6 +712,8 @@ function renderSubjectAnalysisResults(data) {
   setText("kpiThFailed", th.failed || 0);
   setText("kpiThPassRate", `${(th.pass_rate || 0).toFixed(2)}%`);
   setText("kpiThFailRate", `${(th.fail_rate || 0).toFixed(2)}%`);
+  setText("kpiThFirstClassDist", th.first_class_and_dist_count || 0);
+  setText("kpiThFirstClassDistSub", `≥ 60% (${(th.first_class_and_dist_pct || 0).toFixed(2)}%)`);
 
   // 3. Theory Pass/Fail Table & Chart
   const pfTbody = document.getElementById("tblTheoryPassFailBody");
@@ -671,9 +721,30 @@ function renderSubjectAnalysisResults(data) {
     pfTbody.innerHTML = "";
     (th.pass_fail_table || []).forEach(row => {
       const tr = document.createElement("tr");
-      const isPass = row.status === "Passed";
+      let dotColor = "#3b82f6";
+      let textColor = "#1e293b";
+      if (row.status === "Passed") {
+        dotColor = "#10b981";
+        textColor = "#10b981";
+      } else if (row.status === "Failed") {
+        dotColor = "#ef4444";
+        textColor = "#ef4444";
+      } else if (row.status.includes("First Class & Distinction")) {
+        dotColor = "#2563eb";
+        textColor = "#2563eb";
+      } else if (row.status.includes("Distinction")) {
+        dotColor = "#7c3aed";
+        textColor = "#7c3aed";
+      } else if (row.status.includes("First Class")) {
+        dotColor = "#0284c7";
+        textColor = "#0284c7";
+      }
+
       tr.innerHTML = `
-        <td><strong style="color: ${isPass ? '#10b981' : '#ef4444'};">${row.status}</strong></td>
+        <td>
+          <span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:${dotColor}; margin-right:8px; vertical-align:middle;"></span>
+          <strong style="color: ${textColor};">${row.status}</strong>
+        </td>
         <td style="text-align: right; font-weight: 600;">${row.students}</td>
         <td style="text-align: right; font-weight: 600;">${row.percentage.toFixed(2)}%</td>
       `;
@@ -786,7 +857,7 @@ function renderSubjectAnalysisResults(data) {
     destroySubjectChart("prDist");
   }
 
-  // 8. Top 5 Students Table
+  // 8. Top 5 Students Table (Ranked strictly by combined Theory + Lab marks)
   const topTbody = document.getElementById("tblTopStudentsBody");
   if (topTbody) {
     topTbody.innerHTML = "";
@@ -814,6 +885,479 @@ function renderSubjectAnalysisResults(data) {
       });
     }
   }
+
+  // Initialize Print & Word Export buttons
+  initSubjectPrintAndExportHandlers();
+}
+
+// ==========================================================================
+// SUBJECT ANALYSIS 1-PAGE PRINT PREVIEW & WORD (.DOCX) EXPORT
+// ==========================================================================
+
+function initSubjectPrintAndExportHandlers() {
+  const btnPrint = document.getElementById("btnSubjectPrintPreview");
+  const btnDocx = document.getElementById("btnSubjectExportDocx");
+  const btnModalPrint = document.getElementById("btnPrintModalExecute");
+  const btnModalDocx = document.getElementById("btnModalExportDocx");
+  const btnCloseModal = document.getElementById("btnClosePrintPreviewModal");
+  const modal = document.getElementById("modalSubjectPrintPreview");
+
+  if (btnPrint && !btnPrint.dataset.bound) {
+    btnPrint.dataset.bound = "true";
+    btnPrint.addEventListener("click", openSubjectPrintPreview);
+  }
+
+  if (btnDocx && !btnDocx.dataset.bound) {
+    btnDocx.dataset.bound = "true";
+    btnDocx.addEventListener("click", exportSubjectDocx);
+  }
+
+  if (btnModalPrint && !btnModalPrint.dataset.bound) {
+    btnModalPrint.dataset.bound = "true";
+    btnModalPrint.addEventListener("click", () => {
+      window.print();
+    });
+  }
+
+  if (btnModalDocx && !btnModalDocx.dataset.bound) {
+    btnModalDocx.dataset.bound = "true";
+    btnModalDocx.addEventListener("click", exportSubjectDocx);
+  }
+
+  function closeSubjectPrintPreview() {
+    if (modal) modal.classList.add("hidden");
+    destroyAllPrintCharts();
+  }
+
+  if (btnCloseModal && !btnCloseModal.dataset.bound) {
+    btnCloseModal.dataset.bound = "true";
+    btnCloseModal.addEventListener("click", closeSubjectPrintPreview);
+  }
+
+  if (modal && !modal.dataset.bound) {
+    modal.dataset.bound = "true";
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) {
+        closeSubjectPrintPreview();
+      }
+    });
+  }
+
+  if (!window._subjectPrintEscBound) {
+    window._subjectPrintEscBound = true;
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && modal && !modal.classList.contains("hidden")) {
+        closeSubjectPrintPreview();
+      }
+    });
+  }
+}
+
+function openSubjectPrintPreview() {
+  const data = currentSubjectAnalysisResult;
+  if (!data || !data.success) {
+    alert("Please generate subject analysis first.");
+    return;
+  }
+
+  const hdr = data.header || {};
+  const th = data.theory || {};
+  const tw = data.term_work || {};
+  const pr = data.practical_oral || data.practical || {};
+  const toppers = data.top_students || [];
+
+  const deptSelect = document.getElementById("subDepartmentSelect");
+  const batchSelect = document.getElementById("subBatchSelect") || document.getElementById("subYearSelect");
+  const semSelect = document.getElementById("subSemesterSelect") || document.getElementById("subSemSelect");
+
+  const deptRaw = (deptSelect && deptSelect.selectedIndex > 0)
+    ? deptSelect.options[deptSelect.selectedIndex].text.replace(/\s*\(.*?\)/, "").trim()
+    : (hdr.department || hdr.branch || "Engineering");
+
+  const batchRaw = (batchSelect && batchSelect.selectedIndex > 0)
+    ? batchSelect.options[batchSelect.selectedIndex].text.trim()
+    : (hdr.batch || hdr.academic_year || "Batch");
+
+  const semRaw = (semSelect && semSelect.selectedIndex > 0)
+    ? semSelect.options[semSelect.selectedIndex].text.replace(/\.xlsx/i, "").trim()
+    : (hdr.semester || "Semester");
+
+  let deptDisplay = deptRaw;
+  if (!deptDisplay.toLowerCase().startsWith("department")) {
+    deptDisplay = `Department of ${deptDisplay}`;
+  }
+
+  const setText = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+  };
+
+  setText("prnDeptName", deptDisplay.toUpperCase());
+  setText("prnBatch", batchRaw);
+  setText("prnSemester", semRaw);
+  setText("prnSubject", `${hdr.subject_code || "CODE"} - ${hdr.subject_name || "Subject"}`);
+  setText("prnAcadYear", hdr.academic_year || batchRaw);
+  setText("prnMaxMarks", `${hdr.total_max_marks || 100} Marks`);
+  setText("prnReportDate", new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }));
+  setText("prnSigDept1", deptDisplay);
+  setText("prnSigDept2", "Terna Engineering College");
+
+  // 1. Populate Theory Table (Table at top)
+  const thTbody = document.getElementById("prnTblTheoryBody");
+  if (thTbody) {
+    thTbody.innerHTML = "";
+    const appeared = th.appeared || 0;
+    const passed = th.passed || 0;
+    const failed = th.failed || 0;
+    const passRate = th.pass_rate || 0.0;
+    const failRate = th.fail_rate || 0.0;
+    const firstClassCnt = th.first_class_count || 0;
+    const firstClassPct = th.first_class_rate || 0.0;
+    const distCnt = th.distinction_count || 0;
+    const distPct = th.distinction_rate || 0.0;
+    const fcDistCnt = th.first_class_and_dist_count || (firstClassCnt + distCnt);
+    const fcDistPct = (th.first_class_and_dist_pct || th.first_class_and_dist_rate || 0.0);
+
+    const rows = [
+      { label: "Total Students Appeared", count: appeared, pct: "100.00%", color: "#1e293b", bold: true, dot: "#64748b" },
+      { label: "Students Passed (≥ Passing Threshold)", count: passed, pct: `${passRate.toFixed(2)}%`, color: "#059669", bold: true, dot: "#10b981" },
+      { label: "Students Failed (Backlog / KT)", count: failed, pct: `${failRate.toFixed(2)}%`, color: "#dc2626", bold: true, dot: "#ef4444" },
+      { label: "Students with First Class (60% to 74.99%)", count: firstClassCnt, pct: `${firstClassPct.toFixed(2)}%`, color: "#0284c7", bold: false, dot: "#0284c7" },
+      { label: "Students with Distinction (≥ 75%)", count: distCnt, pct: `${distPct.toFixed(2)}%`, color: "#7c3aed", bold: false, dot: "#7c3aed" },
+      { label: "Total First Class & Distinction (≥ 60%)", count: fcDistCnt, pct: `${fcDistPct.toFixed(2)}%`, color: "#1F4E78", bold: true, dot: "#2563eb", highlight: true }
+    ];
+
+    rows.forEach(r => {
+      const tr = document.createElement("tr");
+      if (r.highlight) tr.style.background = "#eef4ff";
+      tr.innerHTML = `
+        <td>
+          <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${r.dot}; margin-right:6px; vertical-align:middle;"></span>
+          <span style="${r.bold ? 'font-weight: 700;' : ''} color: ${r.color};">${r.label}</span>
+        </td>
+        <td style="text-align: right; font-weight: 700; color: ${r.color};">${r.count}</td>
+        <td style="text-align: right; font-weight: 700; color: ${r.color};">${r.pct}</td>
+      `;
+      thTbody.appendChild(tr);
+    });
+
+    // Populate mini-visual graph beside table
+    const visualBox = document.getElementById("prnTheoryVisualBar");
+    if (visualBox) {
+      visualBox.innerHTML = `
+        <div style="font-size: 9.5px; font-weight: 700; color: #1F4E78; margin-bottom: 2px;">CLEARANCE DISTRIBUTION GRAPH</div>
+        <div class="print-mini-bar-row">
+          <div class="print-mini-bar-head"><span style="color: #059669;">Passed (${passRate.toFixed(1)}%)</span><span>${passed}</span></div>
+          <div class="print-mini-bar-track"><div class="print-mini-bar-fill" style="width: ${Math.min(100, passRate)}%; background: #10b981;"></div></div>
+        </div>
+        <div class="print-mini-bar-row">
+          <div class="print-mini-bar-head"><span style="color: #2563eb;">1st Class & Dist (${fcDistPct.toFixed(1)}%)</span><span>${fcDistCnt}</span></div>
+          <div class="print-mini-bar-track"><div class="print-mini-bar-fill" style="width: ${Math.min(100, fcDistPct)}%; background: #2563eb;"></div></div>
+        </div>
+        <div class="print-mini-bar-row">
+          <div class="print-mini-bar-head"><span style="color: #7c3aed;">Distinction (${distPct.toFixed(1)}%)</span><span>${distCnt}</span></div>
+          <div class="print-mini-bar-track"><div class="print-mini-bar-fill" style="width: ${Math.min(100, distPct)}%; background: #7c3aed;"></div></div>
+        </div>
+        <div class="print-mini-bar-row">
+          <div class="print-mini-bar-head"><span style="color: #dc2626;">Failed / Backlog (${failRate.toFixed(1)}%)</span><span>${failed}</span></div>
+          <div class="print-mini-bar-track"><div class="print-mini-bar-fill" style="width: ${Math.min(100, failRate)}%; background: #ef4444;"></div></div>
+        </div>
+      `;
+    }
+  }
+
+  // 2. Populate Term Work
+  if (tw.available) {
+    setText("prnTwAppeared", tw.appeared || 0);
+    setText("prnTwPassed", tw.passed || 0);
+    setText("prnTwFailed", tw.failed || 0);
+    setText("prnTwPassRate", `${(tw.pass_rate || 0).toFixed(2)}%`);
+  } else {
+    setText("prnTwAppeared", "N/A");
+    setText("prnTwPassed", "N/A");
+    setText("prnTwFailed", "N/A");
+    setText("prnTwPassRate", "N/A");
+  }
+
+  // 3. Populate Practical / Oral
+  if (pr.available) {
+    setText("prnPrAppeared", pr.appeared || 0);
+    setText("prnPrPassed", pr.passed || 0);
+    setText("prnPrFailed", pr.failed || 0);
+    setText("prnPrPassRate", `${(pr.pass_rate || 0).toFixed(2)}%`);
+  } else {
+    setText("prnPrAppeared", "N/A");
+    setText("prnPrPassed", "N/A");
+    setText("prnPrFailed", "N/A");
+    setText("prnPrPassRate", "N/A");
+  }
+
+  // 4. Populate Toppers Table (Full Width Structured Table)
+  const topTbody = document.getElementById("prnTblToppersBody");
+  if (topTbody) {
+    topTbody.innerHTML = "";
+    if (toppers.length === 0) {
+      topTbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #64748b; padding: 10px;">No topper records found.</td></tr>`;
+    } else {
+      toppers.slice(0, 5).forEach(st => {
+        const tr = document.createElement("tr");
+        let medal = "";
+        if (st.rank === 1) medal = "🥇 ";
+        else if (st.rank === 2) medal = "🥈 ";
+        else if (st.rank === 3) medal = "🥉 ";
+
+        tr.innerHTML = `
+          <td style="text-align: center; font-weight: 700; color: #1e293b;">${medal}Rank ${st.rank}</td>
+          <td style="font-weight: 700; color: #0f172a; text-transform: uppercase;">${st.student_name}</td>
+          <td style="text-align: center;"><code>${st.seat_or_prn}</code></td>
+          <td style="text-align: right; font-weight: 700; color: #1F4E78;">${st.marks} / ${st.max_marks || hdr.total_max_marks || 150}</td>
+          <td style="text-align: right; font-weight: 700; color: #059669;">${st.percentage.toFixed(2)}%</td>
+        `;
+        topTbody.appendChild(tr);
+      });
+    }
+  }
+
+  // Open modal first so canvas dimensions can be accurately measured
+  const modal = document.getElementById("modalSubjectPrintPreview");
+  if (modal) {
+    modal.classList.remove("hidden");
+  }
+
+  // Render instantaneous static Chart.js instances across report tables
+  renderPrintPreviewCharts(data);
+}
+
+// --------------------------------------------------------------------------
+// Chart.js Generators for In-App 1-Page Subject Print Sheet
+// --------------------------------------------------------------------------
+let printChartInstances = {};
+
+function destroyPrintChart(key) {
+  if (printChartInstances[key]) {
+    try {
+      printChartInstances[key].destroy();
+    } catch (e) {
+      console.warn("Error destroying print chart", key, e);
+    }
+    delete printChartInstances[key];
+  }
+}
+
+function destroyAllPrintCharts() {
+  ["theory", "tw", "pr"].forEach(k => destroyPrintChart(k));
+}
+
+function renderPrintPreviewCharts(data) {
+  if (typeof Chart === "undefined") {
+    console.warn("Chart.js not loaded, skipping print preview charts");
+    return;
+  }
+
+  const th = data.theory || {};
+  const tw = data.term_work || {};
+  const pr = data.practical_oral || data.practical || {};
+  const toppers = data.top_students || [];
+  const hdr = data.header || {};
+
+  // 1. Theory Clearance Doughnut Chart
+  destroyPrintChart("theory");
+  const ctxTh = document.getElementById("prnChartTheory");
+  if (ctxTh) {
+    const passed = th.passed || 0;
+    const failed = th.failed || 0;
+    const firstClassCnt = th.first_class_count || 0;
+    const distCnt = th.distinction_count || 0;
+    const passClassCnt = Math.max(0, passed - (firstClassCnt + distCnt));
+
+    printChartInstances["theory"] = new Chart(ctxTh, {
+      type: "doughnut",
+      data: {
+        labels: ["Distinction", "1st Class", "Pass Class", "Failed"],
+        datasets: [{
+          data: [distCnt, firstClassCnt, passClassCnt, failed],
+          backgroundColor: ["#7c3aed", "#2563eb", "#10b981", "#ef4444"],
+          borderColor: "#ffffff",
+          borderWidth: 1.5
+        }]
+      },
+      options: {
+        responsive: false,
+        maintainAspectRatio: false,
+        animation: false,
+        plugins: {
+          legend: {
+            position: "bottom",
+            labels: {
+              boxWidth: 8,
+              padding: 4,
+              font: { size: 8 }
+            }
+          },
+          tooltip: {
+            callbacks: {
+              label: (item) => ` ${item.label}: ${item.raw} students`
+            }
+          }
+        },
+        cutout: "55%"
+      }
+    });
+  }
+
+  // 2. Term Work Score Distribution Bar Chart
+  destroyPrintChart("tw");
+  const ctxTw = document.getElementById("prnChartTw");
+  if (ctxTw) {
+    if (tw.available && tw.marks_distribution && tw.marks_distribution.chart) {
+      const twDist = tw.marks_distribution.chart;
+      const twLabels = (twDist.labels || ["0-40%", "40-60%", "60-75%", "75-100%"]).map(l => String(l).split("-")[0]);
+      const twCounts = twDist.counts || [0, 0, 0, 0];
+
+      printChartInstances["tw"] = new Chart(ctxTw, {
+        type: "bar",
+        data: {
+          labels: twLabels,
+          datasets: [{
+            label: "Students",
+            data: twCounts,
+            backgroundColor: "#a855f7",
+            borderRadius: 3
+          }]
+        },
+        options: {
+          responsive: false,
+          maintainAspectRatio: false,
+          animation: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (item) => ` ${item.raw} students`
+              }
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: { precision: 0, font: { size: 7.5 } },
+              grid: { color: "#f1f5f9" }
+            },
+            x: {
+              ticks: { font: { size: 7.5 } },
+              grid: { display: false }
+            }
+          }
+        }
+      });
+    }
+  }
+
+  // 3. Practical / Oral Score Distribution Bar Chart
+  destroyPrintChart("pr");
+  const ctxPr = document.getElementById("prnChartPr");
+  if (ctxPr) {
+    if (pr.available && pr.marks_distribution && pr.marks_distribution.chart) {
+      const prDist = pr.marks_distribution.chart;
+      const prLabels = (prDist.labels || ["0-40%", "40-60%", "60-75%", "75-100%"]).map(l => String(l).split("-")[0]);
+      const prCounts = prDist.counts || [0, 0, 0, 0];
+
+      printChartInstances["pr"] = new Chart(ctxPr, {
+        type: "bar",
+        data: {
+          labels: prLabels,
+          datasets: [{
+            label: "Students",
+            data: prCounts,
+            backgroundColor: "#14b8a6",
+            borderRadius: 3
+          }]
+        },
+        options: {
+          responsive: false,
+          maintainAspectRatio: false,
+          animation: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (item) => ` ${item.raw} students`
+              }
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: { precision: 0, font: { size: 7.5 } },
+              grid: { color: "#f1f5f9" }
+            },
+            x: {
+              ticks: { font: { size: 7.5 } },
+              grid: { display: false }
+            }
+          }
+        }
+      });
+    }
+  }
+}
+
+async function exportSubjectDocx() {
+  const data = currentSubjectAnalysisResult;
+  if (!data || !data.success) {
+    alert("Please generate subject analysis first.");
+    return;
+  }
+
+  const deptSelect = document.getElementById("subDepartmentSelect");
+  const batchSelect = document.getElementById("subBatchSelect") || document.getElementById("subYearSelect");
+  const semSelect = document.getElementById("subSemesterSelect") || document.getElementById("subSemSelect");
+
+  const dept = (deptSelect && deptSelect.selectedIndex > 0)
+    ? deptSelect.options[deptSelect.selectedIndex].text.replace(/\s*\(.*?\)/, "").trim()
+    : "";
+  const batch = (batchSelect && batchSelect.selectedIndex > 0)
+    ? batchSelect.options[batchSelect.selectedIndex].text.trim()
+    : "";
+  const sem = (semSelect && semSelect.selectedIndex > 0)
+    ? semSelect.options[semSelect.selectedIndex].text.replace(/\.xlsx/i, "").trim()
+    : "";
+
+  try {
+    const res = await fetch("/api/subject-analysis/export-docx", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        analysis_data: data,
+        department: dept,
+        batch: batch,
+        semester: sem
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Export failed with status ${res.status}`);
+    }
+
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.style.display = "none";
+    a.href = url;
+    const safeSubj = (data.header?.theory_code || data.header?.subject_code || "Subject").replace(/[^a-zA-Z0-9_-]/g, "_");
+    const safeBatch = (batch || data.header?.batch || "Batch").replace(/[^a-zA-Z0-9_-]/g, "_");
+    a.download = `Terna_Subject_Analysis_${safeSubj}_${safeBatch}.docx`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    }, 100);
+  } catch (err) {
+    console.error("Docx export error:", err);
+    alert(`Could not export Word document: ${err.message}`);
+  }
 }
 
 // Chart.js Visualizers for Subject Analytics
@@ -824,28 +1368,40 @@ function renderTheoryPassFailChart(tableData) {
 
   const labels = tableData.map(d => d.status);
   const dataCounts = tableData.map(d => d.students);
+  const colorMap = {
+    "Passed": "#10b981",
+    "Failed": "#ef4444",
+    "First Class & Distinction (≥60%)": "#2563eb",
+    "First Class with Distinction (≥75%)": "#7c3aed",
+    "First Class (60% to 74.99%)": "#0284c7"
+  };
+  const bgColors = labels.map(lbl => colorMap[lbl] || "#3b82f6");
 
   subjectChartInstances["thPassFail"] = new Chart(ctx, {
-    type: "doughnut",
+    type: "bar",
     data: {
       labels: labels,
       datasets: [{
+        label: "Students",
         data: dataCounts,
-        backgroundColor: ["#10b981", "#ef4444"],
-        borderWidth: 2,
-        borderColor: "rgba(0,0,0,0.1)"
+        backgroundColor: bgColors,
+        borderRadius: 4
       }]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { position: "bottom" },
+        legend: { display: false },
         tooltip: {
           callbacks: {
             label: (ctx) => ` ${ctx.label}: ${ctx.raw} students`
           }
         }
+      },
+      scales: {
+        y: { beginAtZero: true, ticks: { precision: 0 } },
+        x: { ticks: { font: { size: 10 } } }
       }
     }
   });
@@ -991,6 +1547,103 @@ function renderPracticalChart(distObj) {
       }
     }
   });
+}
+
+// ==========================================================================
+// LIVE FOLDER ACTION LISTENER SERVICE
+// ==========================================================================
+let liveEventSource = null;
+let liveWatcherPollTimer = null;
+let lastKnownWatcherVersion = 0;
+
+function initLiveFolderActionListener() {
+  const badgeDot = document.getElementById("liveFolderWatcherDot");
+  const badge = document.getElementById("liveFolderWatcherBadge");
+
+  function triggerLiveFlash() {
+    if (badgeDot) {
+      badgeDot.style.transform = "scale(1.8)";
+      badgeDot.style.background = "#3b82f6";
+      setTimeout(() => {
+        badgeDot.style.transform = "scale(1)";
+        badgeDot.style.background = "#10b981";
+      }, 700);
+    }
+    if (badge) {
+      badge.style.borderColor = "rgba(59, 130, 246, 0.6)";
+      setTimeout(() => {
+        badge.style.borderColor = "rgba(16, 185, 129, 0.3)";
+      }, 1000);
+    }
+  }
+
+  function handleFolderUpdate(data) {
+    console.log("[LiveFolderWatcher] Live folder change detected:", data);
+    triggerLiveFlash();
+
+    // 1. Refresh Subject-wise Analysis options live
+    if (typeof window.reloadSubjectAnalysisHierarchy === "function") {
+      window.reloadSubjectAnalysisHierarchy(true);
+    }
+
+    // 2. Refresh Batch Suite if available
+    if (typeof loadBatchSuiteDatasets === "function") {
+      try { loadBatchSuiteDatasets(); } catch (e) {}
+    }
+
+    // 3. Dispatch global custom DOM event for other listeners
+    document.dispatchEvent(new CustomEvent("folderUpdate", { detail: data }));
+  }
+
+  // Attempt Server-Sent Events (SSE)
+  if (typeof EventSource !== "undefined") {
+    try {
+      liveEventSource = new EventSource("/api/live-watcher/stream");
+      liveEventSource.addEventListener("connected", (e) => {
+        try {
+          const d = JSON.parse(e.data);
+          lastKnownWatcherVersion = d.version || 0;
+        } catch (_) {}
+      });
+
+      liveEventSource.addEventListener("folder_update", (e) => {
+        try {
+          const d = JSON.parse(e.data);
+          lastKnownWatcherVersion = d.version || (lastKnownWatcherVersion + 1);
+          handleFolderUpdate(d);
+        } catch (err) {
+          console.warn("[LiveFolderWatcher] Error parsing folder_update:", err);
+        }
+      });
+
+      liveEventSource.onerror = () => {
+        // Fall back to polling on disconnect
+        if (liveEventSource) {
+          liveEventSource.close();
+          liveEventSource = null;
+        }
+        startPollingFallback();
+      };
+    } catch (e) {
+      startPollingFallback();
+    }
+  } else {
+    startPollingFallback();
+  }
+
+  function startPollingFallback() {
+    if (liveWatcherPollTimer) return;
+    liveWatcherPollTimer = setInterval(async () => {
+      try {
+        const res = await fetch("/api/live-watcher/status");
+        const status = await res.json();
+        if (status.success && status.version > lastKnownWatcherVersion) {
+          lastKnownWatcherVersion = status.version;
+          handleFolderUpdate(status);
+        }
+      } catch (_) {}
+    }, 2500);
+  }
 }
 
 // Settings View Controller
