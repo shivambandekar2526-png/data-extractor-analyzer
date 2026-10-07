@@ -1934,50 +1934,403 @@
       </div>
     </div>
 
-    <!-- Subject Selection Card -->
+    <!-- 1. CASCADING SELECTION PANEL -->
     <section class="card subject-controls-card">
       <div class="card-header">
-        <h2>Select Academic Dataset &amp; Course Subject</h2>
-        <span class="tag">Subject Analytics</span>
+        <div class="card-title-group">
+          <span class="workflow-step-badge">1</span>
+          <div>
+            <h2>Subject Analytics Configuration</h2>
+            <p class="card-subtitle">Select cohort parameters to dynamically query historical examination ledgers</p>
+          </div>
+        </div>
+        <span class="tag tag-accent">Deterministic Analysis</span>
       </div>
-      <div class="subject-controls-grid">
+
+      <div class="subject-selection-grid">
         <div class="form-group">
-          <label class="control-label" for="subjectDatasetSelect">1. Extracted Dataset / Cohort Batch:</label>
-          <select id="subjectDatasetSelect" class="form-select">
-            <option value="">-- Choose Dataset --</option>
+          <label class="control-label" for="subYearSelect">
+            <strong>Academic Year:</strong>
+          </label>
+          <select id="subYearSelect" class="form-select">
+            <option value="">-- Select Academic Year --</option>
           </select>
         </div>
+
         <div class="form-group">
-          <label class="control-label" for="subjectSemesterSelect">2. Semester:</label>
-          <select id="subjectSemesterSelect" class="form-select" disabled>
-            <option value="">-- Choose Semester --</option>
-            <option value="1">Semester 1</option>
-            <option value="2">Semester 2</option>
-            <option value="3">Semester 3</option>
-            <option value="4">Semester 4</option>
-            <option value="5">Semester 5</option>
-            <option value="6">Semester 6</option>
-            <option value="7">Semester 7</option>
-            <option value="8">Semester 8</option>
+          <label class="control-label" for="subBranchSelect">
+            <strong>Branch / Department:</strong>
+          </label>
+          <select id="subBranchSelect" class="form-select" disabled>
+            <option value="">-- Select Branch --</option>
           </select>
         </div>
+
         <div class="form-group">
-          <label class="control-label" for="subjectItemSelect">3. Subject / Course:</label>
-          <select id="subjectItemSelect" class="form-select" disabled>
-            <option value="">-- Choose Subject --</option>
+          <label class="control-label" for="subSemSelect">
+            <strong>Semester:</strong>
+          </label>
+          <select id="subSemSelect" class="form-select" disabled>
+            <option value="">-- Select Semester --</option>
           </select>
         </div>
+
+        <div class="form-group">
+          <label class="control-label" for="subDatasetSelect">
+            <strong>Gazette / Dataset:</strong>
+          </label>
+          <select id="subDatasetSelect" class="form-select" disabled>
+            <option value="">-- Select Gazette / Dataset --</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="control-label" for="subCourseSelect">
+            <strong>Subject / Course:</strong>
+          </label>
+          <select id="subCourseSelect" class="form-select" disabled>
+            <option value="">-- Select Subject --</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="subject-action-bar">
+        <span id="subStatusHint" class="results-meta-text">Select Academic Year, Branch, Semester, Dataset, and Subject</span>
+        <button type="button" id="btnRunSubjectAnalysis" class="btn btn-primary" style="padding: 0.75rem 1.75rem; font-size: 0.95rem;" disabled>
+          <span>🚀 Generate Analysis</span>
+        </button>
       </div>
     </section>
 
-    <!-- Subject Performance Placeholder / Shell Card -->
+    <!-- Empty State Before Generation -->
     <section class="card subject-empty-card" id="subjectEmptyState">
       <div class="workspace-empty-state">
         <div class="empty-state-icon">📘</div>
         <h3>Select a Dataset and Subject to Begin</h3>
-        <p>Choose an extracted examination ledger or cohort batch above to explore subject-wise grade distributions, passing percentages, faculty thresholds, and remedial alerts.</p>
+        <p>Choose an examination ledger and dynamic subject above to inspect pass/fail ratios, institutional grade classifications, marks distributions, term work, and top performers.</p>
       </div>
     </section>
+
+    <!-- Loading Spinner During Computation -->
+    <div id="subjectLoadingState" class="progress-section hidden" style="margin-bottom: 1.5rem;">
+      <div class="card" style="padding: 1.8rem; text-align: center;">
+        <span class="spinner" style="width: 28px; height: 28px; margin: 0 auto 0.8rem; display: block;"></span>
+        <strong id="subjectLoadingText">Computing deterministic subject metrics...</strong>
+      </div>
+    </div>
+
+    <!-- 2. SUBJECT ANALYTICS DASHBOARD CONTAINER -->
+    <div id="subjectResultsDashboard" class="subject-results-dashboard hidden">
+      <!-- 2. SUBJECT HEADER -->
+      <section class="card subject-header-card">
+        <div class="subject-header-grid">
+          <div class="subject-header-main">
+            <span class="subject-code-chip" id="hdrSubjectCode">CSC801</span>
+            <h2 class="subject-title" id="hdrSubjectName">Artificial Intelligence</h2>
+            <p class="subject-dataset-label" id="hdrDatasetLabel">Dataset: Selected Gazette</p>
+          </div>
+          <div class="subject-meta-grid">
+            <div class="sub-meta-pill">
+              <span class="sub-meta-key">Academic Year:</span>
+              <strong class="sub-meta-val" id="hdrAcademicYear">2024–25</strong>
+            </div>
+            <div class="sub-meta-pill">
+              <span class="sub-meta-key">Branch:</span>
+              <strong class="sub-meta-val" id="hdrBranch">Computer Engineering</strong>
+            </div>
+            <div class="sub-meta-pill">
+              <span class="sub-meta-key">Semester:</span>
+              <strong class="sub-meta-val" id="hdrSemester">VIII</strong>
+            </div>
+            <div class="sub-meta-pill">
+              <span class="sub-meta-key">Evaluation Max:</span>
+              <strong class="sub-meta-val" id="hdrMaxMarks">100 Marks</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- Data Validation Strip -->
+        <div class="data-validation-strip" id="dataValidationStrip">
+          <span class="validation-dot-green">●</span>
+          <span id="dataValidationSummary">Data Verified: 65 students analyzed • 0 duplicates • 0 absent</span>
+        </div>
+      </section>
+
+      <!-- 3. THEORY SUMMARY KPI CARDS -->
+      <div class="subject-kpi-grid">
+        <div class="eda-kpi-card">
+          <span class="eda-kpi-label">STUDENTS APPEARED</span>
+          <strong class="eda-kpi-value" id="kpiThAppeared">0</strong>
+          <span class="eda-kpi-sub" id="kpiThAppearedSub">Theory Examination</span>
+        </div>
+        <div class="eda-kpi-card kpi-success">
+          <span class="eda-kpi-label">STUDENTS PASSED</span>
+          <strong class="eda-kpi-value text-success" id="kpiThPassed">0</strong>
+          <span class="eda-kpi-sub" id="kpiThPassedSub">≥ Passing Threshold</span>
+        </div>
+        <div class="eda-kpi-card">
+          <span class="eda-kpi-label">STUDENTS FAILED</span>
+          <strong class="eda-kpi-value text-danger" id="kpiThFailed">0</strong>
+          <span class="eda-kpi-sub" id="kpiThFailedSub">Backlog / KT in Theory</span>
+        </div>
+        <div class="eda-kpi-card kpi-accent" style="border: 2px solid #1F4E78;">
+          <span class="eda-kpi-label" style="color: #1F4E78;">PASS PERCENTAGE</span>
+          <strong class="eda-kpi-value" id="kpiThPassRate" style="color: #1F4E78; font-size: 1.8rem;">0.00%</strong>
+          <span class="eda-kpi-sub">Passed / Appeared</span>
+        </div>
+        <div class="eda-kpi-card">
+          <span class="eda-kpi-label">FAIL PERCENTAGE</span>
+          <strong class="eda-kpi-value text-warning" id="kpiThFailRate">0.00%</strong>
+          <span class="eda-kpi-sub">Failed / Appeared</span>
+        </div>
+      </div>
+
+      <!-- 4 & 5. THEORY PASS/FAIL & CLASSIFICATION ROW -->
+      <div class="subject-two-col-grid">
+        <!-- 4. THEORY PASS/FAIL -->
+        <section class="card">
+          <div class="card-header">
+            <div>
+              <h3>Theory Pass / Fail Analysis</h3>
+              <p class="results-meta-text">Candidate clearance distribution</p>
+            </div>
+            <span class="tag">Pass vs Fail</span>
+          </div>
+          <div class="chart-and-table-wrapper">
+            <div class="chart-box" style="position: relative; height: 230px; margin-bottom: 1rem;">
+              <canvas id="chartTheoryPassFail"></canvas>
+            </div>
+            <div class="table-container" style="max-height: 200px;">
+              <table class="academic-table" id="tblTheoryPassFail">
+                <thead>
+                  <tr>
+                    <th>Status</th>
+                    <th style="text-align: right;">Students</th>
+                    <th style="text-align: right;">Percentage</th>
+                  </tr>
+                </thead>
+                <tbody id="tblTheoryPassFailBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 5. CLASSIFICATION -->
+        <section class="card">
+          <div class="card-header">
+            <div>
+              <h3>Institutional Classification (Passed Students)</h3>
+              <p class="results-meta-text">Distinction, First Class, Second Class breakdown</p>
+            </div>
+            <span class="tag tag-accent">Grading Standard</span>
+          </div>
+          <div class="chart-and-table-wrapper">
+            <div class="chart-box" style="position: relative; height: 230px; margin-bottom: 1rem;">
+              <canvas id="chartClassification"></canvas>
+            </div>
+            <div class="table-container" style="max-height: 200px;">
+              <table class="academic-table" id="tblClassification">
+                <thead>
+                  <tr>
+                    <th>Classification</th>
+                    <th style="text-align: right;">Students</th>
+                    <th style="text-align: right;">Percentage</th>
+                  </tr>
+                </thead>
+                <tbody id="tblClassificationBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- 6. MARKS DISTRIBUTION (THEORY) -->
+      <section class="card" style="margin-top: 1.5rem;">
+        <div class="card-header">
+          <div>
+            <h3>Marks Distribution (Theory)</h3>
+            <p class="results-meta-text" id="marksDistMetaText">Adaptive mark intervals calibrated to maximum subject score</p>
+          </div>
+          <span class="tag">Histogram</span>
+        </div>
+        <div class="subject-two-col-grid" style="align-items: center;">
+          <div class="chart-box" style="position: relative; height: 260px;">
+            <canvas id="chartMarksDistribution"></canvas>
+          </div>
+          <div class="table-container" style="max-height: 280px; overflow-y: auto;">
+            <table class="academic-table" id="tblMarksDistribution">
+              <thead>
+                <tr>
+                  <th>Score Range</th>
+                  <th style="text-align: right;">Students</th>
+                  <th style="text-align: right;">Percentage</th>
+                </tr>
+              </thead>
+              <tbody id="tblMarksDistributionBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 7. TERM WORK SECTION -->
+      <section class="card" id="termWorkSection" style="margin-top: 1.5rem;">
+        <div class="card-header">
+          <div>
+            <h3>TERM WORK</h3>
+            <p class="results-meta-text">Continuous internal laboratory and tutorial evaluation</p>
+          </div>
+          <span class="tag">Term Work (TW)</span>
+        </div>
+
+        <!-- TW Available Content -->
+        <div id="twAvailableContent" class="hidden">
+          <div class="subject-kpi-grid" style="margin-bottom: 1.2rem;">
+            <div class="eda-kpi-card">
+              <span class="eda-kpi-label">TW APPEARED</span>
+              <strong class="eda-kpi-value" id="kpiTwAppeared">0</strong>
+              <span class="eda-kpi-sub">Registered</span>
+            </div>
+            <div class="eda-kpi-card kpi-success">
+              <span class="eda-kpi-label">TW PASSED</span>
+              <strong class="eda-kpi-value text-success" id="kpiTwPassed">0</strong>
+              <span class="eda-kpi-sub">≥ Minimum TW</span>
+            </div>
+            <div class="eda-kpi-card">
+              <span class="eda-kpi-label">TW FAILED</span>
+              <strong class="eda-kpi-value text-danger" id="kpiTwFailed">0</strong>
+              <span class="eda-kpi-sub">Below Threshold</span>
+            </div>
+            <div class="eda-kpi-card kpi-accent">
+              <span class="eda-kpi-label">TW PASS RATE</span>
+              <strong class="eda-kpi-value" id="kpiTwPassRate" style="color: #1F4E78;">0.00%</strong>
+              <span class="eda-kpi-sub">Cleared TW</span>
+            </div>
+            <div class="eda-kpi-card">
+              <span class="eda-kpi-label">TW FAIL RATE</span>
+              <strong class="eda-kpi-value text-warning" id="kpiTwFailRate">0.00%</strong>
+              <span class="eda-kpi-sub">Backlog in TW</span>
+            </div>
+          </div>
+
+          <div class="subject-two-col-grid">
+            <div class="chart-box" style="position: relative; height: 230px;">
+              <canvas id="chartTwDistribution"></canvas>
+            </div>
+            <div class="table-container" style="max-height: 240px; overflow-y: auto;">
+              <table class="academic-table" id="tblTwDistribution">
+                <thead>
+                  <tr>
+                    <th>TW Range</th>
+                    <th style="text-align: right;">Students</th>
+                    <th style="text-align: right;">Percentage</th>
+                  </tr>
+                </thead>
+                <tbody id="tblTwDistributionBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- TW Unavailable Notice -->
+        <div id="twUnavailableNotice" class="sub-notice-box">
+          <span class="sub-notice-icon">ℹ️</span>
+          <span>Term work data unavailable in selected dataset.</span>
+        </div>
+      </section>
+
+      <!-- 8. ORAL / PRACTICAL SECTION -->
+      <section class="card" id="practicalOralSection" style="margin-top: 1.5rem;">
+        <div class="card-header">
+          <div>
+            <h3>ORAL / PRACTICAL</h3>
+            <p class="results-meta-text">Viva voce, practical performance, and oral defense evaluation</p>
+          </div>
+          <span class="tag">Oral / Practical (PR / OR)</span>
+        </div>
+
+        <!-- Practical Available Content -->
+        <div id="prAvailableContent" class="hidden">
+          <div class="subject-kpi-grid" style="margin-bottom: 1.2rem;">
+            <div class="eda-kpi-card">
+              <span class="eda-kpi-label">PR/OR APPEARED</span>
+              <strong class="eda-kpi-value" id="kpiPrAppeared">0</strong>
+              <span class="eda-kpi-sub">Examined</span>
+            </div>
+            <div class="eda-kpi-card kpi-success">
+              <span class="eda-kpi-label">PR/OR PASSED</span>
+              <strong class="eda-kpi-value text-success" id="kpiPrPassed">0</strong>
+              <span class="eda-kpi-sub">≥ Minimum Mark</span>
+            </div>
+            <div class="eda-kpi-card">
+              <span class="eda-kpi-label">PR/OR FAILED</span>
+              <strong class="eda-kpi-value text-danger" id="kpiPrFailed">0</strong>
+              <span class="eda-kpi-sub">Unsuccessful</span>
+            </div>
+            <div class="eda-kpi-card kpi-accent">
+              <span class="eda-kpi-label">PASS RATE</span>
+              <strong class="eda-kpi-value" id="kpiPrPassRate" style="color: #1F4E78;">0.00%</strong>
+              <span class="eda-kpi-sub">Cleared Practical</span>
+            </div>
+            <div class="eda-kpi-card">
+              <span class="eda-kpi-label">FAIL RATE</span>
+              <strong class="eda-kpi-value text-warning" id="kpiPrFailRate">0.00%</strong>
+              <span class="eda-kpi-sub">Failed Practical</span>
+            </div>
+          </div>
+
+          <div class="subject-two-col-grid">
+            <div class="chart-box" style="position: relative; height: 230px;">
+              <canvas id="chartPrDistribution"></canvas>
+            </div>
+            <div class="table-container" style="max-height: 240px; overflow-y: auto;">
+              <table class="academic-table" id="tblPrDistribution">
+                <thead>
+                  <tr>
+                    <th>Score Range</th>
+                    <th style="text-align: right;">Students</th>
+                    <th style="text-align: right;">Percentage</th>
+                  </tr>
+                </thead>
+                <tbody id="tblPrDistributionBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Practical Unavailable Notice -->
+        <div id="prUnavailableNotice" class="sub-notice-box">
+          <span class="sub-notice-icon">ℹ️</span>
+          <span>Practical/Oral data unavailable in selected dataset.</span>
+        </div>
+      </section>
+
+      <!-- 9. TOP 5 STUDENTS -->
+      <section class="card" style="margin-top: 1.5rem; margin-bottom: 2rem;">
+        <div class="card-header">
+          <div>
+            <h3>🏆 TOP 5 STUDENTS</h3>
+            <p class="results-meta-text">Ranked strictly by total subject examination marks</p>
+          </div>
+          <span class="tag tag-accent">Merit Leaders</span>
+        </div>
+        <div class="table-container">
+          <table class="academic-table" id="tblTopStudents">
+            <thead>
+              <tr>
+                <th style="width: 80px; text-align: center;">Rank</th>
+                <th>Student Name</th>
+                <th>Seat No / PRN</th>
+                <th style="text-align: right;">Marks</th>
+                <th style="text-align: right;">Percentage</th>
+              </tr>
+            </thead>
+            <tbody id="tblTopStudentsBody">
+              <tr><td colspan="5" style="text-align: center; color: var(--text-muted);">No student rankings generated yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
   </section>
 
   <!-- VIEW 5: Generated Reports (/reports) -->

@@ -20,6 +20,9 @@ import uuid
 import webbrowser
 from typing import Any, Dict, List, Optional, Tuple
 
+import pandas as pd
+import numpy as np
+
 from flask import Flask, jsonify, render_template, request, send_from_directory
 from werkzeug.utils import secure_filename
 
@@ -79,6 +82,11 @@ from core.dataset_database import (
 from exporter import export_ai_extracted_data, write_csv_file, write_excel_file
 from core.execution_controller import ExtractionController
 from models import CourseCatalog, ExamMeta
+from core.academic_classifier import (
+    AcademicClassificationRules,
+    analyze_subject_performance,
+    extract_subject_definitions
+)
 
 DB_PATH = get_default_db_path(DEPARTMENTS_DATA_DIR)
 init_db(DB_PATH)
@@ -3069,7 +3077,383 @@ def apply_ai_crosscheck_patches():
 
 
 # =================================================================
-# End of AI Cross-Checking Routes
+# PHASE 4: SUBJECT-WISE ACADEMIC ANALYSIS ROUTES
+# =================================================================
+
+def _standardize_academic_year(raw_year: Any) -> str:
+    """Standardizes batch/year tokens into Academic Year format (e.g. 21-22 -> 2021–2022)."""
+    s = str(raw_year or "").strip()
+    mapping = {
+        "21-22": "2021–2022",
+        "22-23": "2022–2023",
+        "23-24": "2023–2024",
+        "24-25": "2024–2025",
+        "25-26": "2025–2026",
+        "2021-2022": "2021–2022",
+        "2022-2023": "2022–2023",
+        "2023-2024": "2023–2024",
+        "2024-2025": "2024–2025",
+        "2025-2026": "2025–2026",
+    }
+    return mapping.get(s, s if s else "2024–2025")
+
+
+def _standardize_semester_label(raw_sem: Any) -> str:
+    """Standardizes semester tokens into canonical format (e.g. VIII / Semester_8 -> Semester VIII)."""
+    s = str(raw_sem or "").strip().upper()
+    roman_map = {
+        "1": "Semester I", "2": "Semester II", "3": "Semester III", "4": "Semester IV",
+        "5": "Semester V", "6": "Semester VI", "7": "Semester VII", "8": "Semester VIII",
+        "SEMESTER_1": "Semester I", "SEMESTER_2": "Semester II", "SEMESTER_3": "Semester III",
+        "SEMESTER_4": "Semester IV", "SEMESTER_5": "Semester V", "SEMESTER_6": "Semester VI",
+        "SEMESTER_7": "Semester VII", "SEMESTER_8": "Semester VIII",
+        "SEM_1": "Semester I", "SEM_2": "Semester II", "SEM_3": "Semester III", "SEM_4": "Semester IV",
+        "SEM_5": "Semester V", "SEM_6": "Semester VI", "SEM_7": "Semester VII", "SEM_8": "Semester VIII",
+        "I": "Semester I", "II": "Semester II", "III": "Semester III", "IV": "Semester IV",
+        "V": "Semester V", "VI": "Semester VI", "VII": "Semester VII", "VIII": "Semester VIII",
+    }
+    return roman_map.get(s, s.replace("_", " ").title() if s else "Semester VIII")
+
+
+def resolve_subject_dataset(dataset_id: str) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]], Dict[str, Any]]:
+    """
+    Loads student records, catalog, and dataset metadata for a given dataset ID.
+    Supports output/ folders, departments_data/excel files, and SQLite datasets.
+    """
+    clean_id = str(dataset_id or "").strip()
+    records: List[Dict[str, Any]] = []
+    catalog: Optional[Dict[str, Any]] = None
+    meta: Dict[str, Any] = {}
+
+    # Case 1: Database dataset (db_<dept>_<batch>_<sem>)
+    if clean_id.startswith("db_"):
+        try:
+            db_datasets = list_datasets_from_db(DB_PATH)
+            matched = next((d for d in db_datasets if f"db_{d['department']}_{d['batch']}_{d['semester']}".lower() == clean_id.lower()), None)
+            if matched:
+                db_data = get_dataset_from_db(DB_PATH, matched["department"], matched["batch"], matched["semester"])
+                if db_data:
+                    records = db_data.get("students", [])
+                    raw_meta = json.loads(db_data.get("meta_json") or "{}")
+                    catalog = raw_meta if "courses" in raw_meta else None
+                    meta = {
+                        "dataset_id": clean_id,
+                        "dataset_name": f"{matched['department']} ({matched['batch']} {matched['semester']})",
+                        "department": matched["department"],
+                        "branch": matched["department"].replace("_", " "),
+                        "academic_year": _standardize_academic_year(matched["batch"]),
+                        "batch": matched["batch"],
+                        "semester": _standardize_semester_label(matched["semester"]),
+                    }
+                    return records, catalog, meta
+        except Exception as e:
+            logger.warning(f"Error loading DB dataset {clean_id}: {e}")
+
+    # Case 2: Output folder (out_<folder> or direct folder name)
+    folder_name = clean_id[4:] if clean_id.startswith("out_") else clean_id
+    folder_path = os.path.join(OUTPUT_DIR, safe_folder_name(folder_name))
+    if os.path.isdir(folder_path):
+        f_clean = safe_folder_name(folder_name)
+        csv_p = os.path.join(folder_path, f"{f_clean}_extracted_data.csv")
+        cat_p = os.path.join(folder_path, f"{f_clean}_catalog.json")
+
+        if os.path.isfile(cat_p):
+            try:
+                with open(cat_p, mode="r", encoding="utf-8") as f:
+                    catalog = json.load(f)
+            except Exception:
+                catalog = None
+
+        if os.path.isfile(csv_p):
+            try:
+                df = pd.read_csv(csv_p)
+                records = df.to_dict(orient="records")
+            except Exception:
+                records = []
+        else:
+            xlsx_p = os.path.join(folder_path, f"{f_clean}_extracted_data.xlsx")
+            if os.path.isfile(xlsx_p):
+                try:
+                    df = pd.read_excel(xlsx_p)
+                    records = df.to_dict(orient="records")
+                except Exception:
+                    records = []
+
+        ds_meta = (catalog or {}).get("dataset_meta") or {}
+        ay = _standardize_academic_year(ds_meta.get("batch") or (catalog or {}).get("academic_year") or ("24-25" if "8th" in f_clean else "21-22"))
+        sem = _standardize_semester_label(ds_meta.get("semester") or (catalog or {}).get("semester") or ("VIII" if "8th" in f_clean else "1"))
+        branch_name = ds_meta.get("department") or (catalog or {}).get("college_name") or "Computer Engineering"
+
+        meta = {
+            "dataset_id": f"out_{f_clean}",
+            "dataset_name": f"{f_clean} (Historical Gazette)",
+            "department": branch_name,
+            "branch": branch_name.replace("_", " "),
+            "academic_year": ay,
+            "semester": sem,
+            "folder_name": f_clean
+        }
+        return records, catalog, meta
+
+    # Case 3: Excel file from departments_data/excel
+    rel_path = clean_id[6:] if clean_id.startswith("excel_") else clean_id
+    excel_full_path = os.path.join(DEPARTMENTS_DATA_DIR, "excel", rel_path)
+    if not os.path.isfile(excel_full_path):
+        excel_full_path = os.path.join(DEPARTMENTS_DATA_DIR, "excel", rel_path.replace("/", os.sep).replace("\\", os.sep))
+
+    if os.path.isfile(excel_full_path):
+        try:
+            xl = pd.ExcelFile(excel_full_path)
+            sheet_to_use = "Extracted Data" if "Extracted Data" in xl.sheet_names else ("Student Results" if "Student Results" in xl.sheet_names else xl.sheet_names[0])
+            df = xl.parse(sheet_to_use)
+            records = df.to_dict(orient="records")
+
+            if "Course Catalog" in xl.sheet_names:
+                cat_df = xl.parse("Course Catalog")
+                courses = []
+                for _, r in cat_df.iterrows():
+                    c_code = str(r.get("Course Code") or "").strip()
+                    c_name = str(r.get("Official Course Name") or "").strip()
+                    if c_code:
+                        courses.append({"code": c_code, "name": c_name})
+                catalog = {"courses": courses}
+
+            rel_norm = os.path.relpath(excel_full_path, os.path.join(DEPARTMENTS_DATA_DIR, "excel"))
+            parts = rel_norm.split(os.sep)
+            dept = parts[0].replace("_", " ")
+            batch = parts[1] if len(parts) > 1 else "21-22"
+            sem_name = os.path.splitext(os.path.basename(excel_full_path))[0]
+
+            meta = {
+                "dataset_id": f"excel_{rel_norm}",
+                "dataset_name": f"{dept} ({batch} {sem_name.replace('_', ' ')})",
+                "department": parts[0],
+                "branch": dept,
+                "academic_year": _standardize_academic_year(batch),
+                "semester": _standardize_semester_label(sem_name),
+                "excel_path": excel_full_path
+            }
+            return records, catalog, meta
+        except Exception as e:
+            logger.error(f"Error reading Excel dataset {excel_full_path}: {e}")
+
+    return records, catalog, meta
+
+
+@app.route("/api/subject-analysis/options", methods=["GET"])
+def get_subject_analysis_options():
+    """
+    Returns available Academic Years, Branches, Semesters, and Datasets
+    to power the cascading 5-tier selection panel.
+    """
+    dataset_list = []
+    seen_ids = set()
+
+    # 1. Output directory gazettes
+    if os.path.isdir(OUTPUT_DIR):
+        for entry in os.listdir(OUTPUT_DIR):
+            fpath = os.path.join(OUTPUT_DIR, entry)
+            if not os.path.isdir(fpath):
+                continue
+            f_clean = safe_folder_name(entry)
+            cat_p = os.path.join(fpath, f"{f_clean}_catalog.json")
+            cat_meta = {}
+            if os.path.isfile(cat_p):
+                try:
+                    with open(cat_p, mode="r", encoding="utf-8") as f:
+                        cat_meta = json.load(f)
+                except Exception:
+                    pass
+
+            total_st = cat_meta.get("total_students", 0)
+            if not total_st:
+                csv_p = os.path.join(fpath, f"{f_clean}_extracted_data.csv")
+                if os.path.isfile(csv_p):
+                    try:
+                        with open(csv_p, "r", encoding="utf-8-sig") as cf:
+                            total_st = max(0, sum(1 for _ in cf) - 1)
+                    except Exception:
+                        pass
+
+            # Map 2122-8th to both Computer Engineering & AIDS for convenience
+            is_8th = "8th" in f_clean or "VIII" in str(cat_meta.get("semester", "")).upper()
+            branches_for_entry = ["Computer Engineering", "Artificial Intelligence and Data Science"] if is_8th else ["Artificial Intelligence and Data Science"]
+            ay = "2024–2025" if is_8th else "2021–2022"
+            sem = "Semester VIII" if is_8th else "Semester I"
+
+            for b_name in branches_for_entry:
+                item_id = f"out_{f_clean}_{b_name.replace(' ', '_')}"
+                if item_id in seen_ids:
+                    continue
+                seen_ids.add(item_id)
+                dataset_list.append({
+                    "id": f"out_{f_clean}",
+                    "display_name": f"{f_clean} (May 2025 Gazette • {total_st} students)" if is_8th else f"{f_clean} ({total_st} students)",
+                    "academic_year": ay,
+                    "branch": b_name,
+                    "semester": sem,
+                    "source_type": "PDF Gazette",
+                    "total_students": total_st,
+                    "folder_name": f_clean
+                })
+
+    # 2. Departments Data Excel Spreadsheets
+    dept_excel_dir = os.path.join(DEPARTMENTS_DATA_DIR, "excel")
+    if os.path.isdir(dept_excel_dir):
+        for root, dirs, files in os.walk(dept_excel_dir):
+            for f in files:
+                if not f.endswith(".xlsx"):
+                    continue
+                fpath = os.path.join(root, f)
+                rel = os.path.relpath(fpath, dept_excel_dir)
+                parts = rel.split(os.sep)
+                dept_raw = parts[0]
+                dept_label = dept_raw.replace("_", " ")
+                batch_raw = parts[1] if len(parts) > 1 else "21-22"
+                ay_label = _standardize_academic_year(batch_raw)
+                sem_raw = os.path.splitext(f)[0]
+                sem_label = _standardize_semester_label(sem_raw)
+
+                item_id = f"excel_{rel}"
+                if item_id in seen_ids:
+                    continue
+                seen_ids.add(item_id)
+
+                dataset_list.append({
+                    "id": item_id,
+                    "display_name": f"{f} ({dept_label} • {batch_raw})",
+                    "academic_year": ay_label,
+                    "branch": dept_label,
+                    "semester": sem_label,
+                    "source_type": "Excel Spreadsheet",
+                    "total_students": 0,
+                    "rel_path": rel
+                })
+
+    # 3. Database Datasets
+    try:
+        db_entries = list_datasets_from_db(DB_PATH)
+        for ds in db_entries:
+            b_label = ds["department"].replace("_", " ")
+            ay_label = _standardize_academic_year(ds["batch"])
+            sem_label = _standardize_semester_label(ds["semester"])
+            item_id = f"db_{ds['department']}_{ds['batch']}_{ds['semester']}"
+            if item_id in seen_ids:
+                continue
+            seen_ids.add(item_id)
+            dataset_list.append({
+                "id": item_id,
+                "display_name": f"{ds['department']} - {ds['semester']} ({ds['total_students']} students)",
+                "academic_year": ay_label,
+                "branch": b_label,
+                "semester": sem_label,
+                "source_type": "Database Saved",
+                "total_students": ds.get("total_students", 0)
+            })
+    except Exception as e:
+        logger.warning(f"Error fetching DB datasets for options: {e}")
+
+    # Extract distinct cascading values
+    unique_years = sorted(list({d["academic_year"] for d in dataset_list}), reverse=True)
+    unique_branches = sorted(list({d["branch"] for d in dataset_list}))
+
+    # Canonical semester order
+    sem_order = [
+        "Semester I", "Semester II", "Semester III", "Semester IV",
+        "Semester V", "Semester VI", "Semester VII", "Semester VIII"
+    ]
+    discovered_sems = {d["semester"] for d in dataset_list}
+    unique_semesters = [s for s in sem_order if s in discovered_sems] + sorted(list(discovered_sems - set(sem_order)))
+
+    return jsonify({
+        "success": True,
+        "academic_years": unique_years,
+        "branches": unique_branches,
+        "semesters": unique_semesters,
+        "datasets": dataset_list
+    })
+
+
+@app.route("/api/subject-analysis/subjects", methods=["POST"])
+def get_subject_analysis_subjects():
+    """
+    Dynamically returns ONLY the subjects that exist in the selected gazette/dataset.
+    Does NOT use a global hardcoded subject list.
+    """
+    data = request.get_json(silent=True) or {}
+    dataset_id = data.get("dataset_id", "").strip()
+
+    if not dataset_id:
+        return jsonify({"success": False, "error": "dataset_id is required."}), 400
+
+    records, catalog, meta = resolve_subject_dataset(dataset_id)
+    if not records:
+        return jsonify({
+            "success": False,
+            "error": f"No student records found in dataset '{dataset_id}'."
+        }), 404
+
+    df = pd.DataFrame(records)
+    subjects = extract_subject_definitions(df, catalog)
+
+    return jsonify({
+        "success": True,
+        "total_records": len(df),
+        "dataset_meta": meta,
+        "subjects": subjects
+    })
+
+
+@app.route("/api/subject-analysis/analyze", methods=["POST"])
+def run_subject_analysis():
+    """
+    Executes complete deterministic subject-wise academic analysis.
+    Calculates Theory summary, Pass/Fail table & graph, Classifications,
+    Adaptive Marks Distribution, Term Work, Practical/Oral, and Top 5 students.
+    """
+    data = request.get_json(silent=True) or {}
+    dataset_id = data.get("dataset_id", "").strip()
+    subject_code = data.get("subject_code", "").strip()
+
+    if not dataset_id or not subject_code:
+        return jsonify({
+            "success": False,
+            "error": "Both 'dataset_id' and 'subject_code' are required."
+        }), 400
+
+    records, catalog, meta = resolve_subject_dataset(dataset_id)
+    if not records:
+        return jsonify({
+            "success": False,
+            "error": f"No data found for dataset '{dataset_id}'."
+        }), 404
+
+    # Allow frontend overrides for display header
+    if data.get("academic_year"):
+        meta["academic_year"] = data["academic_year"]
+    if data.get("branch"):
+        meta["branch"] = data["branch"]
+    if data.get("semester"):
+        meta["semester"] = data["semester"]
+
+    try:
+        analysis_result = analyze_subject_performance(
+            records=records,
+            catalog=catalog,
+            subject_code=subject_code,
+            dataset_meta=meta
+        )
+        return jsonify(analysis_result)
+    except Exception as e:
+        logger.error(f"Subject analysis computation failed: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": f"Analysis calculation failed: {str(e)}"
+        }), 500
+
+
+# =================================================================
+# End of Phase 4 Subject-wise Academic Analysis Routes
 # =================================================================
 
 

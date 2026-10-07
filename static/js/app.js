@@ -35,6 +35,11 @@ let currentFindMatches = [];
 let currentFindMatchIdx = -1;
 let contextMenuTarget = { rowIndex: null, colKey: null };
 
+// Phase 4 Subject Analytics Variables
+let subjectChartInstances = {};
+let subjectOptionsCache = null;
+let currentSubjectAnalysisResult = null;
+
 document.addEventListener("DOMContentLoaded", () => {
   const initFns = [
     ["initTheme", initTheme],
@@ -140,6 +145,9 @@ function updateChartsTheme(theme) {
   }
   if (typeof batchChartInstances !== "undefined" && batchChartInstances) {
     Object.values(batchChartInstances).forEach(c => { if (c) charts.push(c); });
+  }
+  if (typeof subjectChartInstances !== "undefined" && subjectChartInstances) {
+    Object.values(subjectChartInstances).forEach(c => { if (c) charts.push(c); });
   }
 
   charts.forEach(chart => {
@@ -352,36 +360,636 @@ function applyDrawerCollapsed(collapsed, save = true) {
   }
 }
 
-// Subject-wise Analysis View Controller
-async function initSubjectAnalysisUI() {
-  const datasetSelect = document.getElementById("subjectDatasetSelect");
-  const semSelect = document.getElementById("subjectSemesterSelect");
-  const subjectSelect = document.getElementById("subjectItemSelect");
-  if (!datasetSelect) return;
+// ==========================================================================
+// PHASE 4: SUBJECT-WISE ACADEMIC ANALYSIS FRONTEND CONTROLLER
+// ==========================================================================
 
-  if (datasetSelect.dataset.initialized === "true") return;
-  datasetSelect.dataset.initialized = "true";
+async function initSubjectAnalysisUI() {
+  const yearSelect = document.getElementById("subYearSelect");
+  const branchSelect = document.getElementById("subBranchSelect");
+  const semSelect = document.getElementById("subSemSelect");
+  const datasetSelect = document.getElementById("subDatasetSelect");
+  const courseSelect = document.getElementById("subCourseSelect");
+  const btnRun = document.getElementById("btnRunSubjectAnalysis");
+  const statusHint = document.getElementById("subStatusHint");
+
+  if (!yearSelect || !btnRun) return;
+
+  // Prevent duplicate binding
+  if (yearSelect.dataset.initialized === "true") return;
+  yearSelect.dataset.initialized = "true";
 
   try {
-    const res = await fetch("/api/history");
+    statusHint.textContent = "Loading available academic cohorts...";
+    const res = await fetch("/api/subject-analysis/options");
     const data = await res.json();
-    const history = data.history || [];
+    if (!data.success) throw new Error(data.error || "Failed to load options");
 
-    datasetSelect.innerHTML = `<option value="">-- Choose Dataset --</option>`;
-    history.forEach(item => {
+    subjectOptionsCache = data;
+
+    // 1. Populate Academic Years
+    yearSelect.innerHTML = `<option value="">-- Select Academic Year --</option>`;
+    (data.academic_years || []).forEach(y => {
       const opt = document.createElement("option");
-      opt.value = item.folder_name;
-      opt.textContent = `${item.folder_name} (Sem ${item.semester} • ${item.total_students} students)`;
-      datasetSelect.appendChild(opt);
+      opt.value = y;
+      opt.textContent = y;
+      yearSelect.appendChild(opt);
     });
-  } catch (e) {
-    console.warn("Failed to load datasets for subject analysis:", e);
+
+    statusHint.textContent = "Select Academic Year to begin";
+  } catch (err) {
+    console.error("Error loading subject analysis options:", err);
+    statusHint.textContent = "Failed to load datasets. Please refresh.";
+    return;
   }
 
-  datasetSelect.addEventListener("change", () => {
-    const chosen = datasetSelect.value;
-    if (semSelect) semSelect.disabled = !chosen;
-    if (subjectSelect) subjectSelect.disabled = !chosen;
+  // 2. Cascade: Academic Year -> Branch
+  yearSelect.addEventListener("change", () => {
+    const selYear = yearSelect.value;
+    branchSelect.innerHTML = `<option value="">-- Select Branch --</option>`;
+    semSelect.innerHTML = `<option value="">-- Select Semester --</option>`;
+    datasetSelect.innerHTML = `<option value="">-- Select Gazette / Dataset --</option>`;
+    courseSelect.innerHTML = `<option value="">-- Select Subject --</option>`;
+
+    branchSelect.disabled = !selYear;
+    semSelect.disabled = true;
+    datasetSelect.disabled = true;
+    courseSelect.disabled = true;
+    btnRun.disabled = true;
+
+    if (!selYear || !subjectOptionsCache) {
+      statusHint.textContent = "Select Academic Year to continue";
+      return;
+    }
+
+    // Filter branches available in selected year
+    const matchedDatasets = subjectOptionsCache.datasets.filter(d => d.academic_year === selYear);
+    const availBranches = Array.from(new Set(matchedDatasets.map(d => d.branch))).sort();
+
+    availBranches.forEach(b => {
+      const opt = document.createElement("option");
+      opt.value = b;
+      opt.textContent = b;
+      branchSelect.appendChild(opt);
+    });
+
+    statusHint.textContent = `Academic Year ${selYear} selected. Choose Branch.`;
+  });
+
+  // 3. Cascade: Branch -> Semester
+  branchSelect.addEventListener("change", () => {
+    const selYear = yearSelect.value;
+    const selBranch = branchSelect.value;
+    semSelect.innerHTML = `<option value="">-- Select Semester --</option>`;
+    datasetSelect.innerHTML = `<option value="">-- Select Gazette / Dataset --</option>`;
+    courseSelect.innerHTML = `<option value="">-- Select Subject --</option>`;
+
+    semSelect.disabled = !selBranch;
+    datasetSelect.disabled = true;
+    courseSelect.disabled = true;
+    btnRun.disabled = true;
+
+    if (!selBranch || !subjectOptionsCache) {
+      statusHint.textContent = "Select Branch to continue";
+      return;
+    }
+
+    // Filter semesters for year + branch
+    const matched = subjectOptionsCache.datasets.filter(
+      d => d.academic_year === selYear && d.branch === selBranch
+    );
+    const availSems = Array.from(new Set(matched.map(d => d.semester)));
+
+    (subjectOptionsCache.semesters || []).forEach(s => {
+      if (availSems.includes(s)) {
+        const opt = document.createElement("option");
+        opt.value = s;
+        opt.textContent = s;
+        semSelect.appendChild(opt);
+      }
+    });
+
+    statusHint.textContent = `Branch ${selBranch} selected. Choose Semester.`;
+  });
+
+  // 4. Cascade: Semester -> Gazette / Dataset
+  semSelect.addEventListener("change", () => {
+    const selYear = yearSelect.value;
+    const selBranch = branchSelect.value;
+    const selSem = semSelect.value;
+    datasetSelect.innerHTML = `<option value="">-- Select Gazette / Dataset --</option>`;
+    courseSelect.innerHTML = `<option value="">-- Select Subject --</option>`;
+
+    datasetSelect.disabled = !selSem;
+    courseSelect.disabled = true;
+    btnRun.disabled = true;
+
+    if (!selSem || !subjectOptionsCache) {
+      statusHint.textContent = "Select Semester to continue";
+      return;
+    }
+
+    // Filter datasets for year + branch + sem
+    const matched = subjectOptionsCache.datasets.filter(
+      d => d.academic_year === selYear && d.branch === selBranch && d.semester === selSem
+    );
+
+    matched.forEach(d => {
+      const opt = document.createElement("option");
+      opt.value = d.id;
+      opt.textContent = d.display_name;
+      datasetSelect.appendChild(opt);
+    });
+
+    statusHint.textContent = `Found ${matched.length} dataset(s) for ${selSem}. Choose Gazette / Dataset.`;
+  });
+
+  // 5. Cascade: Gazette / Dataset -> Dynamic Subjects
+  datasetSelect.addEventListener("change", async () => {
+    const datasetId = datasetSelect.value;
+    courseSelect.innerHTML = `<option value="">-- Loading Subjects... --</option>`;
+    courseSelect.disabled = true;
+    btnRun.disabled = true;
+
+    if (!datasetId) {
+      courseSelect.innerHTML = `<option value="">-- Select Subject --</option>`;
+      statusHint.textContent = "Select Dataset to discover subjects.";
+      return;
+    }
+
+    statusHint.textContent = "Discovering subjects from selected dataset...";
+
+    try {
+      const res = await fetch("/api/subject-analysis/subjects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataset_id: datasetId })
+      });
+      const data = await res.json();
+
+      if (!data.success) throw new Error(data.error || "Failed to load subjects");
+
+      const subjects = data.subjects || [];
+      courseSelect.innerHTML = `<option value="">-- Select Subject (${subjects.length} Available) --</option>`;
+
+      if (subjects.length === 0) {
+        statusHint.textContent = "No subject breakdown found in this dataset.";
+        return;
+      }
+
+      subjects.forEach(s => {
+        const opt = document.createElement("option");
+        opt.value = s.code;
+        opt.textContent = s.display_name;
+        courseSelect.appendChild(opt);
+      });
+
+      courseSelect.disabled = false;
+      statusHint.textContent = `Discovered ${subjects.length} subjects from gazette. Select Subject.`;
+    } catch (err) {
+      console.error("Error discovering subjects:", err);
+      courseSelect.innerHTML = `<option value="">-- Error Loading Subjects --</option>`;
+      statusHint.textContent = "Failed to load subjects for this dataset.";
+    }
+  });
+
+  // 6. Subject Selection -> Enable Generate Button
+  courseSelect.addEventListener("change", () => {
+    const hasSubject = Boolean(courseSelect.value);
+    btnRun.disabled = !hasSubject;
+    if (hasSubject) {
+      statusHint.textContent = "Ready! Click 'Generate Analysis' to compute metrics.";
+    } else {
+      statusHint.textContent = "Choose a subject to enable analysis generation.";
+    }
+  });
+
+  // 7. Generate Analysis Action
+  btnRun.addEventListener("click", async () => {
+    const datasetId = datasetSelect.value;
+    const subjectCode = courseSelect.value;
+    const selYear = yearSelect.value;
+    const selBranch = branchSelect.value;
+    const selSem = semSelect.value;
+
+    if (!datasetId || !subjectCode) return;
+
+    const emptyCard = document.getElementById("subjectEmptyState");
+    const loadingCard = document.getElementById("subjectLoadingState");
+    const dashboard = document.getElementById("subjectResultsDashboard");
+
+    if (emptyCard) emptyCard.classList.add("hidden");
+    if (dashboard) dashboard.classList.add("hidden");
+    if (loadingCard) loadingCard.classList.remove("hidden");
+
+    btnRun.disabled = true;
+    statusHint.textContent = "Computing deterministic analysis...";
+
+    try {
+      const res = await fetch("/api/subject-analysis/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dataset_id: datasetId,
+          subject_code: subjectCode,
+          academic_year: selYear,
+          branch: selBranch,
+          semester: selSem
+        })
+      });
+
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || "Analysis failed");
+
+      currentSubjectAnalysisResult = data;
+      renderSubjectAnalysisResults(data);
+
+      if (loadingCard) loadingCard.classList.add("hidden");
+      if (dashboard) dashboard.classList.remove("hidden");
+      btnRun.disabled = false;
+      statusHint.textContent = `Analysis generated for ${data.header?.subject_name || subjectCode}!`;
+
+      // Scroll smoothly to dashboard
+      dashboard.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (err) {
+      console.error("Subject analysis error:", err);
+      if (loadingCard) loadingCard.classList.add("hidden");
+      if (emptyCard) emptyCard.classList.remove("hidden");
+      btnRun.disabled = false;
+      statusHint.textContent = `Analysis error: ${err.message}`;
+      alert(`Subject analysis computation failed: ${err.message}`);
+    }
+  });
+}
+
+function destroySubjectChart(key) {
+  if (subjectChartInstances[key]) {
+    try {
+      subjectChartInstances[key].destroy();
+    } catch (e) {}
+    delete subjectChartInstances[key];
+  }
+}
+
+function renderSubjectAnalysisResults(data) {
+  const hdr = data.header || {};
+  const val = data.validation || {};
+  const th = data.theory || {};
+  const tw = data.term_work || {};
+  const pr = data.practical_oral || {};
+  const topStudents = data.top_students || [];
+
+  // 1. Header Card
+  const setText = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+
+  setText("hdrSubjectCode", hdr.subject_code || "CODE");
+  setText("hdrSubjectName", hdr.subject_name || "Subject Analysis");
+  setText("hdrDatasetLabel", `Dataset: ${hdr.dataset_name || "Selected Gazette"}`);
+  setText("hdrAcademicYear", hdr.academic_year || "N/A");
+  setText("hdrBranch", hdr.branch || "Engineering");
+  setText("hdrSemester", hdr.semester || "N/A");
+  setText("hdrMaxMarks", `${hdr.total_max_marks || 100} Marks`);
+
+  const auditStrip = document.getElementById("dataValidationSummary");
+  if (auditStrip) {
+    auditStrip.textContent = `Data Verified: ${val.valid_records || 0} students analyzed • ${val.duplicate_records || 0} duplicates resolved • ${val.theory_absent || 0} absent • ${val.theory_missing || 0} missing`;
+  }
+
+  // 2. Theory Summary Cards
+  setText("kpiThAppeared", th.appeared || 0);
+  setText("kpiThPassed", th.passed || 0);
+  setText("kpiThFailed", th.failed || 0);
+  setText("kpiThPassRate", `${(th.pass_rate || 0).toFixed(2)}%`);
+  setText("kpiThFailRate", `${(th.fail_rate || 0).toFixed(2)}%`);
+
+  // 3. Theory Pass/Fail Table & Chart
+  const pfTbody = document.getElementById("tblTheoryPassFailBody");
+  if (pfTbody) {
+    pfTbody.innerHTML = "";
+    (th.pass_fail_table || []).forEach(row => {
+      const tr = document.createElement("tr");
+      const isPass = row.status === "Passed";
+      tr.innerHTML = `
+        <td><strong style="color: ${isPass ? '#10b981' : '#ef4444'};">${row.status}</strong></td>
+        <td style="text-align: right; font-weight: 600;">${row.students}</td>
+        <td style="text-align: right; font-weight: 600;">${row.percentage.toFixed(2)}%</td>
+      `;
+      pfTbody.appendChild(tr);
+    });
+  }
+  renderTheoryPassFailChart(th.pass_fail_table || []);
+
+  // 4. Classification Table & Chart
+  const classTbody = document.getElementById("tblClassificationBody");
+  if (classTbody) {
+    classTbody.innerHTML = "";
+    const cTable = th.classification?.table || [];
+    cTable.forEach(row => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><strong>${row.classification}</strong></td>
+        <td style="text-align: right; font-weight: 600;">${row.students}</td>
+        <td style="text-align: right; font-weight: 600;">${row.percentage.toFixed(2)}%</td>
+      `;
+      classTbody.appendChild(tr);
+    });
+  }
+  renderClassificationChart(th.classification || {});
+
+  // 5. Marks Distribution (Theory) Table & Chart
+  const mdMeta = document.getElementById("marksDistMetaText");
+  if (mdMeta) {
+    mdMeta.textContent = `Distribution based on maximum ${th.max_marks || 80} marks (Pass threshold: ${th.min_marks || 32})`;
+  }
+  const mdTbody = document.getElementById("tblMarksDistributionBody");
+  if (mdTbody) {
+    mdTbody.innerHTML = "";
+    const mTable = th.marks_distribution?.table || [];
+    mTable.forEach(row => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><strong>${row.range}</strong></td>
+        <td style="text-align: right; font-weight: 600;">${row.students}</td>
+        <td style="text-align: right; font-weight: 600;">${row.percentage.toFixed(2)}%</td>
+      `;
+      mdTbody.appendChild(tr);
+    });
+  }
+  renderMarksDistributionChart(th.marks_distribution || {});
+
+  // 6. Term Work Section
+  const twContent = document.getElementById("twAvailableContent");
+  const twNotice = document.getElementById("twUnavailableNotice");
+  if (tw.available) {
+    if (twContent) twContent.classList.remove("hidden");
+    if (twNotice) twNotice.classList.add("hidden");
+
+    setText("kpiTwAppeared", tw.appeared || 0);
+    setText("kpiTwPassed", tw.passed || 0);
+    setText("kpiTwFailed", tw.failed || 0);
+    setText("kpiTwPassRate", `${(tw.pass_rate || 0).toFixed(2)}%`);
+    setText("kpiTwFailRate", `${(tw.fail_rate || 0).toFixed(2)}%`);
+
+    const twTbody = document.getElementById("tblTwDistributionBody");
+    if (twTbody) {
+      twTbody.innerHTML = "";
+      (tw.marks_distribution?.table || []).forEach(row => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td><strong>${row.range}</strong></td>
+          <td style="text-align: right;">${row.students}</td>
+          <td style="text-align: right;">${row.percentage.toFixed(2)}%</td>
+        `;
+        twTbody.appendChild(tr);
+      });
+    }
+    renderTermWorkChart(tw.marks_distribution || {});
+  } else {
+    if (twContent) twContent.classList.add("hidden");
+    if (twNotice) twNotice.classList.remove("hidden");
+    destroySubjectChart("twDist");
+  }
+
+  // 7. Oral / Practical Section
+  const prContent = document.getElementById("prAvailableContent");
+  const prNotice = document.getElementById("prUnavailableNotice");
+  if (pr.available) {
+    if (prContent) prContent.classList.remove("hidden");
+    if (prNotice) prNotice.classList.add("hidden");
+
+    setText("kpiPrAppeared", pr.appeared || 0);
+    setText("kpiPrPassed", pr.passed || 0);
+    setText("kpiPrFailed", pr.failed || 0);
+    setText("kpiPrPassRate", `${(pr.pass_rate || 0).toFixed(2)}%`);
+    setText("kpiPrFailRate", `${(pr.fail_rate || 0).toFixed(2)}%`);
+
+    const prTbody = document.getElementById("tblPrDistributionBody");
+    if (prTbody) {
+      prTbody.innerHTML = "";
+      (pr.marks_distribution?.table || []).forEach(row => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td><strong>${row.range}</strong></td>
+          <td style="text-align: right;">${row.students}</td>
+          <td style="text-align: right;">${row.percentage.toFixed(2)}%</td>
+        `;
+        prTbody.appendChild(tr);
+      });
+    }
+    renderPracticalChart(pr.marks_distribution || {});
+  } else {
+    if (prContent) prContent.classList.add("hidden");
+    if (prNotice) prNotice.classList.remove("hidden");
+    destroySubjectChart("prDist");
+  }
+
+  // 8. Top 5 Students Table
+  const topTbody = document.getElementById("tblTopStudentsBody");
+  if (topTbody) {
+    topTbody.innerHTML = "";
+    if (topStudents.length === 0) {
+      topTbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">No student scores found for this subject.</td></tr>`;
+    } else {
+      topStudents.forEach(st => {
+        const tr = document.createElement("tr");
+        let medal = "";
+        let badgeClass = "rank-badge-def";
+        if (st.rank === 1) { medal = "🥇 "; badgeClass = "rank-badge-1"; }
+        else if (st.rank === 2) { medal = "🥈 "; badgeClass = "rank-badge-2"; }
+        else if (st.rank === 3) { medal = "🥉 "; badgeClass = "rank-badge-3"; }
+
+        tr.innerHTML = `
+          <td style="text-align: center;">
+            <span class="rank-badge ${badgeClass}">${medal}${st.rank}</span>
+          </td>
+          <td><strong>${st.student_name}</strong></td>
+          <td><code>${st.seat_or_prn}</code></td>
+          <td style="text-align: right; font-weight: 700; color: #38bdf8;">${st.marks} / ${st.max_marks}</td>
+          <td style="text-align: right; font-weight: 700; color: #10b981;">${st.percentage.toFixed(2)}%</td>
+        `;
+        topTbody.appendChild(tr);
+      });
+    }
+  }
+}
+
+// Chart.js Visualizers for Subject Analytics
+function renderTheoryPassFailChart(tableData) {
+  destroySubjectChart("thPassFail");
+  const ctx = document.getElementById("chartTheoryPassFail");
+  if (!ctx || typeof Chart === "undefined") return;
+
+  const labels = tableData.map(d => d.status);
+  const dataCounts = tableData.map(d => d.students);
+
+  subjectChartInstances["thPassFail"] = new Chart(ctx, {
+    type: "doughnut",
+    data: {
+      labels: labels,
+      datasets: [{
+        data: dataCounts,
+        backgroundColor: ["#10b981", "#ef4444"],
+        borderWidth: 2,
+        borderColor: "rgba(0,0,0,0.1)"
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: "bottom" },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => ` ${ctx.label}: ${ctx.raw} students`
+          }
+        }
+      }
+    }
+  });
+}
+
+function renderClassificationChart(classObj) {
+  destroySubjectChart("classification");
+  const ctx = document.getElementById("chartClassification");
+  if (!ctx || typeof Chart === "undefined") return;
+
+  const chartInfo = classObj.chart || {};
+  const labels = chartInfo.labels || ["Distinction", "First Class", "Second Class", "Pass Class"];
+  const counts = chartInfo.counts || [0, 0, 0, 0];
+
+  subjectChartInstances["classification"] = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: labels,
+      datasets: [{
+        label: "Students",
+        data: counts,
+        backgroundColor: ["#6366f1", "#3b82f6", "#06b6d4", "#64748b"],
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false }
+      },
+      scales: {
+        y: { beginAtZero: true, ticks: { precision: 0 } }
+      }
+    }
+  });
+}
+
+function renderMarksDistributionChart(distObj) {
+  destroySubjectChart("marksDist");
+  const ctx = document.getElementById("chartMarksDistribution");
+  if (!ctx || typeof Chart === "undefined") return;
+
+  const chartInfo = distObj.chart || {};
+  const labels = chartInfo.labels || [];
+  const counts = chartInfo.counts || [];
+
+  subjectChartInstances["marksDist"] = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: labels,
+      datasets: [{
+        label: "Number of Students",
+        data: counts,
+        backgroundColor: "rgba(56, 189, 248, 0.75)",
+        borderColor: "#38bdf8",
+        borderWidth: 1,
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (c) => ` Score ${c.label}: ${c.raw} students`
+          }
+        }
+      },
+      scales: {
+        y: { beginAtZero: true, ticks: { precision: 0 } },
+        x: { grid: { display: false } }
+      }
+    }
+  });
+}
+
+function renderTermWorkChart(distObj) {
+  destroySubjectChart("twDist");
+  const ctx = document.getElementById("chartTwDistribution");
+  if (!ctx || typeof Chart === "undefined") return;
+
+  const chartInfo = distObj.chart || {};
+  const labels = chartInfo.labels || [];
+  const counts = chartInfo.counts || [];
+
+  subjectChartInstances["twDist"] = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: labels,
+      datasets: [{
+        label: "TW Students",
+        data: counts,
+        backgroundColor: "rgba(168, 85, 247, 0.75)",
+        borderColor: "#a855f7",
+        borderWidth: 1,
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, ticks: { precision: 0 } },
+        x: { grid: { display: false } }
+      }
+    }
+  });
+}
+
+function renderPracticalChart(distObj) {
+  destroySubjectChart("prDist");
+  const ctx = document.getElementById("chartPrDistribution");
+  if (!ctx || typeof Chart === "undefined") return;
+
+  const chartInfo = distObj.chart || {};
+  const labels = chartInfo.labels || [];
+  const counts = chartInfo.counts || [];
+
+  subjectChartInstances["prDist"] = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: labels,
+      datasets: [{
+        label: "Practical/Oral Students",
+        data: counts,
+        backgroundColor: "rgba(20, 184, 166, 0.75)",
+        borderColor: "#14b8a6",
+        borderWidth: 1,
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, ticks: { precision: 0 } },
+        x: { grid: { display: false } }
+      }
+    }
   });
 }
 
