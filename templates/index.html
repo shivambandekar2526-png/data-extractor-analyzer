@@ -2950,6 +2950,62 @@
       </div>
     </div>
 
+    <!-- PDF Archive Prompt Modal -->
+    <div class="modal-backdrop hidden" id="pdfArchivePromptModal" style="z-index: 10005;">
+      <div class="modal-card" style="max-width: 520px;">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <div class="tabular-modal-icon" style="background: rgba(99, 102, 241, 0.18); color: #818cf8;">📁</div>
+            <div>
+              <h3>Add PDF to Designated Folder?</h3>
+              <p class="modal-subtitle">Save uploaded gazette to canonical department archive</p>
+            </div>
+          </div>
+          <button type="button" class="btn-close" id="btnClosePdfArchiveModal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p style="margin: 0; color: var(--text-main); font-size: 0.88rem; line-height: 1.5;">
+            The uploaded result PDF has been identified with the following academic metadata:
+          </p>
+
+          <div class="prompt-meta-card">
+            <div class="prompt-meta-row">
+              <span class="prompt-meta-label">Department:</span>
+              <strong class="prompt-meta-value" id="promptPdfDept">Artificial Intelligence and Data Science</strong>
+            </div>
+            <div class="prompt-meta-row">
+              <span class="prompt-meta-label">Batch / Year:</span>
+              <strong class="prompt-meta-value" id="promptPdfBatch">22-23</strong>
+            </div>
+            <div class="prompt-meta-row">
+              <span class="prompt-meta-label">Semester:</span>
+              <strong class="prompt-meta-value" id="promptPdfSem">Semester 1</strong>
+            </div>
+            <div class="prompt-meta-row">
+              <span class="prompt-meta-label">Target Archive:</span>
+              <code class="prompt-meta-code" id="promptPdfTarget">departments_data/pdf/...</code>
+            </div>
+          </div>
+
+          <div class="prompt-warning-note" id="promptPdfDupWarning" style="display: none;">
+            ⚠️ <span>A PDF file already exists at this destination. Answering "Yes" will update it.</span>
+          </div>
+
+          <p style="margin: 0; color: var(--text-muted); font-size: 0.82rem; line-height: 1.45;">
+            Would you like to store this PDF into the designated <code>departments_data/pdf/</code> folder right now?
+          </p>
+        </div>
+        <div class="modal-foot" style="justify-content: flex-end; gap: 0.65rem;">
+          <button type="button" class="btn btn-secondary" id="btnPdfArchiveNo">
+            <span>No, do not add</span>
+          </button>
+          <button type="button" class="btn btn-primary" id="btnPdfArchiveYes">
+            <span>✓ Yes, add to folder</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Floating Context Menu (Right-Click) -->
     <div id="excelContextMenu" class="excel-context-menu hidden">
       <div class="ctx-item" data-action="edit_cell"><span>✏️ Edit Cell</span><span class="ctx-kbd">F2</span></div>

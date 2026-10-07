@@ -1492,6 +1492,7 @@ def classify_uploaded_document():
             "semester": sem,
             "pdf_rel_path": res.get("pdf_rel_path"),
             "excel_rel_path": res.get("excel_rel_path"),
+            "canonical_pdf_path": os.path.join(DEPARTMENTS_DATA_DIR, "pdf", dept, batch, f"{sem}.pdf").replace("\\", "/"),
             "is_duplicate": dup_info["duplicate"],
             "pdf_exists": dup_info["pdf_exists"],
             "excel_exists": dup_info["excel_exists"],
@@ -1500,6 +1501,78 @@ def classify_uploaded_document():
         })
     except Exception as e:
         logger.error(f"Classification failed: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/archive-pdf", methods=["POST"])
+def archive_classified_pdf():
+    """Explicitly save/archive an uploaded PDF into departments_data/pdf/<Dept>/<Batch>/<Sem>.pdf."""
+    target_pdf_path = None
+    safe_name = None
+
+    for key in ["pdf_file", "file"]:
+        if key in request.files:
+            up = request.files[key]
+            if up and up.filename:
+                safe_name = secure_filename(up.filename)
+                saved_path = os.path.join(INPUT_DIR, safe_name)
+                up.save(saved_path)
+                target_pdf_path = saved_path
+                break
+
+    json_data = request.get_json(silent=True) or {}
+    if not target_pdf_path:
+        existing = (
+            request.form.get("input_file")
+            or request.form.get("file_name")
+            or json_data.get("input_file")
+            or json_data.get("file_name")
+        )
+        if existing:
+            safe_name = secure_filename(existing)
+            cand = os.path.join(INPUT_DIR, safe_name)
+            if os.path.isfile(cand):
+                target_pdf_path = cand
+
+    if not target_pdf_path or not os.path.isfile(target_pdf_path):
+        return jsonify({"success": False, "error": "No valid PDF file provided to archive."}), 400
+
+    dept = request.form.get("department") or json_data.get("department")
+    batch = request.form.get("batch") or json_data.get("batch")
+    sem = request.form.get("semester") or json_data.get("semester")
+
+    if not (dept and batch and sem):
+        try:
+            clf_res = classify_pdf_first_page(target_pdf_path)
+            dept = dept or clf_res["department"]
+            batch = batch or clf_res["batch"]
+            sem = sem or clf_res["semester"]
+        except Exception:
+            dept = dept or "Artificial_Intelligence_and_Data_Science"
+            batch = batch or "22-23"
+            sem = sem or "Semester_1"
+
+    dept = normalize_department(dept)
+    sem = normalize_semester(sem)
+    sem_num_val = int(re.search(r"\d+", sem).group(0)) if re.search(r"\d+", sem) else 1
+    batch = normalize_batch(batch, sem_num=sem_num_val)
+
+    try:
+        canonical_pdf = store_classified_pdf(
+            target_pdf_path, dept, batch, sem, DEPARTMENTS_DATA_DIR, overwrite=True
+        )
+        canonical_rel = os.path.relpath(canonical_pdf, DEPARTMENTS_DATA_DIR).replace("\\", "/")
+        return jsonify({
+            "success": True,
+            "message": f"Successfully stored PDF in departments_data/{canonical_rel}",
+            "canonical_pdf_path": canonical_pdf,
+            "rel_path": canonical_rel,
+            "department": dept,
+            "batch": batch,
+            "semester": sem
+        })
+    except Exception as e:
+        logger.error(f"Archive PDF failed: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 
@@ -1647,14 +1720,26 @@ def start_extraction():
                 "message": f"Dataset for '{dept} / {batch} / {sem}' already exists. Please confirm replacement."
             }), 409
 
-    # 3. Automatically create departments_data/pdf/<Department>/<Batch>/<Semester>.pdf
-    canonical_pdf = store_classified_pdf(
-        target_pdf_path, dept, batch, sem, DEPARTMENTS_DATA_DIR, overwrite=True
+    # 3. Add to departments_data/pdf/<Department>/<Batch>/<Semester>.pdf if confirmed by user
+    should_archive_pdf = (
+        request.form.get("archive_pdf") in ("1", "true", "yes")
+        or request.args.get("archive_pdf") in ("1", "true", "yes")
+        or json_data.get("archive_pdf") in (True, "1", 1)
     )
-    canonical_excel = get_canonical_excel_path(dept, batch, sem, DEPARTMENTS_DATA_DIR)
 
-    # Use the stored canonical PDF for the extraction pipeline
-    target_pdf_path = canonical_pdf
+    canonical_excel = get_canonical_excel_path(dept, batch, sem, DEPARTMENTS_DATA_DIR)
+    canonical_pdf = os.path.join(DEPARTMENTS_DATA_DIR, "pdf", dept, batch, f"{sem}.pdf").replace("\\", "/")
+
+    if should_archive_pdf:
+        try:
+            stored_pdf = store_classified_pdf(
+                target_pdf_path, dept, batch, sem, DEPARTMENTS_DATA_DIR, overwrite=True
+            )
+            canonical_pdf = stored_pdf
+            # Use stored canonical PDF for the extraction pipeline
+            target_pdf_path = canonical_pdf
+        except Exception as store_err:
+            logger.warning(f"Could not store classified PDF to departments_data: {store_err}")
 
     dataset_meta = {
         "department": dept,

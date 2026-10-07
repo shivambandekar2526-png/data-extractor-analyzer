@@ -1106,6 +1106,9 @@ function handleFileSelected(file) {
 
           const stepExcelPreview = document.getElementById("stepExcelMirrorPreview");
           if (stepExcelPreview) stepExcelPreview.textContent = excelPathStr;
+
+          // Prompt whether to add the PDF to the designated folder
+          promptAddPdfToDesignatedFolder(file, d);
         }
       })
       .catch(err => console.warn("Background classification probe warning:", err));
@@ -1114,6 +1117,93 @@ function handleFileSelected(file) {
   // If tabular file, launch Tabular Inspection Modal immediately
   if (["xlsx", "xls", "csv"].includes(ext)) {
     inspectTabularFile(file);
+  }
+}
+
+// Prompt user whether to add uploaded PDF to designated departments_data/pdf/ folder
+let pdfArchivePromptDecision = null; // null = not prompted, true = yes, false = no
+
+function promptAddPdfToDesignatedFolder(file, clfData) {
+  const modal = document.getElementById("pdfArchivePromptModal");
+  if (!modal) return;
+
+  const deptEl = document.getElementById("promptPdfDept");
+  const batchEl = document.getElementById("promptPdfBatch");
+  const semEl = document.getElementById("promptPdfSem");
+  const targetEl = document.getElementById("promptPdfTarget");
+  const dupWarning = document.getElementById("promptPdfDupWarning");
+
+  const dept = clfData.department || "Artificial_Intelligence_and_Data_Science";
+  const batch = clfData.batch || "22-23";
+  const sem = clfData.semester || "Semester_1";
+  const canonicalRel = `departments_data/pdf/${dept}/${batch}/${sem}.pdf`;
+
+  if (deptEl) deptEl.textContent = dept.replace(/_/g, " ");
+  if (batchEl) batchEl.textContent = batch;
+  if (semEl) semEl.textContent = sem.replace(/_/g, " ");
+  if (targetEl) targetEl.textContent = canonicalRel;
+  if (dupWarning) {
+    dupWarning.style.display = clfData.is_duplicate ? "flex" : "none";
+  }
+
+  const btnYes = document.getElementById("btnPdfArchiveYes");
+  const btnNo = document.getElementById("btnPdfArchiveNo");
+  const btnClose = document.getElementById("btnClosePdfArchiveModal");
+
+  // Show modal
+  modal.classList.remove("hidden");
+
+  // Handler for Yes
+  const handleYes = async () => {
+    modal.classList.add("hidden");
+    pdfArchivePromptDecision = true;
+
+    // Immediately archive the file to departments_data/pdf/
+    const archiveData = new FormData();
+    archiveData.append("pdf_file", file);
+    archiveData.append("department", dept);
+    archiveData.append("batch", batch);
+    archiveData.append("semester", sem);
+
+    try {
+      const res = await fetch("/api/archive-pdf", {
+        method: "POST",
+        body: archiveData
+      });
+      const data = await res.json();
+      if (data.success) {
+        // Refresh batch options so the newly archived PDF appears immediately in the batch browser
+        if (typeof initBatches === "function") {
+          initBatches();
+        }
+        // Update selected file badge with confirmation
+        const selectedFileSize = document.getElementById("selectedFileSize");
+        if (selectedFileSize) {
+          const mbSize = (file.size / (1024 * 1024)).toFixed(2);
+          selectedFileSize.textContent = `(${mbSize} MB) • 📁 Saved to ${data.rel_path || canonicalRel}`;
+        }
+      } else {
+        console.warn("Could not archive PDF:", data.error);
+      }
+    } catch (e) {
+      console.warn("Archive PDF request failed:", e);
+    }
+  };
+
+  // Handler for No
+  const handleNo = () => {
+    modal.classList.add("hidden");
+    pdfArchivePromptDecision = false;
+  };
+
+  if (btnYes) {
+    btnYes.onclick = handleYes;
+  }
+  if (btnNo) {
+    btnNo.onclick = handleNo;
+  }
+  if (btnClose) {
+    btnClose.onclick = handleNo;
   }
 }
 
@@ -1157,6 +1247,11 @@ async function startExtraction() {
   if (deptToSend) formData.append("department", deptToSend);
   if (batchToSend) formData.append("batch", batchToSend);
   if (semToSend) formData.append("semester", semToSend);
+
+  // Pass archive_pdf decision if user chose to archive or not
+  if (pdfArchivePromptDecision !== null) {
+    formData.append("archive_pdf", pdfArchivePromptDecision ? "1" : "0");
+  }
 
   // Pass Extraction Pipeline choice
   const selectedPipeline = document.querySelector('input[name="extractionPipeline"]:checked')?.value || 'local';
