@@ -99,8 +99,6 @@ from core.folder_watcher import folder_watcher
 folder_watcher.add_watch_path("departments_excel", os.path.join(DEPARTMENTS_DATA_DIR, "excel"))
 folder_watcher.add_watch_path("departments_pdf", os.path.join(DEPARTMENTS_DATA_DIR, "pdf"))
 folder_watcher.add_watch_path("output", OUTPUT_DIR)
-if os.path.isdir(BATCH_DATA_DIR) and os.path.abspath(BATCH_DATA_DIR) != os.path.abspath(DEPARTMENTS_DATA_DIR):
-    folder_watcher.add_watch_path("batch_data", BATCH_DATA_DIR)
 folder_watcher.start()
 
 
@@ -821,12 +819,12 @@ def list_batches():
         "excel": {}
     }
 
-    if os.path.isdir(BATCH_DATA_DIR):
-        for root, dirs, files in os.walk(BATCH_DATA_DIR):
+    if os.path.isdir(DEPARTMENTS_DATA_DIR):
+        for root, dirs, files in os.walk(DEPARTMENTS_DATA_DIR):
             for f in sorted(files):
                 ext = os.path.splitext(f)[1].lower()
                 if ext in (".pdf", ".xlsx", ".xls", ".csv"):
-                    rel = os.path.relpath(os.path.join(root, f), BATCH_DATA_DIR).replace("\\", "/")
+                    rel = os.path.relpath(os.path.join(root, f), DEPARTMENTS_DATA_DIR).replace("\\", "/")
                     parts = rel.split("/")
                     
                     # If organized as pdf/<Dept>/<Batch>/<Sem>.pdf or excel/<Dept>/<Batch>/<Sem>.xlsx
@@ -965,14 +963,11 @@ def inspect_batch():
         os.path.join(DEPARTMENTS_DATA_DIR, "pdf", branch, academic_year) if branch and academic_year else "",
         os.path.join(APP_DEPARTMENTS_DATA_DIR, "excel", branch, academic_year) if branch and academic_year else "",
         os.path.join(APP_DEPARTMENTS_DATA_DIR, "pdf", branch, academic_year) if branch and academic_year else "",
-        os.path.join(APP_BATCH_DATA_DIR, clean_batch_name),
-        os.path.join(APP_BATCH_DATA_DIR, branch, academic_year) if branch and academic_year else "",
-        os.path.join(APP_BATCH_DATA_DIR, slug),
-        os.path.join(APP_BATCH_DATA_DIR, batch_name),
-        os.path.join(BATCH_DATA_DIR, clean_batch_name),
-        os.path.join(BATCH_DATA_DIR, batch_name),
-        os.path.join(BATCH_DATA_DIR, slug),
-        os.path.join(BATCH_DATA_DIR, f"{slug} data"),
+        os.path.join(DEPARTMENTS_DATA_DIR, clean_batch_name),
+        os.path.join(DEPARTMENTS_DATA_DIR, branch, academic_year) if branch and academic_year else "",
+        os.path.join(DEPARTMENTS_DATA_DIR, slug),
+        os.path.join(DEPARTMENTS_DATA_DIR, batch_name),
+        os.path.join(DEPARTMENTS_DATA_DIR, f"{slug} data"),
         os.path.join(INPUT_DIR, batch_name)
     ]
     folder_path = None
@@ -1043,14 +1038,11 @@ def run_batch_analysis():
         os.path.join(DEPARTMENTS_DATA_DIR, "pdf", branch, academic_year) if branch and academic_year else "",
         os.path.join(APP_DEPARTMENTS_DATA_DIR, "excel", branch, academic_year) if branch and academic_year else "",
         os.path.join(APP_DEPARTMENTS_DATA_DIR, "pdf", branch, academic_year) if branch and academic_year else "",
-        os.path.join(APP_BATCH_DATA_DIR, clean_batch_name),
-        os.path.join(APP_BATCH_DATA_DIR, branch, academic_year) if branch and academic_year else "",
-        os.path.join(APP_BATCH_DATA_DIR, slug),
-        os.path.join(APP_BATCH_DATA_DIR, batch_name),
-        os.path.join(BATCH_DATA_DIR, clean_batch_name),
-        os.path.join(BATCH_DATA_DIR, batch_name),
-        os.path.join(BATCH_DATA_DIR, slug),
-        os.path.join(BATCH_DATA_DIR, f"{slug} data"),
+        os.path.join(DEPARTMENTS_DATA_DIR, clean_batch_name),
+        os.path.join(DEPARTMENTS_DATA_DIR, branch, academic_year) if branch and academic_year else "",
+        os.path.join(DEPARTMENTS_DATA_DIR, slug),
+        os.path.join(DEPARTMENTS_DATA_DIR, batch_name),
+        os.path.join(DEPARTMENTS_DATA_DIR, f"{slug} data"),
         os.path.join(INPUT_DIR, batch_name)
     ]
     folder_path = None
@@ -1942,12 +1934,18 @@ def resolve_tabular_file_path(filename_or_rel: str) -> Optional[Tuple[str, str]]
     if os.path.isfile(cand_input):
         return cand_input, safe_base
 
-    # 2. BATCH_DATA_DIR / APP_BATCH_DATA_DIR relative path check (e.g. '21-22/Sem_8.xlsx')
+    # 2. DEPARTMENTS_DATA_DIR relative path check (e.g. '21-22/Sem_8.xlsx')
     clean_rel = str(filename_or_rel).replace("\\", "/").strip().lstrip("/")
-    if clean_rel.lower().startswith("batch data/"):
+    if clean_rel.lower().startswith("departments data/"):
+        clean_rel = clean_rel[17:].lstrip("/")
+    elif clean_rel.lower().startswith("departments_data/"):
+        clean_rel = clean_rel[17:].lstrip("/")
+    elif clean_rel.lower().startswith("batch data/"):
+        clean_rel = clean_rel[11:].lstrip("/")
+    elif clean_rel.lower().startswith("batch_data/"):
         clean_rel = clean_rel[11:].lstrip("/")
 
-    for base_store in [BATCH_DATA_DIR, APP_BATCH_DATA_DIR]:
+    for base_store in [DEPARTMENTS_DATA_DIR]:
         if not os.path.isdir(base_store):
             continue
         cand_batch = os.path.abspath(os.path.join(base_store, clean_rel))
@@ -1955,7 +1953,7 @@ def resolve_tabular_file_path(filename_or_rel: str) -> Optional[Tuple[str, str]]
             return cand_batch, clean_rel
 
     # 3. Walk directories to search by filename
-    for base_store in [BATCH_DATA_DIR, APP_BATCH_DATA_DIR, INPUT_DIR]:
+    for base_store in [DEPARTMENTS_DATA_DIR, INPUT_DIR]:
         if not os.path.isdir(base_store):
             continue
         for root, _, files in os.walk(base_store):
@@ -2758,9 +2756,9 @@ def _find_pdf_for_folder(folder_name: str) -> Optional[str]:
                 stem = os.path.splitext(fname)[0].lower().replace("_", "-").replace(" ", "-")
                 if stem == safe_name or stem in safe_name or safe_name in stem:
                     return os.path.join(INPUT_DIR, fname)
-    # 2. Search Batch Data/ recursively
-    if os.path.isdir(BATCH_DATA_DIR):
-        for root, dirs, files in os.walk(BATCH_DATA_DIR):
+    # 2. Search departments_data recursively
+    if os.path.isdir(DEPARTMENTS_DATA_DIR):
+        for root, dirs, files in os.walk(DEPARTMENTS_DATA_DIR):
             for fname in files:
                 if fname.lower().endswith(".pdf"):
                     stem = os.path.splitext(fname)[0].lower().replace("_", "-").replace(" ", "-")

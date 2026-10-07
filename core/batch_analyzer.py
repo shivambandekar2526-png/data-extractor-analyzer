@@ -189,7 +189,7 @@ class BatchAcademicAnalyzer:
         if app_batch_dir:
             self.app_batch_dir = os.path.abspath(app_batch_dir)
         else:
-            self.app_batch_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "batch_data"))
+            self.app_batch_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "departments_data"))
 
         if root_batch_dir:
             self.root_batch_dir = os.path.abspath(root_batch_dir)
@@ -208,8 +208,8 @@ class BatchAcademicAnalyzer:
     ) -> str:
         """
         Saves clean extracted or imported student records into the designated
-        app batch store: data_extractor_AI/batch_data/<branch>/<year>/Sem_<sem_num>.xlsx
-        or fallback data_extractor_AI/batch_data/<batch_slug>/Sem_<sem_num>.xlsx.
+        app batch store: data_extractor_AI/departments_data/<branch>/<year>/Sem_<sem_num>.xlsx
+        or fallback data_extractor_AI/departments_data/<batch_slug>/Sem_<sem_num>.xlsx.
         """
         if target_dir and os.path.isdir(target_dir):
             dest_dir = target_dir
@@ -269,9 +269,9 @@ class BatchAcademicAnalyzer:
 
     def detect_batch_files(self, batch_folder: str, target_branch: str = "AIDS") -> Dict[str, Any]:
         """
-        Inspect batch sources across both the app's designated hierarchical batch_data store
+        Inspect batch sources across both the app's designated hierarchical departments_data store
         and the root project Batch Data store. Prioritizes clean Excel files already
-        present in batch_data, and flags missing semesters for auto-extraction.
+        present in departments_data, and flags missing semesters for auto-extraction.
         """
         detected: Dict[int, Dict[str, Any]] = {}
         batch_folder_clean = batch_folder.replace("\\", "/").strip("/")
@@ -294,10 +294,30 @@ class BatchAcademicAnalyzer:
                     candidate_dirs.append(mirror_cand)
         else:
             # 2. Hierarchical or relative under app_batch_dir (checking direct, excel/, and pdf/ stores)
-            for sub_store in ["", "excel", "pdf"]:
-                p_cand = os.path.join(self.app_batch_dir, sub_store, batch_folder_clean) if sub_store else os.path.join(self.app_batch_dir, batch_folder_clean)
-                if os.path.isdir(p_cand) and p_cand not in candidate_dirs:
-                    candidate_dirs.append(p_cand)
+            path_variants = [batch_folder_clean]
+            if "/" in batch_folder_clean or "\\" in batch_folder_clean:
+                b_p, y_p = re.split(r"[/\\]", batch_folder_clean, maxsplit=1)
+                try:
+                    from .pdf_classifier import normalize_department
+                    norm_b = normalize_department(b_p)
+                except Exception:
+                    try:
+                        from pdf_classifier import normalize_department
+                        norm_b = normalize_department(b_p)
+                    except Exception:
+                        norm_b = b_p
+                norm_y = normalize_batch_slug(y_p)
+                for bv in [b_p, norm_b]:
+                    for yv in [y_p, norm_y]:
+                        combo = f"{bv}/{yv}"
+                        if combo not in path_variants:
+                            path_variants.append(combo)
+
+            for variant in path_variants:
+                for sub_store in ["", "excel", "pdf"]:
+                    p_cand = os.path.join(self.app_batch_dir, sub_store, variant) if sub_store else os.path.join(self.app_batch_dir, variant)
+                    if os.path.isdir(p_cand) and p_cand not in candidate_dirs:
+                        candidate_dirs.append(p_cand)
             if not candidate_dirs and os.path.isdir(batch_folder):
                 candidate_dirs.append(os.path.abspath(batch_folder))
 
@@ -400,8 +420,8 @@ class BatchAcademicAnalyzer:
 
     def discover_batch_hierarchy(self) -> Dict[str, Any]:
         """
-        Scans batch_data recursively for the hierarchical structure:
-        batch_data/
+        Scans departments_data recursively for the hierarchical structure:
+        departments_data/
         ├── <Branch> / <Department>/
         │   ├── <Academic_Year>/
         │   │   ├── Sem_<1-8>.(pdf|xlsx)
@@ -1859,8 +1879,8 @@ class BatchAcademicAnalyzer:
     ) -> Dict[str, Any]:
         """
         Executes end-to-end multi-semester batch analysis with live progress reporting.
-        Automatically uses existing clean Excel files in data_extractor_AI/batch_data,
-        and auto-extracts missing semesters from PDF, saving clean Excel copies to batch_data.
+        Automatically uses existing clean Excel files in data_extractor_AI/departments_data,
+        and auto-extracts missing semesters from PDF, saving clean Excel copies to departments_data.
         """
         t0 = time.time()
         if progress_cb:

@@ -1,7 +1,7 @@
 """
 Live Folder Watcher Service
 ===========================
-Monitors system folders (departments_data/excel, departments_data/pdf, output, batch_data)
+Monitors system folders (departments_data/excel, departments_data/pdf, output)
 for live changes (file creations, modifications, deletions, renames) without external dependencies.
 Broadcasts events to web clients via Server-Sent Events (SSE) or polling.
 """

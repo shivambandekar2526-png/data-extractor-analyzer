@@ -28,12 +28,12 @@ class TestHierarchicalBatchStructure(unittest.TestCase):
     def setUpClass(cls):
         cls.client = app.test_client()
         cls.app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        cls.real_batch_dir = os.path.join(cls.app_dir, "batch_data")
+        cls.real_batch_dir = os.path.join(cls.app_dir, "departments_data")
 
     def setUp(self):
         self.client = app.test_client()
         self.temp_dir = tempfile.mkdtemp(prefix="test_hier_batch_")
-        self.app_batch_dir = os.path.join(self.temp_dir, "batch_data")
+        self.app_batch_dir = os.path.join(self.temp_dir, "departments_data")
         self.output_dir = os.path.join(self.temp_dir, "output")
         os.makedirs(self.app_batch_dir, exist_ok=True)
         os.makedirs(self.output_dir, exist_ok=True)
@@ -56,7 +56,7 @@ class TestHierarchicalBatchStructure(unittest.TestCase):
 
     def test_synthetic_hierarchical_directory_discovery(self):
         # Create hierarchy:
-        # batch_data/
+        # departments_data/
         # ├── Computer_Engineering/
         # │   └── 2024-2025/
         # │       ├── Sem_3.pdf
@@ -127,7 +127,7 @@ class TestHierarchicalBatchStructure(unittest.TestCase):
         self.assertEqual(os.path.normpath(saved), os.path.normpath(os.path.join(target_dir, "Sem_3.xlsx")))
 
     def test_real_workspace_hierarchy_endpoint(self):
-        # Hits the live Flask app on data_extractor_AI/batch_data
+        # Hits the live Flask app on data_extractor_AI/departments_data
         res = self.client.get("/api/batch-analysis/hierarchy")
         self.assertEqual(res.status_code, 200)
         data = res.get_json()

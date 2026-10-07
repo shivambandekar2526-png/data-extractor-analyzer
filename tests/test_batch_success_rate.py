@@ -3,7 +3,7 @@ Unit Tests for Multi-Semester Batch Analysis & Success Rate Automation
 ======================================================================
 Tests:
 1. Batch slug normalization and file detection across dual stores
-2. Automatic clean Excel saving into data_extractor_AI/batch_data/<batch>/Sem_<N>.xlsx
+2. Automatic clean Excel saving into data_extractor_AI/departments_data/<batch>/Sem_<N>.xlsx
 3. Automatic sorting hook (auto_sort_into_app_batch_store)
 4. Accredited Success Rate calculation: P_final / (N1 + N3) * 100%
 5. Student cross-checking by PRN and Name tokens (Regular vs Lateral entry)
@@ -297,13 +297,13 @@ class TestBatchSuccessRate(unittest.TestCase):
         - Cleared KT (passed with backlogs): 41 students (50.00%).
         """
         proj_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        actual_batch_dir = os.path.join(proj_root, "batch_data")
+        actual_batch_dir = os.path.join(proj_root, "departments_data")
         analyzer = BatchAcademicAnalyzer(output_dir=self.output_dir, app_batch_dir=actual_batch_dir)
 
         detected_info = analyzer.detect_batch_files("AIDS/2021-2022", target_branch="AIDS")
         sem_files = {s["semester"]: s["full_path"] for s in detected_info["semesters_detected"]}
         if len(sem_files) < 8:
-            self.skipTest("All 8 semester files for AIDS/2021-2022 not present in batch_data")
+            self.skipTest("All 8 semester files for AIDS/2021-2022 not present in departments_data")
 
         sem_data = {}
         for s_num in range(1, 9):
