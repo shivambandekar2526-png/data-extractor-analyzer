@@ -167,6 +167,13 @@
                   <span class="drawer-active-indicator" aria-hidden="true"></span>
                 </a>
               </li>
+              <li>
+                <a href="/analysis/semester" class="drawer-nav-item" data-route="/analysis/semester" title="Semester-wise Analysis">
+                  <span class="drawer-icon-wrap"><span class="drawer-icon">📑</span></span>
+                  <span class="drawer-label">Semester-wise Analysis</span>
+                  <span class="drawer-active-indicator" aria-hidden="true"></span>
+                </a>
+              </li>
             </ul>
           </div>
 
@@ -2342,6 +2349,290 @@
     </div>
   </section>
 
+  <!-- VIEW: Semester-wise Analysis (/analysis/semester) -->
+  <section id="viewSemesterAnalysis" class="workspace-view hidden" data-view="/analysis/semester">
+    <div class="workspace-page-header">
+      <div class="workspace-title-group">
+        <div class="workspace-icon">📑</div>
+        <div>
+          <h1 class="workspace-title">Semester-wise Analysis</h1>
+          <p class="workspace-subtitle">Analyze complete cohort performance, clearance thresholds, SGPI distribution, and semester success rate for entire semesters.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 1. CASCADING SELECTION PANEL -->
+    <section class="card subject-controls-card">
+      <div class="card-header">
+        <div class="card-title-group">
+          <span class="workflow-step-badge">1</span>
+          <div>
+            <h2>Semester Analytics Configuration</h2>
+            <p class="card-subtitle">Select cohort parameters to dynamically query historical examination ledgers</p>
+          </div>
+        </div>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <span id="liveFolderWatcherBadgeSem" class="tag" style="background: rgba(16, 185, 129, 0.1); color: #059669; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 0.75rem; display: inline-flex; align-items: center; gap: 0.4rem;" title="Changes in department_data/excel or output folders update automatically without page refresh"><span style="width: 7px; height: 7px; border-radius: 50%; background: #10b981; display: inline-block;"></span> Live Folder Sync</span>
+          <span class="tag tag-accent">Semester-Level Analysis</span>
+        </div>
+      </div>
+
+      <div class="subject-selection-grid">
+        <div class="form-group">
+          <label class="control-label" for="semDepartmentSelect">
+            <strong>Department:</strong>
+          </label>
+          <select id="semDepartmentSelect" class="form-select">
+            <option value="">-- Select Department --</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="control-label" for="semBatchSelect">
+            <strong>Batch:</strong>
+          </label>
+          <select id="semBatchSelect" class="form-select" disabled>
+            <option value="">-- Select Batch --</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="control-label" for="semSemesterSelect">
+            <strong>Semester Excel Sheet:</strong>
+          </label>
+          <select id="semSemesterSelect" class="form-select" disabled>
+            <option value="">-- Select Semester Excel Sheet --</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="subject-action-bar">
+        <span id="semStatusHint" class="results-meta-text">Select Department, Batch, and Semester Excel sheet to begin</span>
+        <button type="button" id="btnRunSemesterAnalysis" class="btn btn-primary" style="padding: 0.75rem 1.75rem; font-size: 0.95rem;" disabled>
+          <span>🚀 Generate Analysis</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Empty State Before Generation -->
+    <section class="card subject-empty-card" id="semesterEmptyState">
+      <div class="workspace-empty-state">
+        <div class="empty-state-icon">📑</div>
+        <h3>Select a Semester Dataset to Begin</h3>
+        <p>Choose a Department, Batch, and Semester Excel Sheet to analyze the complete semester.</p>
+      </div>
+    </section>
+
+    <!-- Loading Spinner During Computation -->
+    <div id="semesterLoadingState" class="progress-section hidden" style="margin-bottom: 1.5rem;">
+      <div class="card" style="padding: 1.8rem; text-align: center;">
+        <span class="spinner" style="width: 28px; height: 28px; margin: 0 auto 0.8rem; display: block;"></span>
+        <strong id="semesterLoadingText">Computing deterministic semester metrics...</strong>
+      </div>
+    </div>
+
+    <!-- 2. SEMESTER ANALYTICS DASHBOARD CONTAINER -->
+    <div id="semesterResultsDashboard" class="subject-results-dashboard hidden">
+      <!-- 2. SEMESTER HEADER -->
+      <section class="card subject-header-card">
+        <div class="subject-header-grid">
+          <div class="subject-header-main">
+            <span class="subject-code-chip" id="hdrSemSemesterChip">Semester VIII</span>
+            <h2 class="subject-title" id="hdrSemTitle">Semester Performance Analysis</h2>
+            <p class="subject-dataset-label" id="hdrSemDatasetLabel">Dataset: Selected Gazette</p>
+          </div>
+          <div class="subject-meta-grid">
+            <div class="sub-meta-pill">
+              <span class="sub-meta-key">Academic Year:</span>
+              <strong class="sub-meta-val" id="hdrSemAcademicYear">2024–25</strong>
+            </div>
+            <div class="sub-meta-pill">
+              <span class="sub-meta-key">Branch:</span>
+              <strong class="sub-meta-val" id="hdrSemBranch">Computer Engineering</strong>
+            </div>
+            <div class="sub-meta-pill">
+              <span class="sub-meta-key">Semester:</span>
+              <strong class="sub-meta-val" id="hdrSemSemester">Semester VIII</strong>
+            </div>
+            <div class="sub-meta-pill">
+              <span class="sub-meta-key">Total Appeared:</span>
+              <strong class="sub-meta-val" id="hdrSemTotalAppeared">65 Students</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- Print & Export Action Bar -->
+        <div class="subject-header-actions" style="margin-top: 1rem; display: flex; justify-content: flex-end; gap: 0.75rem; align-items: center; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 0.85rem; flex-wrap: wrap;">
+          <button type="button" id="btnSemesterPrintPreview" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; padding: 0.55rem 1.15rem; font-size: 0.88rem; box-shadow: 0 2px 8px rgba(31,78,120,0.3);">
+            <span>🖨️ View & Print 1-Page Report</span>
+          </button>
+          <button type="button" id="btnSemesterExportDocx" class="btn btn-outline" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; padding: 0.55rem 1.15rem; font-size: 0.88rem; border-color: #3b82f6; color: #3b82f6;">
+            <span>📄 Export Word (.docx)</span>
+          </button>
+        </div>
+
+        <!-- Data Validation Strip -->
+        <div class="data-validation-strip" id="semesterDataValidationStrip">
+          <span class="validation-dot-green">●</span>
+          <span id="semesterDataValidationSummary">Data Verified: 65 students analyzed • 0 duplicates • 0 absent</span>
+        </div>
+      </section>
+
+      <!-- 3. SUMMARY KPI CARDS -->
+      <div class="subject-kpi-grid">
+        <div class="eda-kpi-card">
+          <span class="eda-kpi-label">STUDENTS APPEARED</span>
+          <strong class="eda-kpi-value" id="kpiSemAppeared">0</strong>
+          <span class="eda-kpi-sub">Total in Examination</span>
+        </div>
+        <div class="eda-kpi-card kpi-success">
+          <span class="eda-kpi-label">STUDENTS PASSED</span>
+          <strong class="eda-kpi-value text-success" id="kpiSemPassed">0</strong>
+          <span class="eda-kpi-sub">All Clear in Semester</span>
+        </div>
+        <div class="eda-kpi-card">
+          <span class="eda-kpi-label">STUDENTS FAILED</span>
+          <strong class="eda-kpi-value text-danger" id="kpiSemFailed">0</strong>
+          <span class="eda-kpi-sub">Semester Backlog / KT</span>
+        </div>
+        <div class="eda-kpi-card kpi-accent" style="border: 2px solid #1F4E78;">
+          <span class="eda-kpi-label" style="color: #1F4E78;">PASS PERCENTAGE</span>
+          <strong class="eda-kpi-value" id="kpiSemPassRate" style="color: #1F4E78; font-size: 1.8rem;">0.00%</strong>
+          <span class="eda-kpi-sub">Passed / Appeared</span>
+        </div>
+        <div class="eda-kpi-card">
+          <span class="eda-kpi-label">FAIL PERCENTAGE</span>
+          <strong class="eda-kpi-value text-warning" id="kpiSemFailRate">0.00%</strong>
+          <span class="eda-kpi-sub">Failed / Appeared</span>
+        </div>
+        <div class="eda-kpi-card kpi-accent" style="border: 2px solid #059669; background: rgba(5, 150, 105, 0.05);">
+          <span class="eda-kpi-label" style="color: #059669;">SEMESTER SUCCESS RATE</span>
+          <strong class="eda-kpi-value" id="kpiSemSuccessRate" style="color: #059669; font-size: 1.8rem;">0.00%</strong>
+          <span class="eda-kpi-sub">(Passed / Appeared) × 100</span>
+        </div>
+        <div class="eda-kpi-card" style="border-left: 4px solid #2563eb;">
+          <span class="eda-kpi-label" style="color: #2563eb;">FIRST CLASS & DISTINCTION</span>
+          <strong class="eda-kpi-value" id="kpiSemFirstClassDist" style="color: #2563eb;">0</strong>
+          <span class="eda-kpi-sub" id="kpiSemFirstClassDistSub">≥ 60% of students</span>
+        </div>
+      </div>
+
+      <!-- 4 & 5. SEMESTER CLEARANCE & CLASSIFICATION ROW -->
+      <div class="subject-two-col-grid">
+        <!-- 4. SEMESTER CLEARANCE -->
+        <section class="card">
+          <div class="card-header">
+            <div>
+              <h3>Semester Clearance & Success Rate Analysis</h3>
+              <p class="results-meta-text">Clearance breakdown and institutional classification</p>
+            </div>
+            <span class="tag">Clearance Status</span>
+          </div>
+          <div class="chart-and-table-wrapper">
+            <div class="chart-box" style="position: relative; height: 230px; margin-bottom: 1rem;">
+              <canvas id="chartSemesterPassFail"></canvas>
+            </div>
+            <div class="table-container" style="max-height: 220px;">
+              <table class="academic-table" id="tblSemesterPassFail">
+                <thead>
+                  <tr>
+                    <th>Status / Category</th>
+                    <th style="text-align: right;">Students</th>
+                    <th style="text-align: right;">Percentage</th>
+                  </tr>
+                </thead>
+                <tbody id="tblSemesterPassFailBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 5. CLASSIFICATION -->
+        <section class="card">
+          <div class="card-header">
+            <div>
+              <h3>Institutional Classification (Passed Students)</h3>
+              <p class="results-meta-text">Distinction, First Class, Second Class, Pass Class breakdown</p>
+            </div>
+            <span class="tag tag-accent">Grading Standard</span>
+          </div>
+          <div class="chart-and-table-wrapper">
+            <div class="chart-box" style="position: relative; height: 230px; margin-bottom: 1rem;">
+              <canvas id="chartSemesterClassification"></canvas>
+            </div>
+            <div class="table-container" style="max-height: 200px;">
+              <table class="academic-table" id="tblSemesterClassification">
+                <thead>
+                  <tr>
+                    <th>Classification</th>
+                    <th style="text-align: right;">Students</th>
+                    <th style="text-align: right;">Percentage</th>
+                  </tr>
+                </thead>
+                <tbody id="tblSemesterClassificationBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- 6. SGPI DISTRIBUTION (REPLACES MARKS DISTRIBUTION) -->
+      <section class="card" style="margin-top: 1.5rem;">
+        <div class="card-header">
+          <div>
+            <h3>SGPI Distribution</h3>
+            <p class="results-meta-text" id="sgpiDistMetaText">Distribution based on semester SGPI values from examination ledger</p>
+          </div>
+          <span class="tag">Histogram</span>
+        </div>
+        <div class="subject-two-col-grid" style="align-items: center;">
+          <div class="chart-box" style="position: relative; height: 260px;">
+            <canvas id="chartSgpiDistribution"></canvas>
+          </div>
+          <div class="table-container" style="max-height: 280px; overflow-y: auto;">
+            <table class="academic-table" id="tblSgpiDistribution">
+              <thead>
+                <tr>
+                  <th>SGPI Range</th>
+                  <th style="text-align: right;">Students</th>
+                  <th style="text-align: right;">Percentage</th>
+                </tr>
+              </thead>
+              <tbody id="tblSgpiDistributionBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 7. TOP 5 TOPPERS -->
+      <section class="card" style="margin-top: 1.5rem; margin-bottom: 2rem;">
+        <div class="card-header">
+          <div>
+            <h3>🏆 TOP 5 TOPPERS</h3>
+            <p class="results-meta-text">Ranked strictly by semester SGPI and examination performance</p>
+          </div>
+          <span class="tag tag-accent">Semester Merit Leaders</span>
+        </div>
+        <div class="table-container">
+          <table class="academic-table" id="tblSemesterTopStudents">
+            <thead>
+              <tr>
+                <th style="width: 80px; text-align: center;">Rank</th>
+                <th>Student Name</th>
+                <th>Seat No / PRN</th>
+                <th style="text-align: right;">Semester SGPI</th>
+                <th style="text-align: right;">Percentage / Score</th>
+              </tr>
+            </thead>
+            <tbody id="tblSemesterTopStudentsBody">
+              <tr><td colspan="5" style="text-align: center; color: var(--text-muted);">No student rankings generated yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </section>
+
   <!-- VIEW 5: Generated Reports (/reports) -->
   <section id="viewReports" class="workspace-view hidden" data-view="/reports">
     <div class="workspace-page-header">
@@ -3586,9 +3877,178 @@
       </div>
     </div>
 
+    <!-- 1-PAGE INSTITUTIONAL SEMESTER PRINT / PREVIEW MODAL -->
+    <div class="modal-backdrop hidden" id="modalSemesterPrintPreview" style="z-index: 10010; overflow-y: auto; padding: 1.5rem 0.5rem; display: flex; align-items: flex-start; justify-content: center;">
+      <div class="modal-card print-modal-card" style="max-width: 940px; width: 96%; background: var(--bg-card); border-radius: 12px; box-shadow: 0 16px 48px rgba(0,0,0,0.5); margin: 1rem auto; display: flex; flex-direction: column;">
+        <!-- Modal Toolbar -->
+        <div class="modal-header print-toolbar" style="padding: 0.85rem 1.4rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; background: var(--bg-card); flex-shrink: 0; position: sticky; top: 0; z-index: 20;">
+          <div class="modal-title-group" style="display: flex; align-items: center; gap: 10px;">
+            <div class="tabular-modal-icon" style="background: rgba(31, 78, 120, 0.15); color: #1F4E78; font-size: 1.25rem; width: 38px; height: 38px; border-radius: 8px; display: flex; align-items: center; justify-content: center;">🖨️</div>
+            <div>
+              <h3 style="margin: 0; font-size: 1.15rem; font-weight: 700; color: var(--text-main);">Institutional Academic Report (1-Page Preview)</h3>
+              <p class="modal-subtitle" style="margin: 2px 0 0; font-size: 0.8rem; color: var(--text-muted);">Terna Engineering College • Departmental Clearance &amp; Semester Audit Sheet</p>
+            </div>
+          </div>
+          <div style="display: flex; gap: 0.6rem; align-items: center;">
+            <button type="button" class="btn btn-primary btn-sm" id="btnPrintModalSemesterExecute" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; padding: 0.5rem 1rem;">
+              <span>🖨️ Print Now</span>
+            </button>
+            <button type="button" class="btn btn-outline btn-sm" id="btnModalSemesterExportDocx" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; padding: 0.5rem 1rem; border-color: #3b82f6; color: #3b82f6;">
+              <span>📄 Word (.docx)</span>
+            </button>
+            <button type="button" class="btn-close" id="btnCloseSemesterPrintPreviewModal" style="margin-left: 0.4rem; cursor: pointer; font-size: 1.5rem; background: none; border: none; color: var(--text-muted);">&times;</button>
+          </div>
+        </div>
+
+        <!-- Modal Body: Printable Sheet Display Container -->
+        <div class="modal-body" style="padding: 1.5rem 1rem; overflow: visible; background: #cbd5e1; display: flex; justify-content: center;">
+          <!-- A4 Sheet Surface -->
+          <div id="semesterPrintSheet" class="subject-print-sheet">
+            <!-- Sheet Header with Top-Left Terna Logo -->
+            <div class="print-header-grid" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+              <div class="print-logo-box" style="width: 76px; height: 76px; flex-shrink: 0; display: flex; align-items: center; justify-content: flex-start;">
+                <img src="/static/img/terna_logo.png" alt="Terna Engineering College Logo" style="width: 72px; height: 72px; object-fit: contain; display: block;" />
+              </div>
+              <div class="print-header-text" style="flex: 1; text-align: center; margin-right: 76px;">
+                <h1 class="print-college-name" style="margin: 0; font-size: 20px; font-weight: 800; color: #1F4E78; letter-spacing: 0.5px; text-transform: uppercase;">TERNA ENGINEERING COLLEGE</h1>
+                <h2 class="print-dept-name" id="prnSemDeptName" style="margin: 2px 0 0; font-size: 13.5px; font-weight: 700; color: #334155; text-transform: uppercase;">DEPARTMENT OF ARTIFICIAL INTELLIGENCE AND DATA SCIENCE</h2>
+                <div class="print-report-title" style="margin: 2px 0 0; font-size: 9.5px; font-weight: 600; color: #64748b; letter-spacing: 0.8px;">SEMESTER-WISE EXAMINATION PERFORMANCE &amp; SUCCESS RATE REPORT</div>
+              </div>
+            </div>
+            <div class="print-divider" style="height: 2px; background: linear-gradient(90deg, #1F4E78 0%, #3b82f6 50%, #1F4E78 100%); margin-bottom: 10px;"></div>
+
+            <!-- Metadata Block -->
+            <div class="print-meta-grid">
+              <div class="print-meta-left">
+                <div class="print-meta-row"><span class="print-meta-lbl">Batch:</span> <strong id="prnSemBatch">2021–2022</strong></div>
+                <div class="print-meta-row"><span class="print-meta-lbl">Semester:</span> <strong id="prnSemSemester" class="print-subject-name">Semester VIII</strong></div>
+                <div class="print-meta-row"><span class="print-meta-lbl">Level:</span> <strong>Complete Semester Dataset</strong></div>
+              </div>
+              <div class="print-meta-right">
+                <div class="print-meta-row"><span class="print-meta-lbl">Academic Year:</span> <span id="prnSemAcadYear">2024–25</span></div>
+                <div class="print-meta-row"><span class="print-meta-lbl">Total Appeared:</span> <strong id="prnSemTotalAppeared">65 Students</strong></div>
+                <div class="print-meta-row"><span class="print-meta-lbl">Report Date:</span> <span id="prnSemReportDate">07-Oct-2026</span></div>
+              </div>
+            </div>
+
+            <!-- 1. Semester Clearance & Success Rate Table with Donut Chart -->
+            <div class="print-section">
+              <div class="print-section-title">1. SEMESTER CLEARANCE &amp; SUCCESS RATE ANALYSIS</div>
+              <div class="print-table-graph-split">
+                <div class="print-table-wrap">
+                  <table class="print-table" id="prnTblSemesterClearance">
+                    <thead>
+                      <tr>
+                        <th>Clearance Status / Performance Metric</th>
+                        <th style="text-align: right; width: 80px;">Count</th>
+                        <th style="text-align: right; width: 95px;">Percentage</th>
+                      </tr>
+                    </thead>
+                    <tbody id="prnTblSemesterClearanceBody"></tbody>
+                  </table>
+                </div>
+                <div class="print-graph-wrap" style="width: 255px; min-width: 255px; max-width: 255px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden;">
+                  <div style="font-size: 9.5px; font-weight: 700; color: #1F4E78; margin-bottom: 2px;">Semester Clearance</div>
+                  <div style="position: relative; width: 235px; height: 160px; max-width: 235px; max-height: 160px; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                    <canvas id="prnChartSemesterClearance" width="235" height="160" style="width: 235px !important; height: 160px !important; max-width: 235px !important; max-height: 160px !important; display: block;"></canvas>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 2. Institutional Classification & SGPI Distribution -->
+            <div class="print-section">
+              <div class="print-section-title">2. INSTITUTIONAL CLASSIFICATION &amp; SGPI DISTRIBUTION</div>
+              <div class="print-dual-grid">
+                <!-- Classification Table -->
+                <div class="print-dual-col">
+                  <div class="print-sub-heading">Institutional Classification (Passed Students)</div>
+                  <table class="print-table" id="prnTblSemClassification">
+                    <thead>
+                      <tr>
+                        <th>Classification</th>
+                        <th style="text-align: right; width: 70px;">Count</th>
+                        <th style="text-align: right; width: 80px;">Share</th>
+                      </tr>
+                    </thead>
+                    <tbody id="prnTblSemClassificationBody"></tbody>
+                  </table>
+                  <div class="print-mini-chart-container" style="margin-top: 6px; text-align: center; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 5px; padding: 4px; overflow: hidden;">
+                    <div style="font-size: 9px; font-weight: 700; color: #1F4E78; margin-bottom: 2px;">Institutional Classification Chart</div>
+                    <div style="width: 240px; height: 110px; max-width: 240px; max-height: 110px; margin: 0 auto; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                      <canvas id="prnChartSemClassification" width="240" height="110" style="width: 240px !important; height: 110px !important; max-width: 240px !important; max-height: 110px !important; display: block;"></canvas>
+                    </div>
+                  </div>
+                </div>
+                <!-- SGPI Range Distribution -->
+                <div class="print-dual-col">
+                  <div class="print-sub-heading">SGPI Score Distribution</div>
+                  <table class="print-table" id="prnTblSemSgpiDist">
+                    <thead>
+                      <tr>
+                        <th>SGPI Range</th>
+                        <th style="text-align: right; width: 70px;">Count</th>
+                        <th style="text-align: right; width: 80px;">Share</th>
+                      </tr>
+                    </thead>
+                    <tbody id="prnTblSemSgpiDistBody"></tbody>
+                  </table>
+                  <div class="print-mini-chart-container" style="margin-top: 6px; text-align: center; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 5px; padding: 4px; overflow: hidden;">
+                    <div style="font-size: 9px; font-weight: 700; color: #1F4E78; margin-bottom: 2px;">SGPI Score Distribution Chart</div>
+                    <div style="width: 240px; height: 110px; max-width: 240px; max-height: 110px; margin: 0 auto; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                      <canvas id="prnChartSemSgpiDist" width="240" height="110" style="width: 240px !important; height: 110px !important; max-width: 240px !important; max-height: 110px !important; display: block;"></canvas>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 3. Top 5 Semester Merit Leaders Table -->
+            <div class="print-section">
+              <div class="print-section-title">3. TOP 5 SEMESTER MERIT LEADERS (RANKED BY SGPI)</div>
+              <div style="width: 100%;">
+                <table class="print-table" id="prnTblSemToppers">
+                  <thead>
+                    <tr>
+                      <th style="width: 85px; text-align: center;">Rank</th>
+                      <th>Student Name</th>
+                      <th style="width: 140px; text-align: center;">Seat No / PRN</th>
+                      <th style="text-align: right; width: 110px;">Semester SGPI</th>
+                      <th style="text-align: right; width: 105px;">Percentage</th>
+                    </tr>
+                  </thead>
+                  <tbody id="prnTblSemToppersBody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Institutional Signatures Block -->
+            <div class="print-signatures">
+              <div class="print-sig-col">
+                <div class="print-sig-line">__________________________</div>
+                <strong>Class Advisor / In-Charge</strong>
+                <span class="print-sig-sub" id="prnSemSigDept1">Department of AI &amp; DS</span>
+              </div>
+              <div class="print-sig-col">
+                <div class="print-sig-line">__________________________</div>
+                <strong>Academic Coordinator</strong>
+                <span class="print-sig-sub">Academic Cell</span>
+              </div>
+              <div class="print-sig-col">
+                <div class="print-sig-line">__________________________</div>
+                <strong>Head of Department (HOD)</strong>
+                <span class="print-sig-sub" id="prnSemSigDept2">Terna Engineering College</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Print & Sheet Specific Styles (Spans Full A4 Sheet with Balanced Margins) -->
     <style id="subjectPrintStyles">
-      #modalSubjectPrintPreview {
+      #modalSubjectPrintPreview,
+      #modalSemesterPrintPreview {
         display: flex !important;
         align-items: flex-start !important;
         justify-content: center !important;
@@ -3598,7 +4058,8 @@
         background: rgba(4, 7, 15, 0.85) !important;
       }
 
-      #modalSubjectPrintPreview.hidden {
+      #modalSubjectPrintPreview.hidden,
+      #modalSemesterPrintPreview.hidden {
         display: none !important;
       }
 
@@ -3826,7 +4287,7 @@
         }
 
         /* Hide entire interface except print sheet */
-        body > *:not(#modalSubjectPrintPreview),
+        body > *:not(#modalSubjectPrintPreview):not(#modalSemesterPrintPreview),
         .workspace-sidebar,
         .workspace-header,
         .tab-navigation,
@@ -3835,11 +4296,14 @@
         .btn,
         .data-extractor-nav,
         #subjectResultsDashboard,
-        #viewSubjectAnalysis > *:not(#modalSubjectPrintPreview) {
+        #semesterResultsDashboard,
+        #viewSubjectAnalysis > *:not(#modalSubjectPrintPreview),
+        #viewSemesterAnalysis > *:not(#modalSemesterPrintPreview) {
           display: none !important;
         }
 
-        #modalSubjectPrintPreview {
+        #modalSubjectPrintPreview:not(.hidden),
+        #modalSemesterPrintPreview:not(.hidden) {
           position: static !important;
           display: block !important;
           background: transparent !important;
@@ -3849,6 +4313,11 @@
           height: auto !important;
           box-shadow: none !important;
           overflow: visible !important;
+        }
+
+        #modalSubjectPrintPreview.hidden,
+        #modalSemesterPrintPreview.hidden {
+          display: none !important;
         }
 
         .print-modal-card {

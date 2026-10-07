@@ -757,6 +757,7 @@ def _run_batch_analysis_worker(
 @app.route("/historical", methods=["GET"])
 @app.route("/analysis", methods=["GET"])
 @app.route("/analysis/subject", methods=["GET"])
+@app.route("/analysis/semester", methods=["GET"])
 @app.route("/reports", methods=["GET"])
 @app.route("/settings", methods=["GET"])
 def index_route():
@@ -3648,6 +3649,141 @@ def export_subject_analysis_docx():
         )
     except Exception as e:
         logger.error(f"Docx export failed: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": f"Docx generation failed: {str(e)}"
+        }), 500
+
+
+
+# =================================================================
+# PHASE 5: SEMESTER-WISE ACADEMIC ANALYSIS ROUTES
+# =================================================================
+
+@app.route("/api/semester-analysis/options", methods=["GET"])
+def get_semester_analysis_options():
+    """
+    Returns available Department -> Batch -> Semester hierarchy
+    for Semester-Wise Analysis.
+    """
+    dept_hierarchy = get_departments_data_excel_hierarchy()
+    return jsonify({
+        "success": True,
+        "departments": dept_hierarchy
+    })
+
+
+@app.route("/api/semester-analysis/analyze", methods=["POST"])
+def run_semester_analysis():
+    """
+    Executes complete deterministic semester-wise academic analysis.
+    Calculates Appeared, Passed, Failed, Pass %, Fail %, Semester Success Rate,
+    Institutional Classifications, SGPI Distribution, and Top 5 Semester Toppers.
+    """
+    data = request.get_json(silent=True) or {}
+    dataset_id = data.get("dataset_id", "").strip()
+
+    if not dataset_id:
+        return jsonify({"success": False, "error": "'dataset_id' is required."}), 400
+
+    records, catalog, meta = resolve_subject_dataset(dataset_id)
+    if not records:
+        return jsonify({
+            "success": False,
+            "error": f"No student records found in dataset '{dataset_id}'."
+        }), 404
+
+    # Inject overrides if provided from client selection
+    if data.get("branch"):
+        meta["branch"] = data["branch"]
+    if data.get("academic_year"):
+        meta["academic_year"] = data["academic_year"]
+    if data.get("semester"):
+        meta["semester"] = data["semester"]
+
+    try:
+        from core.semester_analyzer import analyze_semester_performance
+        analysis_result = analyze_semester_performance(
+            records=records,
+            dataset_meta=meta,
+            catalog=catalog
+        )
+        return jsonify(analysis_result)
+    except Exception as e:
+        logger.error(f"Semester analysis computation failed: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/semester-analysis/export-docx", methods=["POST"])
+def export_semester_analysis_docx():
+    """
+    Generates and downloads publication-grade, 1-page Microsoft Word (.docx)
+    academic performance report for the entire semester.
+    """
+    import importlib
+    import core.semester_docx_exporter
+    importlib.reload(core.semester_docx_exporter)
+    generate_semester_analysis_docx = core.semester_docx_exporter.generate_semester_analysis_docx
+    data = request.get_json(silent=True) or {}
+
+    analysis_data = data.get("analysis_data")
+    department = data.get("department", "").strip()
+    batch = data.get("batch", "").strip()
+    semester = data.get("semester", "").strip()
+
+    if not analysis_data:
+        dataset_id = data.get("dataset_id", "").strip()
+        if not dataset_id:
+            return jsonify({
+                "success": False,
+                "error": "Either 'analysis_data' or 'dataset_id' is required."
+            }), 400
+
+        records, catalog, meta = resolve_subject_dataset(dataset_id)
+        if not records:
+            return jsonify({
+                "success": False,
+                "error": f"No student records found in dataset '{dataset_id}'."
+            }), 404
+
+        if department:
+            meta["branch"] = department
+        if batch:
+            meta["academic_year"] = batch
+        if semester:
+            meta["semester"] = semester
+
+        try:
+            from core.semester_analyzer import analyze_semester_performance
+            analysis_data = analyze_semester_performance(records, dataset_meta=meta, catalog=catalog)
+        except Exception as e:
+            return jsonify({"success": False, "error": f"Failed to compute analysis: {str(e)}"}), 500
+
+    try:
+        hdr = analysis_data.get("header", {})
+        dept_val = department or hdr.get("department") or hdr.get("branch") or "Department"
+        batch_val = batch or hdr.get("batch") or hdr.get("academic_year") or "Batch"
+        sem_val = semester or hdr.get("semester") or "Semester"
+
+        buf = generate_semester_analysis_docx(
+            analysis_data=analysis_data,
+            department_name=dept_val,
+            batch_name=batch_val,
+            semester_name=sem_val
+        )
+
+        safe_sem = "".join(c for c in sem_val if c.isalnum() or c in ("_", "-"))
+        safe_batch = "".join(c for c in batch_val if c.isalnum() or c in ("_", "-"))
+        filename = f"Terna_Semester_Analysis_{safe_sem}_{safe_batch}.docx"
+
+        return send_file(
+            buf,
+            mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            as_attachment=True,
+            download_name=filename
+        )
+    except Exception as e:
+        logger.error(f"Semester Docx export failed: {e}", exc_info=True)
         return jsonify({
             "success": False,
             "error": f"Docx generation failed: {str(e)}"

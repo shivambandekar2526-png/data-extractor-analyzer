@@ -40,6 +40,11 @@ let subjectChartInstances = {};
 let subjectOptionsCache = null;
 let currentSubjectAnalysisResult = null;
 
+// Phase 5 Semester Analytics Variables
+let semesterChartInstances = {};
+let semesterOptionsCache = null;
+let currentSemesterAnalysisResult = null;
+
 document.addEventListener("DOMContentLoaded", () => {
   const initFns = [
     ["initTheme", initTheme],
@@ -61,9 +66,11 @@ document.addEventListener("DOMContentLoaded", () => {
     ["initDataCleaningUI", initDataCleaningUI],
     ["initInteractiveExcelGrid", initInteractiveExcelGrid],
     ["initSubjectAnalysisUI", initSubjectAnalysisUI],
+    ["initSemesterAnalysisUI", initSemesterAnalysisUI],
     ["initSettingsView", initSettingsView],
     ["initLiveFolderActionListener", initLiveFolderActionListener],
-    ["initSubjectPrintAndExportHandlers", initSubjectPrintAndExportHandlers]
+    ["initSubjectPrintAndExportHandlers", initSubjectPrintAndExportHandlers],
+    ["initSemesterPrintAndExportHandlers", initSemesterPrintAndExportHandlers]
   ];
   for (const [name, fn] of initFns) {
     try {
@@ -177,6 +184,7 @@ const APP_ROUTES = {
   "/historical": { id: "viewHistorical", title: "Historical Data" },
   "/analysis": { id: "viewAnalysis", title: "Analysis Overview" },
   "/analysis/subject": { id: "viewSubjectAnalysis", title: "Subject-wise Analysis" },
+  "/analysis/semester": { id: "viewSemesterAnalysis", title: "Semester-wise Analysis" },
   "/reports": { id: "viewReports", title: "Generated Reports" },
   "/settings": { id: "viewSettings", title: "Settings" }
 };
@@ -188,6 +196,8 @@ function normalizeRoute(path) {
   // Strip trailing slash
   const clean = path.replace(/\/+$/, "") || "/";
   if (APP_ROUTES[clean]) return clean;
+  if (clean.startsWith("/analysis/semester")) return "/analysis/semester";
+  if (clean.startsWith("/analysis/subject")) return "/analysis/subject";
   if (clean.startsWith("/analysis/")) return "/analysis/subject";
   return "/extract";
 }
@@ -269,6 +279,8 @@ function navigateTo(route, pushState = true) {
     if (typeof loadBatchSuiteDatasets === "function") loadBatchSuiteDatasets();
   } else if (targetRoute === "/analysis/subject") {
     if (typeof initSubjectAnalysisUI === "function") initSubjectAnalysisUI();
+  } else if (targetRoute === "/analysis/semester") {
+    if (typeof initSemesterAnalysisUI === "function") initSemesterAnalysisUI();
   } else if (targetRoute === "/settings") {
     if (typeof initSettingsView === "function") initSettingsView();
   }
@@ -1550,6 +1562,915 @@ function renderPracticalChart(distObj) {
 }
 
 // ==========================================================================
+// PHASE 5: SEMESTER-WISE ACADEMIC ANALYSIS FRONTEND CONTROLLER
+// ==========================================================================
+
+async function initSemesterAnalysisUI() {
+  const deptSelect = document.getElementById("semDepartmentSelect");
+  const batchSelect = document.getElementById("semBatchSelect");
+  const semSelect = document.getElementById("semSemesterSelect");
+  const btnRun = document.getElementById("btnRunSemesterAnalysis");
+  const statusHint = document.getElementById("semStatusHint");
+
+  if (!deptSelect || !btnRun) return;
+
+  // Prevent duplicate binding
+  if (deptSelect.dataset.initialized === "true") return;
+  deptSelect.dataset.initialized = "true";
+
+  let hierarchyCache = [];
+  let selectedDeptObj = null;
+  let selectedBatchObj = null;
+
+  try {
+    statusHint.textContent = "Loading departments from department_data/excel...";
+    const res = await fetch("/api/semester-analysis/options");
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || "Failed to load options");
+
+    semesterOptionsCache = data;
+    hierarchyCache = data.departments || [];
+
+    // 1. Populate Department Folders
+    deptSelect.innerHTML = `<option value="">-- Select Department --</option>`;
+    hierarchyCache.forEach(d => {
+      const opt = document.createElement("option");
+      opt.value = d.id;
+      opt.textContent = `${d.name} (${d.folder})`;
+      deptSelect.appendChild(opt);
+    });
+
+    statusHint.textContent = "Select Department folder to begin";
+  } catch (err) {
+    console.error("Error loading semester analysis options:", err);
+    statusHint.textContent = "Failed to load department hierarchy. Please refresh.";
+    return;
+  }
+
+  // 2. Cascade: Department -> Batch Folder
+  deptSelect.addEventListener("change", () => {
+    const selDeptId = deptSelect.value;
+    batchSelect.innerHTML = `<option value="">-- Select Batch --</option>`;
+    semSelect.innerHTML = `<option value="">-- Select Semester Sheet --</option>`;
+
+    batchSelect.disabled = !selDeptId;
+    semSelect.disabled = true;
+    btnRun.disabled = true;
+    selectedDeptObj = null;
+    selectedBatchObj = null;
+
+    if (!selDeptId) {
+      statusHint.textContent = "Select Department folder to continue";
+      return;
+    }
+
+    selectedDeptObj = hierarchyCache.find(d => d.id === selDeptId);
+    if (!selectedDeptObj || !selectedDeptObj.batches || selectedDeptObj.batches.length === 0) {
+      statusHint.textContent = "No batch folders found inside selected department.";
+      return;
+    }
+
+    selectedDeptObj.batches.forEach(b => {
+      const opt = document.createElement("option");
+      opt.value = b.folder;
+      opt.textContent = b.name;
+      batchSelect.appendChild(opt);
+    });
+
+    statusHint.textContent = `Department selected. Select Batch folder inside ${selectedDeptObj.folder}.`;
+  });
+
+  // 3. Cascade: Batch -> Semester Excel Sheet
+  batchSelect.addEventListener("change", () => {
+    const selBatchFolder = batchSelect.value;
+    semSelect.innerHTML = `<option value="">-- Select Semester Excel Sheet --</option>`;
+
+    semSelect.disabled = !selBatchFolder;
+    btnRun.disabled = true;
+    selectedBatchObj = null;
+
+    if (!selBatchFolder || !selectedDeptObj) {
+      statusHint.textContent = "Select Batch folder to continue";
+      return;
+    }
+
+    selectedBatchObj = (selectedDeptObj.batches || []).find(b => b.folder === selBatchFolder);
+    if (!selectedBatchObj || !selectedBatchObj.semesters || selectedBatchObj.semesters.length === 0) {
+      statusHint.textContent = "No Excel sheets found inside selected batch.";
+      return;
+    }
+
+    selectedBatchObj.semesters.forEach(s => {
+      const opt = document.createElement("option");
+      opt.value = s.dataset_id;
+      opt.dataset.relPath = s.rel_path;
+      opt.textContent = s.display_name;
+      semSelect.appendChild(opt);
+    });
+
+    statusHint.textContent = `Batch ${selBatchFolder} selected. Select Semester Excel sheet.`;
+  });
+
+  // 4. Semester Sheet Selection -> Enable Generate Button directly (No subject dropdown)
+  semSelect.addEventListener("change", () => {
+    const hasSheet = Boolean(semSelect.value);
+    btnRun.disabled = !hasSheet;
+    if (hasSheet) {
+      statusHint.textContent = "Ready! Click 'Generate Analysis' to compute complete semester metrics.";
+    } else {
+      statusHint.textContent = "Choose a Semester Excel sheet to enable analysis generation.";
+    }
+  });
+
+  // Live Action Hierarchy Reloader (Dispatched automatically when folders update)
+  window.reloadSemesterAnalysisHierarchy = async function(preserveCurrentSelection = true) {
+    const prevDept = preserveCurrentSelection ? deptSelect.value : "";
+    const prevBatch = preserveCurrentSelection ? batchSelect.value : "";
+    const prevSem = preserveCurrentSelection ? semSelect.value : "";
+
+    try {
+      const res = await fetch("/api/semester-analysis/options");
+      const data = await res.json();
+      if (!data.success) return;
+
+      semesterOptionsCache = data;
+      hierarchyCache = data.departments || [];
+
+      // Re-render Departments
+      deptSelect.innerHTML = `<option value="">-- Select Department --</option>`;
+      hierarchyCache.forEach(d => {
+        const opt = document.createElement("option");
+        opt.value = d.id;
+        opt.textContent = `${d.name} (${d.folder})`;
+        deptSelect.appendChild(opt);
+      });
+
+      if (prevDept && hierarchyCache.some(d => d.id === prevDept)) {
+        deptSelect.value = prevDept;
+        selectedDeptObj = hierarchyCache.find(d => d.id === prevDept);
+
+        // Re-render Batches
+        batchSelect.innerHTML = `<option value="">-- Select Batch --</option>`;
+        (selectedDeptObj.batches || []).forEach(b => {
+          const opt = document.createElement("option");
+          opt.value = b.folder;
+          opt.textContent = b.name;
+          batchSelect.appendChild(opt);
+        });
+        batchSelect.disabled = false;
+
+        if (prevBatch && (selectedDeptObj.batches || []).some(b => b.folder === prevBatch)) {
+          batchSelect.value = prevBatch;
+          selectedBatchObj = (selectedDeptObj.batches || []).find(b => b.folder === prevBatch);
+
+          // Re-render Semesters
+          semSelect.innerHTML = `<option value="">-- Select Semester Excel Sheet --</option>`;
+          (selectedBatchObj.semesters || []).forEach(s => {
+            const opt = document.createElement("option");
+            opt.value = s.dataset_id;
+            opt.dataset.relPath = s.rel_path;
+            opt.textContent = s.display_name;
+            semSelect.appendChild(opt);
+          });
+          semSelect.disabled = false;
+
+          if (prevSem && (selectedBatchObj.semesters || []).some(s => s.dataset_id === prevSem)) {
+            semSelect.value = prevSem;
+            btnRun.disabled = false;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[SemesterAnalysis] Live reload error:", e);
+    }
+  };
+
+  // 5. Generate Analysis Action
+  btnRun.addEventListener("click", async () => {
+    const datasetId = semSelect.value;
+    const selDeptText = deptSelect.options[deptSelect.selectedIndex]?.text || "";
+    const selBatchText = batchSelect.options[batchSelect.selectedIndex]?.text || "";
+    const selSemText = semSelect.options[semSelect.selectedIndex]?.text || "";
+
+    if (!datasetId) return;
+
+    const emptyCard = document.getElementById("semesterEmptyState");
+    const loadingCard = document.getElementById("semesterLoadingState");
+    const dashboard = document.getElementById("semesterResultsDashboard");
+
+    if (emptyCard) emptyCard.classList.add("hidden");
+    if (dashboard) dashboard.classList.add("hidden");
+    if (loadingCard) loadingCard.classList.remove("hidden");
+
+    btnRun.disabled = true;
+    statusHint.textContent = "Computing deterministic semester analysis from Excel...";
+
+    try {
+      const res = await fetch("/api/semester-analysis/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dataset_id: datasetId,
+          academic_year: selBatchText,
+          branch: selDeptText,
+          semester: selSemText
+        })
+      });
+
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || "Analysis failed");
+
+      currentSemesterAnalysisResult = data;
+      renderSemesterAnalysisResults(data);
+
+      if (loadingCard) loadingCard.classList.add("hidden");
+      if (dashboard) dashboard.classList.remove("hidden");
+      btnRun.disabled = false;
+      statusHint.textContent = `Analysis generated for complete ${data.header?.semester || "Semester"}!`;
+
+      // Scroll smoothly to dashboard
+      dashboard.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (err) {
+      console.error("Semester analysis error:", err);
+      if (loadingCard) loadingCard.classList.add("hidden");
+      if (emptyCard) emptyCard.classList.remove("hidden");
+      btnRun.disabled = false;
+      statusHint.textContent = `Analysis error: ${err.message}`;
+      alert(`Semester analysis computation failed: ${err.message}`);
+    }
+  });
+}
+
+function destroySemesterChart(key) {
+  if (semesterChartInstances[key]) {
+    try {
+      semesterChartInstances[key].destroy();
+    } catch (e) {}
+    delete semesterChartInstances[key];
+  }
+}
+
+function renderSemesterAnalysisResults(data) {
+  const hdr = data.header || {};
+  const val = data.validation || {};
+  const semSum = data.semester_summary || {};
+  const sgpiDist = data.sgpi_distribution || {};
+  const topStudents = data.top_students || [];
+
+  // 1. Header Card
+  const setText = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+
+  setText("hdrSemSemesterChip", hdr.semester || "Semester");
+  setText("hdrSemTitle", `${hdr.semester || "Semester"} Performance Analysis`);
+  setText("hdrSemDatasetLabel", `Dataset: ${hdr.dataset_name || "Selected Examination Ledger"}`);
+  setText("hdrSemAcademicYear", hdr.academic_year || "N/A");
+  setText("hdrSemBranch", hdr.branch || "Engineering");
+  setText("hdrSemSemester", hdr.semester || "N/A");
+  setText("hdrSemTotalAppeared", `${semSum.appeared || 0} Students`);
+
+  const auditStrip = document.getElementById("semesterDataValidationSummary");
+  if (auditStrip) {
+    auditStrip.textContent = `Data Verified: ${val.valid_records || 0} students analyzed • ${val.duplicates || 0} duplicates • ${val.absent || 0} absent`;
+  }
+
+  // 2. Summary KPI Cards
+  setText("kpiSemAppeared", semSum.appeared || 0);
+  setText("kpiSemPassed", semSum.passed || 0);
+  setText("kpiSemFailed", semSum.failed || 0);
+  setText("kpiSemPassRate", `${(semSum.pass_rate || 0).toFixed(2)}%`);
+  setText("kpiSemFailRate", `${(semSum.fail_rate || 0).toFixed(2)}%`);
+  setText("kpiSemSuccessRate", `${(semSum.success_rate || 0).toFixed(2)}%`);
+  setText("kpiSemFirstClassDist", semSum.first_class_and_dist_count || 0);
+  setText("kpiSemFirstClassDistSub", `≥ 60% (${(semSum.first_class_and_dist_pct || 0).toFixed(2)}%)`);
+
+  // 3. Semester Clearance Table & Chart
+  const pfTbody = document.getElementById("tblSemesterPassFailBody");
+  if (pfTbody) {
+    pfTbody.innerHTML = "";
+    (semSum.pass_fail_table || []).forEach(row => {
+      const tr = document.createElement("tr");
+      let dotColor = "#3b82f6";
+      let textColor = "#1e293b";
+      if (row.status === "Passed") {
+        dotColor = "#10b981";
+        textColor = "#10b981";
+      } else if (row.status === "Failed") {
+        dotColor = "#ef4444";
+        textColor = "#ef4444";
+      } else if (row.status.includes("First Class & Distinction")) {
+        dotColor = "#2563eb";
+        textColor = "#2563eb";
+      } else if (row.status.includes("Distinction")) {
+        dotColor = "#7c3aed";
+        textColor = "#7c3aed";
+      } else if (row.status.includes("First Class")) {
+        dotColor = "#0284c7";
+        textColor = "#0284c7";
+      }
+
+      tr.innerHTML = `
+        <td>
+          <span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:${dotColor}; margin-right:8px; vertical-align:middle;"></span>
+          <strong style="color: ${textColor};">${row.status}</strong>
+        </td>
+        <td style="text-align: right; font-weight: 600;">${row.students}</td>
+        <td style="text-align: right; font-weight: 600;">${row.percentage.toFixed(2)}%</td>
+      `;
+      pfTbody.appendChild(tr);
+    });
+  }
+  renderSemesterPassFailChart(semSum.pass_fail_table || []);
+
+  // 4. Classification Table & Chart
+  const classTbody = document.getElementById("tblSemesterClassificationBody");
+  if (classTbody) {
+    classTbody.innerHTML = "";
+    const cTable = semSum.classification?.table || [];
+    cTable.forEach(row => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><strong>${row.classification}</strong></td>
+        <td style="text-align: right; font-weight: 600;">${row.students}</td>
+        <td style="text-align: right; font-weight: 600;">${row.percentage.toFixed(2)}%</td>
+      `;
+      classTbody.appendChild(tr);
+    });
+  }
+  renderSemesterClassificationChart(semSum.classification || {});
+
+  // 5. SGPI Distribution Table & Chart (Replaces Marks Distribution)
+  const sgpiMeta = document.getElementById("sgpiDistMetaText");
+  if (sgpiMeta) {
+    sgpiMeta.textContent = `Distribution of students based on semester SGPI (Average SGPI: ${semSum.avg_sgpi || "N/A"})`;
+  }
+  const sgpiTbody = document.getElementById("tblSgpiDistributionBody");
+  if (sgpiTbody) {
+    sgpiTbody.innerHTML = "";
+    const sTable = sgpiDist.table || [];
+    sTable.forEach(row => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><strong>${row.range}</strong></td>
+        <td style="text-align: right; font-weight: 600;">${row.students}</td>
+        <td style="text-align: right; font-weight: 600;">${row.percentage.toFixed(2)}%</td>
+      `;
+      sgpiTbody.appendChild(tr);
+    });
+  }
+  renderSgpiDistributionChart(sgpiDist || {});
+
+  // 6. Top 5 Students Table (Ranked strictly by Semester SGPI)
+  const topTbody = document.getElementById("tblSemesterTopStudentsBody");
+  if (topTbody) {
+    topTbody.innerHTML = "";
+    if (topStudents.length === 0) {
+      topTbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">No student rankings generated yet.</td></tr>`;
+    } else {
+      topStudents.forEach(st => {
+        const tr = document.createElement("tr");
+        let medal = "";
+        let badgeClass = "rank-badge-def";
+        if (st.rank === 1) { medal = "🥇 "; badgeClass = "rank-badge-1"; }
+        else if (st.rank === 2) { medal = "🥈 "; badgeClass = "rank-badge-2"; }
+        else if (st.rank === 3) { medal = "🥉 "; badgeClass = "rank-badge-3"; }
+
+        const sgpiDisplay = st.sgpi !== null && st.sgpi !== undefined ? Number(st.sgpi).toFixed(2) : "—";
+        const pctDisplay = st.percentage !== null && st.percentage !== undefined ? `${Number(st.percentage).toFixed(2)}%` : (st.marks ? `${st.marks} Marks` : "—");
+
+        tr.innerHTML = `
+          <td style="text-align: center;">
+            <span class="rank-badge ${badgeClass}">${medal}${st.rank}</span>
+          </td>
+          <td><strong>${st.student_name}</strong></td>
+          <td><code>${st.seat_or_prn}</code></td>
+          <td style="text-align: right; font-weight: 700; color: #38bdf8;">${sgpiDisplay}</td>
+          <td style="text-align: right; font-weight: 700; color: #10b981;">${pctDisplay}</td>
+        `;
+        topTbody.appendChild(tr);
+      });
+    }
+  }
+
+  // Initialize Print & Word Export buttons
+  initSemesterPrintAndExportHandlers();
+}
+
+// Chart.js Visualizers for Semester Analytics
+function renderSemesterPassFailChart(tableData) {
+  destroySemesterChart("semPassFail");
+  const ctx = document.getElementById("chartSemesterPassFail");
+  if (!ctx || typeof Chart === "undefined") return;
+
+  const labels = tableData.map(d => d.status);
+  const dataCounts = tableData.map(d => d.students);
+  const colorMap = {
+    "Passed": "#10b981",
+    "Failed": "#ef4444",
+    "First Class & Distinction (≥60%)": "#2563eb",
+    "First Class with Distinction (≥75%)": "#7c3aed",
+    "First Class (60% to 74.99%)": "#0284c7"
+  };
+  const bgColors = labels.map(lbl => colorMap[lbl] || "#3b82f6");
+
+  semesterChartInstances["semPassFail"] = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: labels,
+      datasets: [{
+        label: "Students",
+        data: dataCounts,
+        backgroundColor: bgColors,
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => ` ${ctx.label}: ${ctx.raw} students`
+          }
+        }
+      },
+      scales: {
+        y: { beginAtZero: true, ticks: { precision: 0 } },
+        x: { ticks: { font: { size: 10 } } }
+      }
+    }
+  });
+}
+
+function renderSemesterClassificationChart(classObj) {
+  destroySemesterChart("semClassification");
+  const ctx = document.getElementById("chartSemesterClassification");
+  if (!ctx || typeof Chart === "undefined") return;
+
+  const chartInfo = classObj.chart || {};
+  const labels = chartInfo.labels || ["Distinction", "First Class", "Second Class", "Pass Class"];
+  const counts = chartInfo.counts || [0, 0, 0, 0];
+
+  semesterChartInstances["semClassification"] = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: labels,
+      datasets: [{
+        label: "Students",
+        data: counts,
+        backgroundColor: ["#6366f1", "#3b82f6", "#06b6d4", "#64748b"],
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false }
+      },
+      scales: {
+        y: { beginAtZero: true, ticks: { precision: 0 } }
+      }
+    }
+  });
+}
+
+function renderSgpiDistributionChart(distObj) {
+  destroySemesterChart("semSgpiDist");
+  const ctx = document.getElementById("chartSgpiDistribution");
+  if (!ctx || typeof Chart === "undefined") return;
+
+  const chartInfo = distObj.chart || {};
+  const labels = chartInfo.labels || [];
+  const counts = chartInfo.counts || [];
+
+  semesterChartInstances["semSgpiDist"] = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: labels,
+      datasets: [{
+        label: "Number of Students",
+        data: counts,
+        backgroundColor: "rgba(56, 189, 248, 0.75)",
+        borderColor: "#38bdf8",
+        borderWidth: 1,
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (c) => ` SGPI ${c.label}: ${c.raw} students`
+          }
+        }
+      },
+      scales: {
+        y: { beginAtZero: true, ticks: { precision: 0 } },
+        x: { grid: { display: false } }
+      }
+    }
+  });
+}
+
+// ==========================================================================
+// SEMESTER ANALYSIS 1-PAGE PRINT PREVIEW & WORD (.DOCX) EXPORT
+// ==========================================================================
+
+function initSemesterPrintAndExportHandlers() {
+  const btnPrint = document.getElementById("btnSemesterPrintPreview");
+  const btnDocx = document.getElementById("btnSemesterExportDocx");
+  const btnModalPrint = document.getElementById("btnPrintModalSemesterExecute");
+  const btnModalDocx = document.getElementById("btnModalSemesterExportDocx");
+  const btnCloseModal = document.getElementById("btnCloseSemesterPrintPreviewModal");
+  const modal = document.getElementById("modalSemesterPrintPreview");
+
+  if (btnPrint && !btnPrint.dataset.bound) {
+    btnPrint.dataset.bound = "true";
+    btnPrint.addEventListener("click", openSemesterPrintPreview);
+  }
+
+  if (btnDocx && !btnDocx.dataset.bound) {
+    btnDocx.dataset.bound = "true";
+    btnDocx.addEventListener("click", exportSemesterDocx);
+  }
+
+  if (btnModalPrint && !btnModalPrint.dataset.bound) {
+    btnModalPrint.dataset.bound = "true";
+    btnModalPrint.addEventListener("click", () => {
+      window.print();
+    });
+  }
+
+  if (btnModalDocx && !btnModalDocx.dataset.bound) {
+    btnModalDocx.dataset.bound = "true";
+    btnModalDocx.addEventListener("click", exportSemesterDocx);
+  }
+
+  function closeSemesterPrintPreview() {
+    if (modal) modal.classList.add("hidden");
+    destroySemesterChart("prnSemClearance");
+    destroySemesterChart("prnSemClassification");
+    destroySemesterChart("prnSemSgpiDist");
+  }
+
+  if (btnCloseModal && !btnCloseModal.dataset.bound) {
+    btnCloseModal.dataset.bound = "true";
+    btnCloseModal.addEventListener("click", closeSemesterPrintPreview);
+  }
+
+  if (modal && !modal.dataset.bound) {
+    modal.dataset.bound = "true";
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) {
+        closeSemesterPrintPreview();
+      }
+    });
+  }
+
+  if (!window._semPrintEscBound) {
+    window._semPrintEscBound = true;
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && modal && !modal.classList.contains("hidden")) {
+        closeSemesterPrintPreview();
+      }
+    });
+  }
+}
+
+function openSemesterPrintPreview() {
+  const data = currentSemesterAnalysisResult || window.currentSemesterAnalysisResult;
+  if (!data || !data.success) {
+    alert("Please generate semester analysis first.");
+    return;
+  }
+
+  const hdr = data.header || {};
+  const sumObj = data.semester_summary || {};
+  const sgpiDist = data.sgpi_distribution || {};
+  const toppers = data.top_students || [];
+
+  const deptSelect = document.getElementById("semDepartmentSelect");
+  const batchSelect = document.getElementById("semBatchSelect");
+  const semSelect = document.getElementById("semSemesterSelect");
+
+  const deptRaw = (deptSelect && deptSelect.selectedIndex > 0)
+    ? deptSelect.options[deptSelect.selectedIndex].text.replace(/\s*\(.*?\)/, "").trim()
+    : (hdr.department || hdr.branch || "Engineering");
+
+  const batchRaw = (batchSelect && batchSelect.selectedIndex > 0)
+    ? batchSelect.options[batchSelect.selectedIndex].text.trim()
+    : (hdr.batch || hdr.academic_year || "Batch");
+
+  const semRaw = (semSelect && semSelect.selectedIndex > 0)
+    ? semSelect.options[semSelect.selectedIndex].text.replace(/\.xlsx/i, "").trim()
+    : (hdr.semester || "Semester");
+
+  let deptDisplay = deptRaw;
+  if (!deptDisplay.toLowerCase().startsWith("department")) {
+    deptDisplay = `Department of ${deptDisplay}`;
+  }
+
+  const setText = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+  };
+
+  setText("prnSemDeptName", deptDisplay.toUpperCase());
+  setText("prnSemBatch", batchRaw);
+  setText("prnSemSemester", semRaw);
+  setText("prnSemAcadYear", hdr.academic_year || batchRaw);
+  setText("prnSemTotalAppeared", `${sumObj.appeared || 0} Students`);
+  setText("prnSemReportDate", new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }));
+  setText("prnSemSigDept1", deptDisplay);
+  setText("prnSemSigDept2", "Terna Engineering College");
+
+  // 1. Populate Clearance Table
+  const clrTbody = document.getElementById("prnTblSemesterClearanceBody");
+  if (clrTbody) {
+    clrTbody.innerHTML = "";
+    const appeared = sumObj.appeared || 0;
+    const passed = sumObj.passed || 0;
+    const failed = sumObj.failed || 0;
+    const passRate = sumObj.pass_rate || 0.0;
+    const failRate = sumObj.fail_rate || 0.0;
+    const successRate = sumObj.success_rate || passRate;
+    const firstClassCnt = sumObj.first_class_count || 0;
+    const firstClassPct = sumObj.first_class_rate || 0.0;
+    const distCnt = sumObj.distinction_count || 0;
+    const distPct = sumObj.distinction_rate || 0.0;
+    const fcDistCnt = sumObj.first_class_and_dist_count || (firstClassCnt + distCnt);
+    const fcDistPct = (sumObj.first_class_and_dist_pct || 0.0);
+
+    const rows = [
+      { label: "Total Students Appeared", count: appeared, pct: "100.00%", color: "#1e293b", bold: true, dot: "#64748b" },
+      { label: "Students Passed (All Clear)", count: passed, pct: `${passRate.toFixed(2)}%`, color: "#059669", bold: true, dot: "#10b981" },
+      { label: "Students Failed (Backlog / KT)", count: failed, pct: `${failRate.toFixed(2)}%`, color: "#dc2626", bold: true, dot: "#ef4444" },
+      { label: "Semester Success Rate", count: passed, pct: `${successRate.toFixed(2)}%`, color: "#1F4E78", bold: true, dot: "#059669", highlight: true },
+      { label: "Students with First Class (60% to 74.99%)", count: firstClassCnt, pct: `${firstClassPct.toFixed(2)}%`, color: "#0284c7", bold: false, dot: "#0284c7" },
+      { label: "Students with Distinction (≥ 75%)", count: distCnt, pct: `${distPct.toFixed(2)}%`, color: "#7c3aed", bold: false, dot: "#7c3aed" },
+      { label: "Total First Class & Distinction (≥ 60%)", count: fcDistCnt, pct: `${fcDistPct.toFixed(2)}%`, color: "#1F4E78", bold: true, dot: "#2563eb", highlight: true }
+    ];
+
+    rows.forEach(r => {
+      const tr = document.createElement("tr");
+      if (r.highlight) tr.style.background = "#eef4ff";
+      tr.innerHTML = `
+        <td>
+          <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${r.dot}; margin-right:6px; vertical-align:middle;"></span>
+          <span style="${r.bold ? 'font-weight: 700;' : ''} color: ${r.color};">${r.label}</span>
+        </td>
+        <td style="text-align: right; font-weight: 700; color: ${r.color};">${r.count}</td>
+        <td style="text-align: right; font-weight: 700; color: ${r.color};">${r.pct}</td>
+      `;
+      clrTbody.appendChild(tr);
+    });
+  }
+
+  // 2. Populate Classification Table
+  const classTbody = document.getElementById("prnTblSemClassificationBody");
+  if (classTbody) {
+    classTbody.innerHTML = "";
+    (sumObj.classification?.table || []).forEach(row => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><strong>${row.short || row.classification}</strong></td>
+        <td style="text-align: right; font-weight: 600;">${row.students}</td>
+        <td style="text-align: right; font-weight: 600;">${row.percentage.toFixed(2)}%</td>
+      `;
+      classTbody.appendChild(tr);
+    });
+  }
+
+  // 3. Populate SGPI Table
+  const sgpiTbody = document.getElementById("prnTblSemSgpiDistBody");
+  if (sgpiTbody) {
+    sgpiTbody.innerHTML = "";
+    (sgpiDist.table || []).forEach(row => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><strong>${row.range}</strong></td>
+        <td style="text-align: right; font-weight: 600;">${row.students}</td>
+        <td style="text-align: right; font-weight: 600;">${row.percentage.toFixed(2)}%</td>
+      `;
+      sgpiTbody.appendChild(tr);
+    });
+  }
+
+  // 4. Populate Toppers Table
+  const topTbody = document.getElementById("prnTblSemToppersBody");
+  if (topTbody) {
+    topTbody.innerHTML = "";
+    toppers.slice(0, 5).forEach((st, idx) => {
+      const tr = document.createElement("tr");
+      let medal = "";
+      if (st.rank === 1) medal = "🥇 ";
+      else if (st.rank === 2) medal = "🥈 ";
+      else if (st.rank === 3) medal = "🥉 ";
+
+      const sgpiVal = st.sgpi !== null && st.sgpi !== undefined ? Number(st.sgpi).toFixed(2) : "—";
+      const pctVal = st.percentage !== null && st.percentage !== undefined ? `${Number(st.percentage).toFixed(2)}%` : "—";
+
+      tr.innerHTML = `
+        <td style="text-align: center; font-weight: 700;">${medal}Rank ${st.rank || idx + 1}</td>
+        <td style="font-weight: 600;">${st.student_name}</td>
+        <td style="text-align: center; font-family: monospace;">${st.seat_or_prn}</td>
+        <td style="text-align: right; font-weight: 700; color: #1F4E78;">${sgpiVal}</td>
+        <td style="text-align: right; font-weight: 700; color: #059669;">${pctVal}</td>
+      `;
+      topTbody.appendChild(tr);
+    });
+  }
+
+  // Render Printable Charts
+  renderPrintSemesterCharts(sumObj, sgpiDist);
+
+  // Show Modal
+  const modal = document.getElementById("modalSemesterPrintPreview");
+  if (modal) modal.classList.remove("hidden");
+}
+
+function renderPrintSemesterCharts(sumObj, sgpiDist) {
+  destroySemesterChart("prnSemClearance");
+  destroySemesterChart("prnSemClassification");
+  destroySemesterChart("prnSemSgpiDist");
+
+  if (typeof Chart === "undefined") {
+    console.warn("Chart.js not loaded, skipping semester print preview charts");
+    return;
+  }
+
+  // 1. Semester Clearance Donut Chart (Students Passed vs Students Failed)
+  const ctxClearance = document.getElementById("prnChartSemesterClearance");
+  if (ctxClearance) {
+    const passed = Number(sumObj.passed || 0);
+    const failed = Number(sumObj.failed || 0);
+
+    const labels = [];
+    const data = [];
+    const colors = [];
+
+    if (passed > 0) { labels.push(`Passed (${passed})`); data.push(passed); colors.push("#10b981"); }
+    if (failed > 0) { labels.push(`Failed (${failed})`); data.push(failed); colors.push("#ef4444"); }
+    if (data.length === 0) { labels.push("No Data"); data.push(1); colors.push("#cbd5e1"); }
+
+    semesterChartInstances["prnSemClearance"] = new Chart(ctxClearance, {
+      type: "doughnut",
+      data: {
+        labels: labels,
+        datasets: [{
+          data: data,
+          backgroundColor: colors,
+          borderWidth: 2,
+          borderColor: "#ffffff"
+        }]
+      },
+      options: {
+        responsive: false,
+        animation: false,
+        plugins: {
+          legend: {
+            display: true,
+            position: "bottom",
+            labels: { boxWidth: 8, font: { size: 7.5 } }
+          }
+        },
+        cutout: "55%"
+      }
+    });
+  }
+
+  // 2. Institutional Classification Bar Chart
+  const ctxClass = document.getElementById("prnChartSemClassification");
+  if (ctxClass) {
+    const classTable = sumObj.classification?.table || [];
+    const labels = classTable.map(r => r.short || (r.classification ? r.classification.split(" ")[0] : "Class"));
+    const counts = classTable.map(r => Number(r.students || 0));
+    const colors = ["#7c3aed", "#2563eb", "#06b6d4", "#64748b", "#ef4444"];
+
+    semesterChartInstances["prnSemClassification"] = new Chart(ctxClass, {
+      type: "bar",
+      data: {
+        labels: labels,
+        datasets: [{
+          data: counts,
+          backgroundColor: colors.slice(0, labels.length),
+          borderRadius: 3,
+          maxBarThickness: 24
+        }]
+      },
+      options: {
+        responsive: false,
+        animation: false,
+        plugins: {
+          legend: { display: false }
+        },
+        scales: {
+          x: { ticks: { font: { size: 7.5 } }, grid: { display: false } },
+          y: { beginAtZero: true, ticks: { font: { size: 7.5 }, precision: 0 }, grid: { color: "#e2e8f0" } }
+        }
+      }
+    });
+  }
+
+  // 3. SGPI Score Distribution Bar Chart
+  const ctxSgpi = document.getElementById("prnChartSemSgpiDist");
+  if (ctxSgpi) {
+    const sgpiTable = (sgpiDist && sgpiDist.table) ? sgpiDist.table : [];
+    const labels = sgpiTable.map(r => (r.range || "").replace("Below ", "< "));
+    const counts = sgpiTable.map(r => Number(r.students || 0));
+
+    semesterChartInstances["prnSemSgpiDist"] = new Chart(ctxSgpi, {
+      type: "bar",
+      data: {
+        labels: labels,
+        datasets: [{
+          data: counts,
+          backgroundColor: "#0284c7",
+          borderRadius: 3,
+          maxBarThickness: 24
+        }]
+      },
+      options: {
+        responsive: false,
+        animation: false,
+        plugins: {
+          legend: { display: false }
+        },
+        scales: {
+          x: { ticks: { font: { size: 7.0 } }, grid: { display: false } },
+          y: { beginAtZero: true, ticks: { font: { size: 7.5 }, precision: 0 }, grid: { color: "#e2e8f0" } }
+        }
+      }
+    });
+  }
+}
+
+async function exportSemesterDocx() {
+  const data = currentSemesterAnalysisResult || window.currentSemesterAnalysisResult;
+  if (!data || !data.success) {
+    alert("Please generate semester analysis first.");
+    return;
+  }
+
+  const deptSelect = document.getElementById("semDepartmentSelect");
+  const batchSelect = document.getElementById("semBatchSelect");
+  const semSelect = document.getElementById("semSemesterSelect");
+
+  const dept = (deptSelect && deptSelect.selectedIndex > 0)
+    ? deptSelect.options[deptSelect.selectedIndex].text.replace(/\s*\(.*?\)/, "").trim()
+    : "";
+  const batch = (batchSelect && batchSelect.selectedIndex > 0)
+    ? batchSelect.options[batchSelect.selectedIndex].text.trim()
+    : "";
+  const sem = (semSelect && semSelect.selectedIndex > 0)
+    ? semSelect.options[semSelect.selectedIndex].text.replace(/\.xlsx/i, "").trim()
+    : "";
+
+  try {
+    const res = await fetch("/api/semester-analysis/export-docx", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        analysis_data: data,
+        department: dept,
+        batch: batch,
+        semester: sem
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Export failed with status ${res.status}`);
+    }
+
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.style.display = "none";
+    a.href = url;
+    const safeSem = (sem || data.header?.semester || "Semester").replace(/[^a-zA-Z0-9_-]/g, "_");
+    const safeBatch = (batch || data.header?.batch || "Batch").replace(/[^a-zA-Z0-9_-]/g, "_");
+    a.download = `Terna_Semester_Analysis_${safeSem}_{safeBatch}.docx`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    }, 100);
+  } catch (err) {
+    console.error("Docx export error:", err);
+    alert(`Could not export Word document: ${err.message}`);
+  }
+}
+
+// ==========================================================================
 // LIVE FOLDER ACTION LISTENER SERVICE
 // ==========================================================================
 let liveEventSource = null;
@@ -1584,6 +2505,11 @@ function initLiveFolderActionListener() {
     // 1. Refresh Subject-wise Analysis options live
     if (typeof window.reloadSubjectAnalysisHierarchy === "function") {
       window.reloadSubjectAnalysisHierarchy(true);
+    }
+
+    // 1b. Refresh Semester-wise Analysis options live
+    if (typeof window.reloadSemesterAnalysisHierarchy === "function") {
+      window.reloadSemesterAnalysisHierarchy(true);
     }
 
     // 2. Refresh Batch Suite if available
