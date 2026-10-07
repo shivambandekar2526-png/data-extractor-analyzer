@@ -529,49 +529,329 @@ async function initStatus() {
   }
 }
 
-// 2. Load Batch Files
+// 2. Load Batch Files (Structured Browser: Format -> Batch -> File)
+let cachedBatchesData = null;
+let currentBrowseFormat = "pdf"; // 'pdf' or 'excel'
+
 async function initBatches() {
   try {
     const res = await fetch("/api/batches");
     const data = await res.json();
-    const select = document.getElementById("batchSelect");
+    cachedBatchesData = data;
 
-    for (const [batchName, files] of Object.entries(data.batches || {})) {
-      const optGroup = document.createElement("optgroup");
-      optGroup.label = batchName;
-      files.forEach(f => {
-        const opt = document.createElement("option");
-        opt.value = f.rel_path;
-        opt.textContent = `${f.filename}`;
-        optGroup.appendChild(opt);
-      });
-      select.appendChild(optGroup);
+    // Update format count badges
+    const pdfCountEl = document.getElementById("badgePdfCount");
+    const excelCountEl = document.getElementById("badgeExcelCount");
+    
+    let totalPdfFiles = 0;
+    let totalExcelFiles = 0;
+
+    if (data.structured) {
+      if (data.structured.pdf) {
+        Object.values(data.structured.pdf).forEach(deptObj => {
+          Object.values(deptObj.batches || {}).forEach(fileList => {
+            totalPdfFiles += fileList.length;
+          });
+        });
+      }
+      if (data.structured.excel) {
+        Object.values(data.structured.excel).forEach(deptObj => {
+          Object.values(deptObj.batches || {}).forEach(fileList => {
+            totalExcelFiles += fileList.length;
+          });
+        });
+      }
+    }
+    if (pdfCountEl) pdfCountEl.textContent = String(totalPdfFiles);
+    if (excelCountEl) excelCountEl.textContent = String(totalExcelFiles);
+
+    // Setup format tab click listeners
+    const btnPdf = document.getElementById("btnBrowseFormatPdf");
+    const btnExcel = document.getElementById("btnBrowseFormatExcel");
+
+    if (btnPdf && !btnPdf.dataset.bound) {
+      btnPdf.dataset.bound = "true";
+      btnPdf.addEventListener("click", () => switchBrowseFormat("pdf"));
+    }
+    if (btnExcel && !btnExcel.dataset.bound) {
+      btnExcel.dataset.bound = "true";
+      btnExcel.addEventListener("click", () => switchBrowseFormat("excel"));
     }
 
-    select.addEventListener("change", (e) => {
-      const btn = document.getElementById("extractBtn");
-      btn.disabled = !e.target.value;
-      if (e.target.value) {
-        document.getElementById("fileInput").value = "";
-        window.currentSelectedFile = null;
-        resetFileUploadDisplay();
+    const deptBatchSelect = document.getElementById("deptBatchSelect");
+    const deptFileSelect = document.getElementById("deptFileSelect");
+    const btnClear = document.getElementById("btnBrowserClearSelection");
 
-        const val = e.target.value.trim();
-        const ext = val.split('.').pop().toLowerCase();
-        if (["xlsx", "xls", "csv"].includes(ext)) {
-          btn.innerHTML = `<span>✨ Ingest &amp; Fix Spreadsheet</span>`;
-          inspectTabularBatchFile(val);
-        } else {
-          btn.innerHTML = `<span>⚡ Extract Data</span>`;
-        }
-      } else {
-        btn.innerHTML = `<span>⚡ Extract Data</span>`;
+    if (deptBatchSelect && !deptBatchSelect.dataset.bound) {
+      deptBatchSelect.dataset.bound = "true";
+      deptBatchSelect.addEventListener("change", (e) => onDeptBatchSelected(e.target.value));
+    }
+
+    if (deptFileSelect && !deptFileSelect.dataset.bound) {
+      deptFileSelect.dataset.bound = "true";
+      deptFileSelect.addEventListener("change", (e) => onDeptFileSelected(e.target.value));
+    }
+
+    if (btnClear && !btnClear.dataset.bound) {
+      btnClear.dataset.bound = "true";
+      btnClear.addEventListener("click", clearDeptDataSelection);
+    }
+
+    // Populate batch options for currently active format
+    renderBatchOptionsForFormat(currentBrowseFormat);
+
+    // Populate hidden legacy batchSelect if present
+    const legacySelect = document.getElementById("batchSelect");
+    if (legacySelect && legacySelect.tagName === "SELECT") {
+      legacySelect.innerHTML = '<option value="">-- Choose Historical Batch PDF / Spreadsheet --</option>';
+      for (const [batchName, files] of Object.entries(data.batches || {})) {
+        const optGroup = document.createElement("optgroup");
+        optGroup.label = batchName;
+        files.forEach(f => {
+          const opt = document.createElement("option");
+          opt.value = f.rel_path;
+          opt.textContent = `${f.filename}`;
+          optGroup.appendChild(opt);
+        });
+        legacySelect.appendChild(optGroup);
       }
-      updateExtractionHint();
-    });
+    }
+
   } catch (e) {
     console.error("Failed to load batches:", e);
   }
+}
+
+function switchBrowseFormat(fmt) {
+  currentBrowseFormat = fmt;
+  const btnPdf = document.getElementById("btnBrowseFormatPdf");
+  const btnExcel = document.getElementById("btnBrowseFormatExcel");
+  const formatLabel = document.getElementById("deptFileFormatLabel");
+
+  if (fmt === "pdf") {
+    btnPdf?.classList.add("active");
+    btnPdf?.setAttribute("aria-selected", "true");
+    btnExcel?.classList.remove("active");
+    btnExcel?.setAttribute("aria-selected", "false");
+    if (formatLabel) formatLabel.textContent = "PDF";
+  } else {
+    btnExcel?.classList.add("active");
+    btnExcel?.setAttribute("aria-selected", "true");
+    btnPdf?.classList.remove("active");
+    btnPdf?.setAttribute("aria-selected", "false");
+    if (formatLabel) formatLabel.textContent = "Excel";
+  }
+
+  // Clear current file selection when switching format tab
+  clearDeptDataSelection();
+  renderBatchOptionsForFormat(fmt);
+}
+
+function renderBatchOptionsForFormat(fmt) {
+  const deptBatchSelect = document.getElementById("deptBatchSelect");
+  const deptFileSelect = document.getElementById("deptFileSelect");
+  if (!deptBatchSelect) return;
+
+  deptBatchSelect.innerHTML = '<option value="">-- Choose Batch Folder --</option>';
+  if (deptFileSelect) {
+    deptFileSelect.innerHTML = `<option value="">-- First Select a Batch --</option>`;
+    deptFileSelect.disabled = true;
+  }
+
+  if (!cachedBatchesData || !cachedBatchesData.structured || !cachedBatchesData.structured[fmt]) {
+    return;
+  }
+
+  const depts = cachedBatchesData.structured[fmt];
+  const deptKeys = Object.keys(depts).sort();
+
+  deptKeys.forEach(deptKey => {
+    const deptObj = depts[deptKey];
+    const deptLabel = deptObj.label || deptKey.replace(/_/g, " ");
+    const batchEntries = Object.entries(deptObj.batches || {}).sort((a, b) => b[0].localeCompare(a[0]));
+
+    if (batchEntries.length > 0) {
+      const optGroup = document.createElement("optgroup");
+      optGroup.label = deptLabel;
+
+      batchEntries.forEach(([batchYear, fileList]) => {
+        const opt = document.createElement("option");
+        // Store composite key: Dept:::Batch
+        opt.value = `${deptKey}:::${batchYear}`;
+        const fileWord = fmt === "pdf" ? "PDFs" : "Spreadsheets";
+        opt.textContent = `Batch ${batchYear} (${fileList.length} ${fileWord})`;
+        optGroup.appendChild(opt);
+      });
+
+      deptBatchSelect.appendChild(optGroup);
+    }
+  });
+}
+
+function onDeptBatchSelected(compositeKey) {
+  const deptFileSelect = document.getElementById("deptFileSelect");
+  const btn = document.getElementById("extractBtn");
+  if (!deptFileSelect) return;
+
+  if (!compositeKey) {
+    deptFileSelect.innerHTML = `<option value="">-- First Select a Batch --</option>`;
+    deptFileSelect.disabled = true;
+    clearDeptDataSelection();
+    return;
+  }
+
+  const [deptKey, batchYear] = compositeKey.split(":::");
+  const depts = cachedBatchesData?.structured?.[currentBrowseFormat] || {};
+  const deptObj = depts[deptKey];
+  const fileList = deptObj?.batches?.[batchYear] || [];
+
+  const fmtWord = currentBrowseFormat === "pdf" ? "PDF Gazette" : "Excel Spreadsheet";
+  deptFileSelect.innerHTML = `<option value="">-- Select ${fmtWord} --</option>`;
+
+  if (fileList.length === 0) {
+    const emptyOpt = document.createElement("option");
+    emptyOpt.value = "";
+    emptyOpt.textContent = `No ${currentBrowseFormat.toUpperCase()} files in this batch`;
+    deptFileSelect.appendChild(emptyOpt);
+    deptFileSelect.disabled = true;
+    return;
+  }
+
+  fileList.forEach(f => {
+    const opt = document.createElement("option");
+    opt.value = f.rel_path;
+    opt.dataset.dept = f.department || deptKey;
+    opt.dataset.batch = f.batch || batchYear;
+    opt.dataset.semester = f.semester || "";
+    opt.dataset.filename = f.filename;
+    opt.dataset.filetype = f.file_type || currentBrowseFormat;
+    opt.textContent = f.display_name || f.filename;
+    deptFileSelect.appendChild(opt);
+  });
+
+  deptFileSelect.disabled = false;
+
+  // Auto-select if only 1 file is present
+  if (fileList.length === 1) {
+    deptFileSelect.value = fileList[0].rel_path;
+    onDeptFileSelected(fileList[0].rel_path);
+  } else {
+    // Clear selection until user chooses file
+    setBatchSelectionValue("");
+  }
+}
+
+function onDeptFileSelected(relPath) {
+  const deptFileSelect = document.getElementById("deptFileSelect");
+  const activeStrip = document.getElementById("browserActiveFileStrip");
+  const stripIcon = document.getElementById("browserStripIcon");
+  const stripFilename = document.getElementById("browserStripFilename");
+  const stripRelPath = document.getElementById("browserStripRelPath");
+  const btn = document.getElementById("extractBtn");
+
+  if (!relPath) {
+    setBatchSelectionValue("");
+    if (activeStrip) activeStrip.classList.add("hidden");
+    if (btn) btn.disabled = true;
+    updateExtractionHint();
+    return;
+  }
+
+  // Clear any direct file upload
+  const fileInput = document.getElementById("fileInput");
+  if (fileInput) fileInput.value = "";
+  window.currentSelectedFile = null;
+  resetFileUploadDisplay();
+
+  // Set the underlying batchSelect value
+  setBatchSelectionValue(relPath);
+
+  // Retrieve metadata from the selected option
+  const selectedOpt = deptFileSelect?.querySelector(`option[value="${CSS.escape(relPath)}"]`);
+  const filename = selectedOpt?.dataset.filename || relPath.split("/").pop();
+  const dept = selectedOpt?.dataset.dept || "";
+  const batch = selectedOpt?.dataset.batch || "";
+  const sem = selectedOpt?.dataset.semester || "";
+  const fType = selectedOpt?.dataset.filetype || currentBrowseFormat;
+
+  // Update strip details
+  if (activeStrip) {
+    activeStrip.classList.remove("hidden");
+    if (stripIcon) stripIcon.textContent = fType === "pdf" ? "📄" : "📊";
+    if (stripFilename) stripFilename.textContent = filename;
+    if (stripRelPath) stripRelPath.textContent = `departments_data/${relPath}`;
+  }
+
+  // Synchronize manual override inputs
+  const overrideDept = document.getElementById("overrideDeptInput");
+  const overrideBatch = document.getElementById("overrideBatchInput");
+  const overrideSem = document.getElementById("overrideSemInput");
+  const metaBadge = document.getElementById("metaOverrideStatusBadge");
+
+  if (overrideDept && dept) overrideDept.value = dept;
+  if (overrideBatch && batch) overrideBatch.value = batch;
+  if (overrideSem && sem) overrideSem.value = sem;
+  if (metaBadge) metaBadge.textContent = "From Department Store";
+
+  // Synchronize results section metadata inputs
+  const resDept = document.getElementById("resultsDeptInput");
+  const resBatch = document.getElementById("resultsBatchInput");
+  const resSem = document.getElementById("resultsSemInput");
+  if (resDept && dept) resDept.value = dept;
+  if (resBatch && batch) resBatch.value = batch;
+  if (resSem && sem) resSem.value = sem;
+
+  // Update mirror previews
+  const pdfPathStr = `departments_data/pdf/${dept}/${batch}/${sem}.pdf`;
+  const excelPathStr = `departments_data/excel/${dept}/${batch}/${sem}.xlsx`;
+  const stepPdfPreview = document.getElementById("stepPdfMirrorPreview");
+  const stepExcelPreview = document.getElementById("stepExcelMirrorPreview");
+  if (stepPdfPreview) stepPdfPreview.textContent = pdfPathStr;
+  if (stepExcelPreview) stepExcelPreview.textContent = excelPathStr;
+
+  // Update button action & behavior
+  if (btn) {
+    btn.disabled = false;
+    const ext = relPath.split('.').pop().toLowerCase();
+    if (["xlsx", "xls", "csv"].includes(ext)) {
+      btn.innerHTML = `<span>✨ Ingest &amp; Fix Spreadsheet</span>`;
+      inspectTabularBatchFile(relPath);
+    } else {
+      btn.innerHTML = `<span>⚡ Extract Data</span>`;
+    }
+  }
+
+  updateExtractionHint();
+}
+
+function setBatchSelectionValue(val) {
+  const el = document.getElementById("batchSelect");
+  if (el) {
+    el.value = val;
+    // Dispatch change event for any external listeners
+    el.dispatchEvent(new Event("change"));
+  }
+}
+
+function clearDeptDataSelection() {
+  const deptBatchSelect = document.getElementById("deptBatchSelect");
+  const deptFileSelect = document.getElementById("deptFileSelect");
+  const activeStrip = document.getElementById("browserActiveFileStrip");
+  const btn = document.getElementById("extractBtn");
+
+  if (deptBatchSelect) deptBatchSelect.value = "";
+  if (deptFileSelect) {
+    deptFileSelect.innerHTML = `<option value="">-- First Select a Batch --</option>`;
+    deptFileSelect.disabled = true;
+  }
+  if (activeStrip) activeStrip.classList.add("hidden");
+
+  setBatchSelectionValue("");
+  if (!window.currentSelectedFile && btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<span>⚡ Extract Data</span>`;
+  }
+  updateExtractionHint();
 }
 
 // Helper: Dynamically update extraction hint based on selection and active pipeline
@@ -741,6 +1021,10 @@ function handleFileSelected(file) {
     return;
   }
   window.currentSelectedFile = file;
+
+  if (typeof clearDeptDataSelection === "function") {
+    clearDeptDataSelection();
+  }
 
   const batchSelect = document.getElementById("batchSelect");
   if (batchSelect) batchSelect.value = "";

@@ -797,8 +797,13 @@ def list_inputs():
 
 @app.route("/api/batches", methods=["GET"])
 def list_batches():
-    """List batch datasets from departments_data/ including PDF, Excel, and CSV with human-friendly hierarchical labels."""
+    """List batch datasets from departments_data/ including PDF, Excel, and CSV with structured hierarchy and backward-compatible batches."""
     batches = {}
+    structured = {
+        "pdf": {},
+        "excel": {}
+    }
+
     if os.path.isdir(BATCH_DATA_DIR):
         for root, dirs, files in os.walk(BATCH_DATA_DIR):
             for f in sorted(files):
@@ -809,29 +814,66 @@ def list_batches():
                     
                     # If organized as pdf/<Dept>/<Batch>/<Sem>.pdf or excel/<Dept>/<Batch>/<Sem>.xlsx
                     if len(parts) >= 4 and parts[0] in ("pdf", "excel"):
+                        format_type = parts[0]  # "pdf" or "excel"
                         group_type = parts[0].upper()
-                        dept_label = parts[1].replace("_", " ")
-                        batch_label = parts[2]
-                        group_name = f"📁 {dept_label} ({batch_label}) - {group_type}"
-                        sem_label = parts[3]
-                        batches.setdefault(group_name, []).append({
+                        dept = parts[1]
+                        batch = parts[2]
+                        sem_file = parts[3]
+                        sem_name = os.path.splitext(sem_file)[0]
+                        dept_label = dept.replace("_", " ")
+
+                        # Flat groups for backward compatibility
+                        group_name = f"📁 {dept_label} ({batch}) - {group_type}"
+                        item_meta = {
                             "rel_path": rel,
-                            "filename": f"{sem_label} ({group_type})",
+                            "filename": f"{sem_file} ({group_type})",
+                            "display_name": f"{sem_name.replace('_', ' ')} ({sem_file})",
                             "file_type": "pdf" if ext == ".pdf" else "excel",
                             "full_path": os.path.join(root, f),
-                            "department": parts[1],
-                            "batch": parts[2],
-                            "semester": os.path.splitext(parts[3])[0]
+                            "department": dept,
+                            "department_label": dept_label,
+                            "batch": batch,
+                            "semester": sem_name
+                        }
+                        batches.setdefault(group_name, []).append(item_meta)
+
+                        # Structured hierarchy: format -> dept -> batch -> files
+                        structured[format_type].setdefault(dept, {
+                            "department": dept,
+                            "label": dept_label,
+                            "batches": {}
+                        })
+                        structured[format_type][dept]["batches"].setdefault(batch, []).append({
+                            "rel_path": rel,
+                            "filename": sem_file,
+                            "display_name": f"{sem_name.replace('_', ' ')} ({sem_file})",
+                            "semester": sem_name,
+                            "batch": batch,
+                            "department": dept,
+                            "file_type": "pdf" if ext == ".pdf" else "excel"
                         })
                     else:
                         batch_name = parts[0] if len(parts) > 1 else "Root Files"
-                        batches.setdefault(batch_name, []).append({
+                        fmt = "pdf" if ext == ".pdf" else "excel"
+                        item_meta = {
                             "rel_path": rel,
                             "filename": f,
-                            "file_type": "pdf" if ext == ".pdf" else "excel",
+                            "display_name": f,
+                            "file_type": fmt,
                             "full_path": os.path.join(root, f)
+                        }
+                        batches.setdefault(batch_name, []).append(item_meta)
+                        structured[fmt].setdefault("Other", {
+                            "department": "Other",
+                            "label": "Other Files",
+                            "batches": {}
                         })
-    return jsonify({"batches": batches})
+                        structured[fmt]["Other"]["batches"].setdefault("Default", []).append(item_meta)
+
+    return jsonify({
+        "batches": batches,
+        "structured": structured
+    })
 
 
 

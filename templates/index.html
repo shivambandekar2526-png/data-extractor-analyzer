@@ -251,12 +251,60 @@
           </div>
 
           <!-- Divider & Historical Batch Selection -->
-          <div class="or-divider"><span>OR SELECT FROM HISTORICAL BATCHES</span></div>
+          <div class="or-divider"><span>OR SELECT FROM DEPARTMENTS_DATA FOLDER</span></div>
 
-          <div class="batch-select-row">
-            <select id="batchSelect" class="form-select" aria-label="Select Historical Batch File">
-              <option value="">-- Choose Historical Batch PDF / Spreadsheet --</option>
-            </select>
+          <div class="dept-data-browser-panel" id="deptDataBrowserPanel">
+            <!-- Format Filter Toggle: PDF vs Excel -->
+            <div class="browser-format-selector-row">
+              <span class="browser-label-title">Format to Load:</span>
+              <div class="browser-format-tabs" role="tablist" aria-label="Choose Document Type">
+                <button type="button" class="btn-format-tab active" id="btnBrowseFormatPdf" data-format="pdf" role="tab" aria-selected="true">
+                  <span class="fmt-icon">📄</span>
+                  <span>PDF Gazettes</span>
+                  <span class="fmt-count-badge" id="badgePdfCount">0</span>
+                </button>
+                <button type="button" class="btn-format-tab" id="btnBrowseFormatExcel" data-format="excel" role="tab" aria-selected="false">
+                  <span class="fmt-icon">📊</span>
+                  <span>Excel Spreadsheets</span>
+                  <span class="fmt-count-badge" id="badgeExcelCount">0</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Structured Cascade: Batch Selection -> File Selection -->
+            <div class="browser-cascade-grid">
+              <div class="browser-cascade-col">
+                <label for="deptBatchSelect" class="browser-field-label">
+                  <span class="step-num-pill">1</span> Batch / Academic Year:
+                </label>
+                <select id="deptBatchSelect" class="form-select form-select-sm" aria-label="Select Department and Batch">
+                  <option value="">-- Choose Batch Folder --</option>
+                </select>
+              </div>
+              <div class="browser-cascade-col">
+                <label for="deptFileSelect" class="browser-field-label">
+                  <span class="step-num-pill">2</span> Semester File (<span id="deptFileFormatLabel">PDF</span>):
+                </label>
+                <select id="deptFileSelect" class="form-select form-select-sm" aria-label="Select Semester File" disabled>
+                  <option value="">-- First Select a Batch --</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Active Selection Info Strip -->
+            <div class="browser-active-file-strip hidden" id="browserActiveFileStrip">
+              <div class="strip-left">
+                <span class="strip-icon" id="browserStripIcon">📄</span>
+                <div class="strip-details">
+                  <span class="strip-filename" id="browserStripFilename">Semester_1.pdf</span>
+                  <span class="strip-path" id="browserStripRelPath">departments_data/pdf/...</span>
+                </div>
+              </div>
+              <button type="button" class="btn-strip-clear" id="btnBrowserClearSelection" title="Clear selection">✕ Clear</button>
+            </div>
+
+            <!-- Hidden input to keep existing batchSelect contract 100% backward compatible -->
+            <input type="hidden" id="batchSelect" value="">
           </div>
 
           <!-- Manual Metadata Override Controls (Department / Batch / Semester) -->
