@@ -296,10 +296,11 @@ def generate_semester_analysis_docx(
 
     # Calibrated 1-page A4 Margins
     for section in doc.sections:
-        section.top_margin = Inches(0.35)
-        section.bottom_margin = Inches(0.35)
-        section.left_margin = Inches(0.48)
-        section.right_margin = Inches(0.48)
+        section.top_margin = Inches(0.38)
+        section.bottom_margin = Inches(0.85)
+        section.left_margin = Inches(0.45)
+        section.right_margin = Inches(0.45)
+        section.footer_distance = Inches(0.32)
         section.page_width = Inches(8.27)   # A4 width
         section.page_height = Inches(11.69) # A4 height
 
@@ -331,7 +332,7 @@ def generate_semester_analysis_docx(
     tbl_hdr = doc.add_table(rows=1, cols=3)
     tbl_hdr.alignment = WD_TABLE_ALIGNMENT.CENTER
     tbl_hdr.autofit = False
-    col_w_hdr = [Inches(1.10), Inches(5.10), Inches(1.10)]
+    col_w_hdr = [Inches(1.10), Inches(5.17), Inches(1.10)]
     row_hdr = tbl_hdr.rows[0]
 
     # Col 0: Terna Logo
@@ -342,7 +343,7 @@ def generate_semester_analysis_docx(
     p_logo.alignment = WD_ALIGN_PARAGRAPH.LEFT
     if logo_path:
         try:
-            p_logo.add_run().add_picture(logo_path, width=Inches(0.92))
+            p_logo.add_run().add_picture(logo_path, width=Inches(0.95))
         except Exception:
             pass
 
@@ -358,18 +359,18 @@ def generate_semester_analysis_docx(
 
     r_cname = p_mid.add_run("TERNA ENGINEERING COLLEGE\n")
     r_cname.bold = True
-    r_cname.font.size = Pt(13.5)
+    r_cname.font.size = Pt(14.5)
     r_cname.font.color.rgb = COLOR_NAVY
 
     r_dname = p_mid.add_run(f"{str(dept_display).upper()}\n")
     r_dname.bold = True
-    r_dname.font.size = Pt(9.5)
+    r_dname.font.size = Pt(10.0)
     r_dname.font.color.rgb = COLOR_SLATE
 
-    r_title = p_mid.add_run("SEMESTER-WISE EXAMINATION PERFORMANCE & SUCCESS RATE REPORT")
+    r_title = p_mid.add_run("SEMESTER-WISE EXAMINATION PERFORMANCE & RESULT ANALYSIS REPORT")
     r_title.bold = True
-    r_title.font.size = Pt(8.2)
-    r_title.font.color.rgb = COLOR_MUTED
+    r_title.font.size = Pt(8.8)
+    r_title.font.color.rgb = COLOR_NAVY
 
     # Col 2: Symmetry spacer
     c_spc = row_hdr.cells[2]
@@ -419,32 +420,32 @@ def generate_semester_analysis_docx(
         ("Analysis Level:", "Complete Semester Dataset", "Report Date:", datetime.now().strftime("%d-%b-%Y"))
     ]
 
-    col_widths_meta = [Inches(5.0), Inches(2.30)]
+    col_widths_meta = [Inches(4.80), Inches(2.57)]
     for r_idx, (k1, v1, k2, v2) in enumerate(meta_items):
         row = tbl_meta.rows[r_idx]
 
         # Left cell
         cell_l = row.cells[0]
         cell_l.width = col_widths_meta[0]
-        _set_cell_margins(cell_l, top=10, bottom=10, left=0, right=15)
+        _set_cell_margins(cell_l, top=12, bottom=12, left=0, right=15)
         p_l = cell_l.paragraphs[0]
         p_l.paragraph_format.space_before = Pt(0)
         p_l.paragraph_format.space_after = Pt(0)
         p_l.paragraph_format.line_spacing = Pt(10)
         r_k1 = p_l.add_run(f"{k1} ")
         r_k1.bold = True
-        r_k1.font.size = Pt(8.5)
+        r_k1.font.size = Pt(8.8)
         r_k1.font.color.rgb = COLOR_SLATE
         r_v1 = p_l.add_run(v1)
         r_v1.bold = (k1 == "Semester:")
-        r_v1.font.size = Pt(8.5)
+        r_v1.font.size = Pt(8.8)
         if k1 == "Semester:":
             r_v1.font.color.rgb = COLOR_NAVY
 
         # Right cell
         cell_r = row.cells[1]
         cell_r.width = col_widths_meta[1]
-        _set_cell_margins(cell_r, top=10, bottom=10, left=15, right=0)
+        _set_cell_margins(cell_r, top=12, bottom=12, left=15, right=0)
         p_r = cell_r.paragraphs[0]
         p_r.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         p_r.paragraph_format.space_before = Pt(0)
@@ -452,22 +453,22 @@ def generate_semester_analysis_docx(
         p_r.paragraph_format.line_spacing = Pt(10)
         r_k2 = p_r.add_run(f"{k2} ")
         r_k2.bold = True
-        r_k2.font.size = Pt(8.2)
+        r_k2.font.size = Pt(8.5)
         r_k2.font.color.rgb = COLOR_MUTED
         r_v2 = p_r.add_run(v2)
-        r_v2.font.size = Pt(8.2)
+        r_v2.font.size = Pt(8.5)
         r_v2.font.color.rgb = COLOR_SLATE
 
     # =========================================================================
     # 1. SEMESTER CLEARANCE & SUCCESS RATE ANALYSIS (TABLE + DONUT CHART)
     # =========================================================================
     p_sec1 = doc.add_paragraph()
-    p_sec1.paragraph_format.space_before = Pt(4)
+    p_sec1.paragraph_format.space_before = Pt(6)
     p_sec1.paragraph_format.space_after = Pt(2)
     p_sec1.paragraph_format.line_spacing = Pt(10)
     r_s1 = p_sec1.add_run("1. SEMESTER CLEARANCE & SUCCESS RATE ANALYSIS")
     r_s1.bold = True
-    r_s1.font.size = Pt(9.0)
+    r_s1.font.size = Pt(9.5)
     r_s1.font.color.rgb = COLOR_NAVY
 
     passed = sum_obj.get("passed", 0)
@@ -496,7 +497,7 @@ def generate_semester_analysis_docx(
     tbl_sem = doc.add_table(rows=len(table_data_sem) + 1, cols=4)
     tbl_sem.alignment = WD_TABLE_ALIGNMENT.CENTER
     _set_table_borders(tbl_sem)
-    col_w_sem = [Inches(2.55), Inches(0.90), Inches(1.05), Inches(2.80)]
+    col_w_sem = [Inches(2.55), Inches(0.95), Inches(1.10), Inches(2.77)]
 
     # Header Row
     hdr_row_sem = tbl_sem.rows[0]
@@ -553,18 +554,18 @@ def generate_semester_analysis_docx(
     p_c_donut.paragraph_format.space_before = Pt(0)
     p_c_donut.paragraph_format.space_after = Pt(0)
     p_c_donut.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p_c_donut.add_run().add_picture(sem_chart_buf, width=Inches(2.55))
+    p_c_donut.add_run().add_picture(sem_chart_buf, width=Inches(2.70))
 
     # =========================================================================
     # 2. INSTITUTIONAL CLASSIFICATION & SGPI DISTRIBUTION (TABLES + DUAL CHARTS)
     # =========================================================================
     p_sec2 = doc.add_paragraph()
-    p_sec2.paragraph_format.space_before = Pt(4)
+    p_sec2.paragraph_format.space_before = Pt(6)
     p_sec2.paragraph_format.space_after = Pt(2)
     p_sec2.paragraph_format.line_spacing = Pt(10)
     r_s2 = p_sec2.add_run("2. INSTITUTIONAL CLASSIFICATION & SGPI DISTRIBUTION")
     r_s2.bold = True
-    r_s2.font.size = Pt(9.0)
+    r_s2.font.size = Pt(9.5)
     r_s2.font.color.rgb = COLOR_NAVY
 
     class_table = sum_obj.get("classification", {}).get("table", [])
@@ -601,7 +602,7 @@ def generate_semester_analysis_docx(
     tbl_sec2 = doc.add_table(rows=max_data_rows + 2, cols=4)
     tbl_sec2.alignment = WD_TABLE_ALIGNMENT.CENTER
     _set_table_borders(tbl_sec2)
-    col_w_sec2 = [Inches(2.40), Inches(1.25), Inches(2.40), Inches(1.25)]
+    col_w_sec2 = [Inches(2.42), Inches(1.26), Inches(2.42), Inches(1.27)]
 
     hdr_s2 = tbl_sec2.rows[0]
     sec2_headers = ["Institutional Classification", "Students (%)", "SGPI Range Distribution", "Students (%)"]
@@ -609,7 +610,7 @@ def generate_semester_analysis_docx(
         c = hdr_s2.cells[i]
         c.width = col_w_sec2[i]
         _set_cell_background(c, "2C5282")
-        _set_cell_margins(c, top=26, bottom=26, left=35, right=35)
+        _set_cell_margins(c, top=28, bottom=28, left=35, right=35)
         p = c.paragraphs[0]
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after = Pt(0)
@@ -617,7 +618,7 @@ def generate_semester_analysis_docx(
         p.alignment = WD_ALIGN_PARAGRAPH.RIGHT if (i % 2 == 1) else WD_ALIGN_PARAGRAPH.LEFT
         r = p.add_run(h_text)
         r.bold = True
-        r.font.size = Pt(7.8)
+        r.font.size = Pt(8.2)
         r.font.color.rgb = RGBColor(255, 255, 255)
 
     for r_idx in range(max_data_rows):
@@ -635,14 +636,14 @@ def generate_semester_analysis_docx(
             c = row.cells[c_i]
             c.width = col_w_sec2[c_i]
             _set_cell_background(c, bg)
-            _set_cell_margins(c, top=15, bottom=15, left=35, right=35)
+            _set_cell_margins(c, top=16, bottom=16, left=35, right=35)
             p = c.paragraphs[0]
             p.paragraph_format.space_before = Pt(0)
             p.paragraph_format.space_after = Pt(0)
             p.paragraph_format.line_spacing = Pt(9)
             p.alignment = WD_ALIGN_PARAGRAPH.RIGHT if c_i == 1 else WD_ALIGN_PARAGRAPH.LEFT
             run = p.add_run(val)
-            run.font.size = Pt(7.8)
+            run.font.size = Pt(8.2)
             if c_i == 1:
                 run.bold = True
 
@@ -657,14 +658,14 @@ def generate_semester_analysis_docx(
             c = row.cells[c_i]
             c.width = col_w_sec2[c_i]
             _set_cell_background(c, bg)
-            _set_cell_margins(c, top=15, bottom=15, left=35, right=35)
+            _set_cell_margins(c, top=16, bottom=16, left=35, right=35)
             p = c.paragraphs[0]
             p.paragraph_format.space_before = Pt(0)
             p.paragraph_format.space_after = Pt(0)
             p.paragraph_format.line_spacing = Pt(9)
             p.alignment = WD_ALIGN_PARAGRAPH.RIGHT if c_i == 3 else WD_ALIGN_PARAGRAPH.LEFT
             run = p.add_run(val)
-            run.font.size = Pt(7.8)
+            run.font.size = Pt(8.2)
             if c_i == 3:
                 run.bold = True
 
@@ -682,32 +683,32 @@ def generate_semester_analysis_docx(
     p_cl.paragraph_format.space_before = Pt(0)
     p_cl.paragraph_format.space_after = Pt(0)
     p_cl.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p_cl.add_run().add_picture(class_chart_buf, width=Inches(3.20))
+    p_cl.add_run().add_picture(class_chart_buf, width=Inches(3.30))
 
     sgpi_chart_buf = _generate_sgpi_distribution_chart_image(sgpi_dist)
     p_sg = c_sgpi_chart.paragraphs[0]
     p_sg.paragraph_format.space_before = Pt(0)
     p_sg.paragraph_format.space_after = Pt(0)
     p_sg.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p_sg.add_run().add_picture(sgpi_chart_buf, width=Inches(3.20))
+    p_sg.add_run().add_picture(sgpi_chart_buf, width=Inches(3.30))
 
     # =========================================================================
     # 3. TOP 5 SEMESTER MERIT LEADERS (TABLE ONLY)
     # =========================================================================
     p_sec3 = doc.add_paragraph()
-    p_sec3.paragraph_format.space_before = Pt(4)
+    p_sec3.paragraph_format.space_before = Pt(6)
     p_sec3.paragraph_format.space_after = Pt(2)
     p_sec3.paragraph_format.line_spacing = Pt(10)
     r_s3 = p_sec3.add_run("3. TOP 5 SEMESTER MERIT LEADERS (RANKED BY SGPI)")
     r_s3.bold = True
-    r_s3.font.size = Pt(9.0)
+    r_s3.font.size = Pt(9.5)
     r_s3.font.color.rgb = COLOR_NAVY
 
     toppers_5 = toppers[:5] if toppers else []
     tbl_top = doc.add_table(rows=max(len(toppers_5), 1) + 1, cols=5)
     tbl_top.alignment = WD_TABLE_ALIGNMENT.CENTER
     _set_table_borders(tbl_top)
-    col_w_top = [Inches(0.85), Inches(2.70), Inches(1.30), Inches(1.20), Inches(1.25)]
+    col_w_top = [Inches(0.85), Inches(2.72), Inches(1.30), Inches(1.25), Inches(1.25)]
 
     hdr_top = tbl_top.rows[0]
     toppers_headers = ["Rank", "Student Name", "Seat No / PRN", "Semester SGPI", "Percentage"]
@@ -715,7 +716,7 @@ def generate_semester_analysis_docx(
         c = hdr_top.cells[i]
         c.width = col_w_top[i]
         _set_cell_background(c, HEX_NAVY)
-        _set_cell_margins(c, top=26, bottom=26, left=35, right=35)
+        _set_cell_margins(c, top=28, bottom=28, left=35, right=35)
         p = c.paragraphs[0]
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after = Pt(0)
@@ -723,7 +724,7 @@ def generate_semester_analysis_docx(
         p.alignment = WD_ALIGN_PARAGRAPH.RIGHT if i in (3, 4) else (WD_ALIGN_PARAGRAPH.CENTER if i in (0, 2) else WD_ALIGN_PARAGRAPH.LEFT)
         r = p.add_run(h_text)
         r.bold = True
-        r.font.size = Pt(7.8)
+        r.font.size = Pt(8.2)
         r.font.color.rgb = RGBColor(255, 255, 255)
 
     if toppers_5:
@@ -742,14 +743,14 @@ def generate_semester_analysis_docx(
                 c = row.cells[c_idx]
                 c.width = col_w_top[c_idx]
                 _set_cell_background(c, bg)
-                _set_cell_margins(c, top=14, bottom=14, left=35, right=35)
+                _set_cell_margins(c, top=18, bottom=18, left=35, right=35)
                 p = c.paragraphs[0]
                 p.paragraph_format.space_before = Pt(0)
                 p.paragraph_format.space_after = Pt(0)
                 p.paragraph_format.line_spacing = Pt(9)
                 p.alignment = WD_ALIGN_PARAGRAPH.RIGHT if c_idx in (3, 4) else (WD_ALIGN_PARAGRAPH.CENTER if c_idx in (0, 2) else WD_ALIGN_PARAGRAPH.LEFT)
                 run = p.add_run(val)
-                run.font.size = Pt(7.8)
+                run.font.size = Pt(8.2)
                 if c_idx in (0, 3, 4):
                     run.bold = True
     else:
@@ -763,21 +764,23 @@ def generate_semester_analysis_docx(
         r_emp.font.color.rgb = COLOR_MUTED
 
     # =========================================================================
-    # 4. INSTITUTIONAL SIGNATURES BLOCK
+    # FOOTER: INSTITUTIONAL SIGNATURES (RESULT COORDINATOR & HOD ONLY)
     # =========================================================================
-    p_sp_sig = doc.add_paragraph()
-    p_sp_sig.paragraph_format.space_before = Pt(8)
-    p_sp_sig.paragraph_format.space_after = Pt(2)
-    p_sp_sig.paragraph_format.line_spacing = Pt(2)
+    footer = doc.sections[0].footer
+    footer.is_linked_to_previous = False
 
-    tbl_sig = doc.add_table(rows=1, cols=3)
+    # Remove default empty paragraph in footer if present
+    if footer.paragraphs:
+        p0 = footer.paragraphs[0]
+        p0._element.getparent().remove(p0._element)
+
+    tbl_sig = footer.add_table(rows=1, cols=2, width=Inches(7.37))
     tbl_sig.alignment = WD_TABLE_ALIGNMENT.CENTER
     tbl_sig.autofit = False
-    col_w_sig = [Inches(2.40), Inches(2.50), Inches(2.40)]
+    col_w_sig = [Inches(3.68), Inches(3.69)]
 
     sig_titles = [
-        ("Class Advisor / In-Charge", f"{dept_display}"),
-        ("Academic Coordinator", "Academic Cell"),
+        ("Result Coordinator", f"{dept_display}"),
         ("Head of Department (HOD)", "Terna Engineering College")
     ]
 
@@ -785,25 +788,25 @@ def generate_semester_analysis_docx(
     for i, (title, sub) in enumerate(sig_titles):
         c = row_sig.cells[i]
         c.width = col_w_sig[i]
-        _set_cell_margins(c, top=4, bottom=0, left=10, right=10)
+        _set_cell_margins(c, top=0, bottom=0, left=15, right=15)
         p = c.paragraphs[0]
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after = Pt(0)
-        p.paragraph_format.line_spacing = Pt(10)
+        p.paragraph_format.line_spacing = Pt(11)
 
-        r_l = p.add_run("__________________________\n")
-        r_l.font.size = Pt(8.0)
+        r_l = p.add_run("_____________________________________\n")
+        r_l.font.size = Pt(8.5)
         r_l.font.color.rgb = COLOR_MUTED
 
         r_t = p.add_run(f"{title}\n")
         r_t.bold = True
-        r_t.font.size = Pt(8.2)
-        r_t.font.color.rgb = COLOR_SLATE
+        r_t.font.size = Pt(9.0)
+        r_t.font.color.rgb = COLOR_NAVY
 
         r_s = p.add_run(sub)
-        r_s.font.size = Pt(7.5)
-        r_s.font.color.rgb = COLOR_MUTED
+        r_s.font.size = Pt(7.8)
+        r_s.font.color.rgb = COLOR_SLATE
 
     buf = BytesIO()
     doc.save(buf)

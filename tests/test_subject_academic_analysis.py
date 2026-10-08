@@ -469,7 +469,12 @@ class TestSubjectAcademicAnalysis(unittest.TestCase):
 
         # Inspect generated docx contents
         doc = docx.Document(buf)
-        full_text = " ".join([p.text for p in doc.paragraphs] + [c.text for t in doc.tables for r in t.rows for c in r.cells])
+        full_text = " ".join(
+            [p.text for p in doc.paragraphs]
+            + [c.text for t in doc.tables for r in t.rows for c in r.cells]
+            + [p.text for p in doc.sections[0].footer.paragraphs]
+            + [c.text for t in doc.sections[0].footer.tables for r in t.rows for c in r.cells]
+        )
 
         # Header asserts
         self.assertIn("TERNA ENGINEERING COLLEGE", full_text)
@@ -486,6 +491,7 @@ class TestSubjectAcademicAnalysis(unittest.TestCase):
         self.assertIn("Students with Distinction", full_text)
         self.assertIn("PATIL NIRAJ SANTOSH SUMAN", full_text)
         self.assertIn("Head of Department", full_text)
+        self.assertIn("Result Coordinator", full_text)
 
     def test_export_docx_api_endpoint(self):
         """Verifies POST /api/subject-analysis/export-docx returns downloadable Word document."""

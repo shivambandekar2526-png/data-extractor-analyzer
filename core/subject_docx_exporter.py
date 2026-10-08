@@ -228,12 +228,13 @@ def generate_subject_analysis_docx(
 
     # Page Margins - Calibrated to span full A4 without spillover
     for section in doc.sections:
-        section.top_margin = Inches(0.35)
-        section.bottom_margin = Inches(0.35)
-        section.left_margin = Inches(0.48)
-        section.right_margin = Inches(0.48)
-        section.page_width = Inches(8.27)   # A4
-        section.page_height = Inches(11.69) # A4
+        section.top_margin = Inches(0.38)
+        section.bottom_margin = Inches(0.85)
+        section.left_margin = Inches(0.45)
+        section.right_margin = Inches(0.45)
+        section.footer_distance = Inches(0.32)
+        section.page_width = Inches(8.27)   # A4 width
+        section.page_height = Inches(11.69) # A4 height
 
     # Extract Data
     hdr = analysis_data.get("header", {})
@@ -257,13 +258,13 @@ def generate_subject_analysis_docx(
     max_marks = float(hdr.get("total_max_marks") or 100)
 
     # =========================================================================
-    # HEADER SECTION WITH TOP-LEFT LOGO & CENTERED TITLES
+    # HEADER SECTION WITH TOP-LEFT LOGO & CENTERED TITLES (SPANNING FULL WIDTH)
     # =========================================================================
     logo_path = _get_terna_logo_path()
     tbl_hdr = doc.add_table(rows=1, cols=3)
     tbl_hdr.alignment = WD_TABLE_ALIGNMENT.CENTER
     tbl_hdr.autofit = False
-    col_w_hdr = [Inches(1.10), Inches(5.10), Inches(1.10)]
+    col_w_hdr = [Inches(1.10), Inches(5.17), Inches(1.10)]
     row_hdr = tbl_hdr.rows[0]
 
     # Col 0: Terna Logo (Top Left)
@@ -275,7 +276,10 @@ def generate_subject_analysis_docx(
     p_logo.paragraph_format.space_before = Pt(0)
     p_logo.paragraph_format.space_after = Pt(0)
     if logo_path and os.path.exists(logo_path):
-        p_logo.add_run().add_picture(logo_path, width=Inches(0.92))
+        try:
+            p_logo.add_run().add_picture(logo_path, width=Inches(0.95))
+        except Exception:
+            pass
 
     # Col 1: Institutional Header Text (Centered)
     c_text = row_hdr.cells[1]
@@ -285,34 +289,25 @@ def generate_subject_analysis_docx(
     p_inst = c_text.paragraphs[0]
     p_inst.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_inst.paragraph_format.space_before = Pt(0)
-    p_inst.paragraph_format.space_after = Pt(1)
-    p_inst.paragraph_format.line_spacing = Pt(16)
-    run_inst = p_inst.add_run("TERNA ENGINEERING COLLEGE")
+    p_inst.paragraph_format.space_after = Pt(0)
+    p_inst.paragraph_format.line_spacing = Pt(13)
+
+    run_inst = p_inst.add_run("TERNA ENGINEERING COLLEGE\n")
     run_inst.bold = True
-    run_inst.font.size = Pt(15.5)
+    run_inst.font.size = Pt(14.5)
     run_inst.font.color.rgb = COLOR_NAVY
     run_inst.font.name = "Arial"
 
-    p_dept = c_text.add_paragraph()
-    p_dept.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p_dept.paragraph_format.space_before = Pt(0)
-    p_dept.paragraph_format.space_after = Pt(1)
-    p_dept.paragraph_format.line_spacing = Pt(12)
-    run_dept = p_dept.add_run(dept_display.upper())
+    run_dept = p_inst.add_run(f"{dept_display.upper()}\n")
     run_dept.bold = True
-    run_dept.font.size = Pt(10.5)
+    run_dept.font.size = Pt(10.0)
     run_dept.font.color.rgb = COLOR_SLATE
     run_dept.font.name = "Arial"
 
-    p_title = c_text.add_paragraph()
-    p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p_title.paragraph_format.space_before = Pt(0)
-    p_title.paragraph_format.space_after = Pt(0)
-    p_title.paragraph_format.line_spacing = Pt(10)
-    run_title = p_title.add_run("SUBJECT EXAMINATION PERFORMANCE & CLEARANCE REPORT")
+    run_title = p_inst.add_run("SUBJECT-WISE EXAMINATION PERFORMANCE & RESULT ANALYSIS REPORT")
     run_title.bold = True
-    run_title.font.size = Pt(8.5)
-    run_title.font.color.rgb = COLOR_MUTED
+    run_title.font.size = Pt(8.8)
+    run_title.font.color.rgb = COLOR_NAVY
     run_title.font.name = "Arial"
 
     # Col 2: Balancing spacer cell
@@ -320,15 +315,34 @@ def generate_subject_analysis_docx(
     c_spc.width = col_w_hdr[2]
     _set_cell_margins(c_spc, top=0, bottom=0, left=0, right=0)
 
-    # Divider bar
-    p_div = doc.add_paragraph()
-    p_div.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p_div.paragraph_format.space_before = Pt(2)
-    p_div.paragraph_format.space_after = Pt(4)
-    p_div.paragraph_format.line_spacing = Pt(4)
-    run_div = p_div.add_run("―" * 68)
-    run_div.font.size = Pt(5)
-    run_div.font.color.rgb = RGBColor(180, 195, 215)
+    # Solid continuous institutional separator line on Header Table bottom
+    tblPr_hdr = tbl_hdr._tbl.tblPr
+    borders_hdr = parse_xml(
+        f'<w:tblBorders {nsdecls("w")}>'
+        f'<w:top w:val="none"/>'
+        f'<w:bottom w:val="single" w:sz="12" w:space="0" w:color="1F4E78"/>'
+        f'<w:left w:val="none"/>'
+        f'<w:right w:val="none"/>'
+        f'<w:insideH w:val="none"/>'
+        f'<w:insideV w:val="none"/>'
+        f'</w:tblBorders>'
+    )
+    tblPr_hdr.append(borders_hdr)
+
+    for cell_h in row_hdr.cells:
+        tcPr_h = cell_h._tc.get_or_add_tcPr()
+        tcBorders_h = parse_xml(
+            f'<w:tcBorders {nsdecls("w")}>'
+            f'<w:bottom w:val="single" w:sz="12" w:space="0" w:color="1F4E78"/>'
+            f'</w:tcBorders>'
+        )
+        tcPr_h.append(tcBorders_h)
+
+    # Spacing below separator line
+    p_sp_hdr = doc.add_paragraph()
+    p_sp_hdr.paragraph_format.space_before = Pt(2)
+    p_sp_hdr.paragraph_format.space_after = Pt(2)
+    p_sp_hdr.paragraph_format.line_spacing = Pt(2)
 
     # =========================================================================
     # METADATA BLOCK
@@ -343,43 +357,43 @@ def generate_subject_analysis_docx(
         ("Subject:", f"{subj_code} - {subj_name}", "Report Date:", datetime.now().strftime("%d-%b-%Y"))
     ]
 
-    col_widths_meta = [Inches(5.0), Inches(2.30)]
+    col_widths_meta = [Inches(4.80), Inches(2.57)]
     for r_idx, (k1, v1, k2, v2) in enumerate(meta_items):
         row = tbl_meta.rows[r_idx]
 
         # Left cell
         cell_l = row.cells[0]
         cell_l.width = col_widths_meta[0]
-        _set_cell_margins(cell_l, top=14, bottom=14, left=0, right=15)
+        _set_cell_margins(cell_l, top=12, bottom=12, left=0, right=15)
         p_l = cell_l.paragraphs[0]
         p_l.paragraph_format.space_before = Pt(0)
         p_l.paragraph_format.space_after = Pt(0)
-        p_l.paragraph_format.line_spacing = Pt(11)
+        p_l.paragraph_format.line_spacing = Pt(10)
         r_k1 = p_l.add_run(f"{k1} ")
         r_k1.bold = True
-        r_k1.font.size = Pt(9.2)
+        r_k1.font.size = Pt(8.8)
         r_k1.font.color.rgb = COLOR_SLATE
         r_v1 = p_l.add_run(v1)
         r_v1.bold = (k1 == "Subject:")
-        r_v1.font.size = Pt(9.2)
+        r_v1.font.size = Pt(8.8)
         if k1 == "Subject:":
             r_v1.font.color.rgb = COLOR_NAVY
 
         # Right cell
         cell_r = row.cells[1]
         cell_r.width = col_widths_meta[1]
-        _set_cell_margins(cell_r, top=14, bottom=14, left=15, right=0)
+        _set_cell_margins(cell_r, top=12, bottom=12, left=15, right=0)
         p_r = cell_r.paragraphs[0]
         p_r.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         p_r.paragraph_format.space_before = Pt(0)
         p_r.paragraph_format.space_after = Pt(0)
-        p_r.paragraph_format.line_spacing = Pt(11)
+        p_r.paragraph_format.line_spacing = Pt(10)
         r_k2 = p_r.add_run(f"{k2} ")
         r_k2.bold = True
-        r_k2.font.size = Pt(8.8)
+        r_k2.font.size = Pt(8.5)
         r_k2.font.color.rgb = COLOR_MUTED
         r_v2 = p_r.add_run(v2)
-        r_v2.font.size = Pt(8.8)
+        r_v2.font.size = Pt(8.5)
         r_v2.font.color.rgb = COLOR_SLATE
 
     # =========================================================================
@@ -420,7 +434,7 @@ def generate_subject_analysis_docx(
     tbl_th = doc.add_table(rows=len(table_data_th) + 1, cols=4)
     tbl_th.alignment = WD_TABLE_ALIGNMENT.CENTER
     _set_table_borders(tbl_th)
-    col_w_th = [Inches(2.85), Inches(0.85), Inches(1.00), Inches(2.60)]
+    col_w_th = [Inches(2.75), Inches(0.90), Inches(1.05), Inches(2.67)]
 
     # Header Row
     hdr_row_th = tbl_th.rows[0]
@@ -429,7 +443,7 @@ def generate_subject_analysis_docx(
         c = hdr_row_th.cells[i]
         c.width = col_w_th[i]
         _set_cell_background(c, HEX_NAVY)
-        _set_cell_margins(c, top=32, bottom=32, left=45, right=45)
+        _set_cell_margins(c, top=28, bottom=28, left=40, right=40)
         p = c.paragraphs[0]
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after = Pt(0)
@@ -450,7 +464,7 @@ def generate_subject_analysis_docx(
             cell = row.cells[c_idx]
             cell.width = col_w_th[c_idx]
             _set_cell_background(cell, bg)
-            _set_cell_margins(cell, top=22, bottom=22, left=45, right=45)
+            _set_cell_margins(cell, top=20, bottom=20, left=40, right=40)
             p = cell.paragraphs[0]
             p.paragraph_format.space_before = Pt(0)
             p.paragraph_format.space_after = Pt(0)
@@ -470,20 +484,20 @@ def generate_subject_analysis_docx(
     cell_bot_chart = tbl_th.cell(len(table_data_th), 3)
     merged_th_chart = cell_top_chart.merge(cell_bot_chart)
     merged_th_chart.width = col_w_th[3]
-    _set_cell_margins(merged_th_chart, top=8, bottom=8, left=15, right=15)
+    _set_cell_margins(merged_th_chart, top=8, bottom=8, left=10, right=10)
     _set_cell_background(merged_th_chart, "FFFFFF")
     th_chart_buf = _generate_theory_chart_image(th)
     p_c_th = merged_th_chart.paragraphs[0]
     p_c_th.paragraph_format.space_before = Pt(0)
     p_c_th.paragraph_format.space_after = Pt(0)
     p_c_th.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p_c_th.add_run().add_picture(th_chart_buf, width=Inches(2.55))
+    p_c_th.add_run().add_picture(th_chart_buf, width=Inches(2.60))
 
     # =========================================================================
     # 2. LABORATORY EVALUATION (TERM WORK & PRACTICAL WITH DUAL CHARTS)
     # =========================================================================
     p_sec2 = doc.add_paragraph()
-    p_sec2.paragraph_format.space_before = Pt(4)
+    p_sec2.paragraph_format.space_before = Pt(6)
     p_sec2.paragraph_format.space_after = Pt(2)
     p_sec2.paragraph_format.line_spacing = Pt(11)
     r_s2 = p_sec2.add_run("2. LABORATORY EVALUATION (TERM WORK & PRACTICAL / ORAL)")
@@ -497,7 +511,7 @@ def generate_subject_analysis_docx(
     tbl_lab = doc.add_table(rows=6, cols=4)
     tbl_lab.alignment = WD_TABLE_ALIGNMENT.CENTER
     _set_table_borders(tbl_lab)
-    col_w_lab = [Inches(2.40), Inches(1.25), Inches(2.40), Inches(1.25)]
+    col_w_lab = [Inches(2.42), Inches(1.26), Inches(2.42), Inches(1.27)]
 
     hdr_lab = tbl_lab.rows[0]
     lab_headers = ["Term Work (TW) Performance", "Metric", "Practical / Oral (PR / OR)", "Metric"]
@@ -505,7 +519,7 @@ def generate_subject_analysis_docx(
         c = hdr_lab.cells[i]
         c.width = col_w_lab[i]
         _set_cell_background(c, "2C5282")
-        _set_cell_margins(c, top=32, bottom=32, left=40, right=40)
+        _set_cell_margins(c, top=28, bottom=28, left=35, right=35)
         p = c.paragraphs[0]
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after = Pt(0)
@@ -540,7 +554,7 @@ def generate_subject_analysis_docx(
             c = row.cells[c_i]
             c.width = col_w_lab[c_i]
             _set_cell_background(c, bg)
-            _set_cell_margins(c, top=20, bottom=20, left=40, right=40)
+            _set_cell_margins(c, top=18, bottom=18, left=35, right=35)
             p = c.paragraphs[0]
             p.paragraph_format.space_before = Pt(0)
             p.paragraph_format.space_after = Pt(0)
@@ -557,7 +571,7 @@ def generate_subject_analysis_docx(
             c = row.cells[c_i]
             c.width = col_w_lab[c_i]
             _set_cell_background(c, bg)
-            _set_cell_margins(c, top=20, bottom=20, left=40, right=40)
+            _set_cell_margins(c, top=18, bottom=18, left=35, right=35)
             p = c.paragraphs[0]
             p.paragraph_format.space_before = Pt(0)
             p.paragraph_format.space_after = Pt(0)
@@ -572,8 +586,8 @@ def generate_subject_analysis_docx(
     row_charts = tbl_lab.rows[5]
     c_tw_chart = row_charts.cells[0].merge(row_charts.cells[1])
     c_pr_chart = row_charts.cells[2].merge(row_charts.cells[3])
-    _set_cell_margins(c_tw_chart, top=10, bottom=10, left=15, right=15)
-    _set_cell_margins(c_pr_chart, top=10, bottom=10, left=15, right=15)
+    _set_cell_margins(c_tw_chart, top=8, bottom=8, left=10, right=10)
+    _set_cell_margins(c_pr_chart, top=8, bottom=8, left=10, right=10)
     _set_cell_background(c_tw_chart, "FFFFFF")
     _set_cell_background(c_pr_chart, "FFFFFF")
 
@@ -582,20 +596,20 @@ def generate_subject_analysis_docx(
     p_tw_c.paragraph_format.space_before = Pt(0)
     p_tw_c.paragraph_format.space_after = Pt(0)
     p_tw_c.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p_tw_c.add_run().add_picture(tw_chart_buf, width=Inches(3.10))
+    p_tw_c.add_run().add_picture(tw_chart_buf, width=Inches(3.30))
 
     pr_chart_buf = _generate_bar_chart_image(pr.get("marks_distribution", {}).get("chart", {}), "PR/OR Score Distribution", "#14b8a6")
     p_pr_c = c_pr_chart.paragraphs[0]
     p_pr_c.paragraph_format.space_before = Pt(0)
     p_pr_c.paragraph_format.space_after = Pt(0)
     p_pr_c.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p_pr_c.add_run().add_picture(pr_chart_buf, width=Inches(3.10))
+    p_pr_c.add_run().add_picture(pr_chart_buf, width=Inches(3.30))
 
     # =========================================================================
     # 3. SUBJECT TOPPERS (FULL-WIDTH STRUCTURED TABLE - NO GRAPH)
     # =========================================================================
     p_sec3 = doc.add_paragraph()
-    p_sec3.paragraph_format.space_before = Pt(4)
+    p_sec3.paragraph_format.space_before = Pt(6)
     p_sec3.paragraph_format.space_after = Pt(2)
     p_sec3.paragraph_format.line_spacing = Pt(11)
     r_s3 = p_sec3.add_run("3. TOP 5 MERIT LEADERS (COMBINED SUBJECT RESULT: THEORY + LAB)")
@@ -609,7 +623,7 @@ def generate_subject_analysis_docx(
     tbl_top = doc.add_table(rows=row_count_top, cols=5)
     tbl_top.alignment = WD_TABLE_ALIGNMENT.CENTER
     _set_table_borders(tbl_top)
-    col_w_top = [Inches(0.85), Inches(2.70), Inches(1.40), Inches(1.15), Inches(1.20)]
+    col_w_top = [Inches(0.85), Inches(2.72), Inches(1.30), Inches(1.25), Inches(1.25)]
 
     # Header Row
     hdr_top = tbl_top.rows[0]
@@ -618,7 +632,7 @@ def generate_subject_analysis_docx(
         c = hdr_top.cells[i]
         c.width = col_w_top[i]
         _set_cell_background(c, HEX_NAVY)
-        _set_cell_margins(c, top=32, bottom=32, left=40, right=40)
+        _set_cell_margins(c, top=28, bottom=28, left=35, right=35)
         p = c.paragraphs[0]
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after = Pt(0)
@@ -633,7 +647,7 @@ def generate_subject_analysis_docx(
         empty_row = tbl_top.rows[1]
         for c in empty_row.cells:
             c.width = col_w_top[0]
-            _set_cell_margins(c, top=24, bottom=24, left=40, right=40)
+            _set_cell_margins(c, top=20, bottom=20, left=35, right=35)
         p = empty_row.cells[1].paragraphs[0]
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after = Pt(0)
@@ -654,7 +668,7 @@ def generate_subject_analysis_docx(
                 cell = row.cells[c_idx]
                 cell.width = col_w_top[c_idx]
                 _set_cell_background(cell, bg)
-                _set_cell_margins(cell, top=24, bottom=24, left=40, right=40)
+                _set_cell_margins(cell, top=20, bottom=20, left=35, right=35)
                 p = cell.paragraphs[0]
                 p.paragraph_format.space_before = Pt(0)
                 p.paragraph_format.space_after = Pt(0)
@@ -674,45 +688,48 @@ def generate_subject_analysis_docx(
                     run.font.color.rgb = COLOR_SLATE
 
     # =========================================================================
-    # 4. INSTITUTIONAL SIGNATURES BLOCK
+    # FOOTER: INSTITUTIONAL SIGNATURES (RESULT COORDINATOR & HOD ONLY)
     # =========================================================================
-    p_sp2 = doc.add_paragraph()
-    p_sp2.paragraph_format.space_before = Pt(14)
-    p_sp2.paragraph_format.space_after = Pt(0)
-    p_sp2.paragraph_format.line_spacing = Pt(1)
+    footer = doc.sections[0].footer
+    footer.is_linked_to_previous = False
 
-    tbl_sig = doc.add_table(rows=1, cols=3)
+    # Remove default empty paragraph in footer if present
+    if footer.paragraphs:
+        p0 = footer.paragraphs[0]
+        p0._element.getparent().remove(p0._element)
+
+    tbl_sig = footer.add_table(rows=1, cols=2, width=Inches(7.37))
     tbl_sig.alignment = WD_TABLE_ALIGNMENT.CENTER
-    col_widths_sig = [Inches(2.45), Inches(2.40), Inches(2.45)]
+    tbl_sig.autofit = False
+    col_widths_sig = [Inches(3.68), Inches(3.69)]
 
     sig_titles = [
-        "Subject Faculty In-Charge",
-        "Academic Coordinator",
-        "Head of Department (HOD)"
+        ("Result Coordinator", f"{dept_display}"),
+        ("Head of Department (HOD)", "Terna Engineering College")
     ]
 
-    for i, title in enumerate(sig_titles):
+    for i, (title, sub) in enumerate(sig_titles):
         c = tbl_sig.rows[0].cells[i]
         c.width = col_widths_sig[i]
-        _set_cell_margins(c, top=0, bottom=0, left=20, right=20)
+        _set_cell_margins(c, top=0, bottom=0, left=15, right=15)
         p = c.paragraphs[0]
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after = Pt(0)
-        p.paragraph_format.line_spacing = Pt(10)
+        p.paragraph_format.line_spacing = Pt(11)
 
-        r_line = p.add_run("__________________________\n")
-        r_line.font.size = Pt(8.2)
+        r_line = p.add_run("_____________________________________\n")
+        r_line.font.size = Pt(8.5)
         r_line.font.color.rgb = COLOR_MUTED
 
-        r_t = p.add_run(title)
+        r_t = p.add_run(f"{title}\n")
         r_t.bold = True
-        r_t.font.size = Pt(8.2)
-        r_t.font.color.rgb = COLOR_SLATE
+        r_t.font.size = Pt(9.0)
+        r_t.font.color.rgb = COLOR_NAVY
 
-        r_dept = p.add_run(f"\n{dept_display}")
-        r_dept.font.size = Pt(7.2)
-        r_dept.font.color.rgb = COLOR_MUTED
+        r_dept = p.add_run(sub)
+        r_dept.font.size = Pt(7.8)
+        r_dept.font.color.rgb = COLOR_SLATE
 
     # Save to buffer
     buf = BytesIO()

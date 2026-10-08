@@ -226,11 +226,18 @@ class TestSemesterAcademicAnalysis(unittest.TestCase):
         doc = docx.Document(buf)
         self.assertGreaterEqual(len(doc.tables), 4)
 
-        full_text = " ".join([p.text for p in doc.paragraphs] + [c.text for t in doc.tables for r in t.rows for c in r.cells])
+        full_text = " ".join(
+            [p.text for p in doc.paragraphs]
+            + [c.text for t in doc.tables for r in t.rows for c in r.cells]
+            + [p.text for p in doc.sections[0].footer.paragraphs]
+            + [c.text for t in doc.sections[0].footer.tables for r in t.rows for c in r.cells]
+        )
         self.assertIn("TERNA ENGINEERING COLLEGE", full_text)
         self.assertIn("SEMESTER-WISE EXAMINATION PERFORMANCE", full_text)
         self.assertIn("Semester Success Rate", full_text)
         self.assertIn("PATIL NIRAJ SANTOSH SUMAN", full_text)
+        self.assertIn("Head of Department", full_text)
+        self.assertIn("Result Coordinator", full_text)
 
     def test_api_options_endpoint(self):
         """Verifies GET /api/semester-analysis/options returns 3-tier hierarchy."""
