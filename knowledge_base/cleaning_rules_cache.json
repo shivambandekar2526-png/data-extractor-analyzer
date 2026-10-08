@@ -3444,5 +3444,650 @@
       }
     },
     "source": "ai_determined"
+  },
+  "879f34c5f77eb739": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "gender": "Gender",
+      "sgpi": "SGPI",
+      "cgpi": "CGPI",
+      "total_marks": "Total_Marks",
+      "max_marks": "Max_Marks",
+      "result": "Result_Status",
+      "candidate_type": "Candidate_Type"
+    },
+    "courses": {},
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      }
+    },
+    "source": "ai_determined"
+  },
+  "3d315b1e4d85d814": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "gender": "Gender",
+      "sgpi": null,
+      "cgpi": "CGPI",
+      "total_marks": null,
+      "max_marks": "Max_Marks",
+      "result": null,
+      "candidate_type": "Candidate_Type"
+    },
+    "courses": {
+      "ECC401": {
+        "TH": "ECC401_TH",
+        "IA": "ECC401_IA",
+        "TOT": "ECC401_TOT",
+        "TW": "ECC401_TW",
+        "GRADE": "ECC401_Grade",
+        "GP": "ECC401_GP",
+        "CREDITS": "ECC401_Credits",
+        "CG": "ECC401_CG"
+      },
+      "ECC402": {
+        "TH": "ECC402_TH",
+        "IA": "ECC402_IA",
+        "TOT": "ECC402_TOT",
+        "GRADE": "ECC402_Grade",
+        "GP": "ECC402_GP",
+        "CREDITS": "ECC402_Credits",
+        "CG": "ECC402_CG"
+      },
+      "ECC403": {
+        "TH": "ECC403_TH",
+        "IA": "ECC403_IA",
+        "TOT": "ECC403_TOT",
+        "GRADE": "ECC403_Grade",
+        "GP": "ECC403_GP",
+        "CREDITS": "ECC403_Credits",
+        "CG": "ECC403_CG"
+      },
+      "ECC404": {
+        "TH": "ECC404_TH",
+        "IA": "ECC404_IA",
+        "TOT": "ECC404_TOT",
+        "TW": "ECC404_TW",
+        "GRADE": "ECC404_Grade",
+        "GP": "ECC404_GP",
+        "CREDITS": "ECC404_Credits",
+        "CG": "ECC404_CG"
+      },
+      "ECC405": {
+        "TH": "ECC405_TH",
+        "IA": "ECC405_IA",
+        "TOT": "ECC405_TOT",
+        "GRADE": "ECC405_Grade",
+        "GP": "ECC405_GP",
+        "CREDITS": "ECC405_Credits",
+        "CG": "ECC405_CG"
+      },
+      "ECL401": {
+        "TW": "ECL401_TW",
+        "GRADE": "ECL401_Grade",
+        "GP": "ECL401_GP",
+        "CREDITS": "ECL401_Credits",
+        "CG": "ECL401_CG"
+      },
+      "ECL402": {
+        "TW": "ECL402_TW",
+        "PR": "ECL402_PR",
+        "TOT": "ECL402_TOT",
+        "GRADE": "ECL402_Grade",
+        "GP": "ECL402_GP",
+        "CREDITS": "ECL402_Credits",
+        "CG": "ECL402_CG"
+      },
+      "ECL403": {
+        "TW": "ECL403_TW",
+        "PR": "ECL403_PR",
+        "TOT": "ECL403_TOT",
+        "GRADE": "ECL403_Grade",
+        "GP": "ECL403_GP",
+        "CREDITS": "ECL403_Credits",
+        "CG": "ECL403_CG"
+      },
+      "ECL404": {
+        "TW": "ECL404_TW",
+        "PR": "ECL404_PR",
+        "TOT": "ECL404_TOT",
+        "GRADE": "ECL404_Grade",
+        "GP": "ECL404_GP",
+        "CREDITS": "ECL404_Credits",
+        "CG": "ECL404_CG"
+      },
+      "ECM401": {
+        "TW": "ECM401_TW",
+        "PR": "ECM401_PR",
+        "TOT": "ECM401_TOT",
+        "GRADE": "ECM401_Grade",
+        "GP": "ECM401_GP",
+        "CREDITS": "ECM401_Credits",
+        "CG": "ECM401_CG"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "ECC401_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "ECC401_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "ECC401_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "ECC401_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "ECC402_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "ECC402_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "ECC402_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "ECC403_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "ECC403_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "ECC403_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "ECC404_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "ECC404_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "ECC404_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "ECC404_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "ECC405_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "ECC405_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "ECC405_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "ECL401_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "ECL402_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "ECL402_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "ECL402_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "ECL403_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "ECL403_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "ECL403_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "ECL404_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "ECL404_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "ECL404_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "ECM401_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "ECM401_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "ECM401_PR": {
+        "min": 0.0,
+        "max": 50.0
+      }
+    },
+    "source": "ai_determined"
+  },
+  "4e7b58993f775c08": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "gender": "Gender",
+      "sgpi": "SGPI",
+      "cgpi": "CGPI",
+      "total_marks": "Total_Marks",
+      "max_marks": "Max_Marks",
+      "result": "Result_Status",
+      "candidate_type": "Candidate_Type"
+    },
+    "courses": {
+      "ECC801": {
+        "TH": "ECC801_TH",
+        "IA": "ECC801_IA",
+        "TOT": "ECC801_TOT",
+        "GRADE": "ECC801_Grade",
+        "GP": "ECC801_GP",
+        "CREDITS": "ECC801_Credits",
+        "CG": "ECC801_CG"
+      },
+      "ECCDLO8013": {
+        "TH": "ECCDLO8013_TH",
+        "IA": "ECCDLO8013_IA",
+        "TOT": "ECCDLO8013_TOT",
+        "GRADE": "ECCDLO8013_Grade",
+        "GP": "ECCDLO8013_GP",
+        "CREDITS": "ECCDLO8013_Credits",
+        "CG": "ECCDLO8013_CG"
+      },
+      "ECCDLO8023": {
+        "TH": "ECCDLO8023_TH",
+        "IA": "ECCDLO8023_IA",
+        "TOT": "ECCDLO8023_TOT",
+        "GRADE": "ECCDLO8023_Grade",
+        "GP": "ECCDLO8023_GP",
+        "CREDITS": "ECCDLO8023_Credits",
+        "CG": "ECCDLO8023_CG"
+      },
+      "ILO8019": {
+        "TH": "ILO8019_TH",
+        "IA": "ILO8019_IA",
+        "TOT": "ILO8019_TOT",
+        "GRADE": "ILO8019_Grade",
+        "GP": "ILO8019_GP",
+        "CREDITS": "ILO8019_Credits",
+        "CG": "ILO8019_CG"
+      },
+      "ILO8011": {
+        "GRADE": "ILO8011_Grade",
+        "GP": "ILO8011_GP",
+        "CREDITS": "ILO8011_Credits",
+        "CG": "ILO8011_CG"
+      },
+      "ECL801": {
+        "TW": "ECL801_TW",
+        "PR": "ECL801_PR",
+        "GRADE": "ECL801_Grade",
+        "GP": "ECL801_GP",
+        "CREDITS": "ECL801_Credits",
+        "CG": "ECL801_CG"
+      },
+      "ECP801": {
+        "TW": "ECP801_TW",
+        "PR": "ECP801_PR",
+        "GRADE": "ECP801_Grade",
+        "GP": "ECP801_GP",
+        "CREDITS": "ECP801_Credits",
+        "CG": "ECP801_CG"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "ECC801_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "ECC801_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "ECC801_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "ECCDLO8013_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "ECCDLO8013_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "ECCDLO8013_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "ECCDLO8023_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "ECCDLO8023_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "ECCDLO8023_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "ILO8019_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "ILO8019_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "ILO8019_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "ECL801_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "ECL801_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "ECP801_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "ECP801_PR": {
+        "min": 0.0,
+        "max": 50.0
+      }
+    },
+    "source": "ai_determined"
+  },
+  "a5b989ed4be1616d": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "gender": "Gender",
+      "sgpi": "SGPI",
+      "cgpi": "CGPI",
+      "total_marks": "Total_Marks",
+      "max_marks": "Max_Marks",
+      "result": "Result_Status",
+      "candidate_type": "Candidate_Type"
+    },
+    "courses": {
+      "ECC601": {
+        "TH": "ECC601_TH",
+        "IA": "ECC601_IA",
+        "TOT": "ECC601_TOT",
+        "GRADE": "ECC601_Grade",
+        "GP": "ECC601_GP",
+        "CREDITS": "ECC601_Credits",
+        "CG": "ECC601_CG"
+      },
+      "ECC602": {
+        "TH": "ECC602_TH",
+        "IA": "ECC602_IA",
+        "TOT": "ECC602_TOT",
+        "GRADE": "ECC602_Grade",
+        "GP": "ECC602_GP",
+        "CREDITS": "ECC602_Credits",
+        "CG": "ECC602_CG"
+      },
+      "ECC603": {
+        "TH": "ECC603_TH",
+        "IA": "ECC603_IA",
+        "TOT": "ECC603_TOT",
+        "GRADE": "ECC603_Grade",
+        "GP": "ECC603_GP",
+        "CREDITS": "ECC603_Credits",
+        "CG": "ECC603_CG"
+      },
+      "ECC604": {
+        "TH": "ECC604_TH",
+        "IA": "ECC604_IA",
+        "TOT": "ECC604_TOT",
+        "GRADE": "ECC604_Grade",
+        "GP": "ECC604_GP",
+        "CREDITS": "ECC604_Credits",
+        "CG": "ECC604_CG"
+      },
+      "ECCDLO601X": {
+        "TH": "ECCDLO601X_TH",
+        "IA": "ECCDLO601X_IA",
+        "TOT": "ECCDLO601X_TOT",
+        "GRADE": "ECCDLO601X_Grade",
+        "GP": "ECCDLO601X_GP",
+        "CREDITS": "ECCDLO601X_Credits",
+        "CG": "ECCDLO601X_CG"
+      },
+      "ECL601": {
+        "TW": "ECL601_TW",
+        "PR": "ECL601_PR",
+        "TOT": "ECL601_TOT",
+        "GRADE": "ECL601_Grade",
+        "GP": "ECL601_GP",
+        "CREDITS": "ECL601_Credits",
+        "CG": "ECL601_CG"
+      },
+      "ECL602": {
+        "TW": "ECL602_TW",
+        "PR": "ECL602_PR",
+        "TOT": "ECL602_TOT",
+        "GRADE": "ECL602_Grade",
+        "GP": "ECL602_GP",
+        "CREDITS": "ECL602_Credits",
+        "CG": "ECL602_CG"
+      },
+      "ECL603": {
+        "TW": "ECL603_TW",
+        "PR": "ECL603_PR",
+        "TOT": "ECL603_TOT",
+        "GRADE": "ECL603_Grade",
+        "GP": "ECL603_GP",
+        "CREDITS": "ECL603_Credits",
+        "CG": "ECL603_CG"
+      },
+      "ECL604": {
+        "TW": "ECL604_TW",
+        "PR": "ECL604_PR",
+        "TOT": "ECL604_TOT",
+        "GRADE": "ECL604_Grade",
+        "GP": "ECL604_GP",
+        "CREDITS": "ECL604_Credits",
+        "CG": "ECL604_CG"
+      },
+      "ECM601": {
+        "TW": "ECM601_TW",
+        "PR": "ECM601_PR",
+        "TOT": "ECM601_TOT",
+        "GRADE": "ECM601_Grade",
+        "GP": "ECM601_GP",
+        "CREDITS": "ECM601_Credits",
+        "CG": "ECM601_CG"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "ECC601_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "ECC601_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "ECC601_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "ECC602_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "ECC602_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "ECC602_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "ECC603_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "ECC603_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "ECC603_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "ECC604_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "ECC604_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "ECC604_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "ECCDLO601X_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "ECCDLO601X_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "ECCDLO601X_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "ECL601_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "ECL601_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "ECL601_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "ECL602_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "ECL602_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "ECL602_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "ECL603_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "ECL603_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "ECL603_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "ECL604_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "ECL604_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "ECL604_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "ECM601_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "ECM601_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "ECM601_PR": {
+        "min": 0.0,
+        "max": 50.0
+      }
+    },
+    "source": "ai_determined"
   }
 }
