@@ -1,0 +1,213 @@
+    <div class="modal-backdrop hidden" id="excelAddColModal">
+      <div class="modal-card" style="max-width: 480px;">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <div class="tabular-modal-icon" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8;">➕</div>
+            <div>
+              <h3>Add New Column</h3>
+              <p class="modal-subtitle">Insert a new field into the dataset structure</p>
+            </div>
+          </div>
+          <button type="button" class="btn-close" id="btnCloseAddColModal">&times;</button>
+        </div>
+        <div class="modal-body" style="padding: 1.25rem;">
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label for="newColNameInput" style="display: block; font-weight: 600; margin-bottom: 0.35rem; font-size: 0.85rem;">Column Name / Header:</label>
+            <input type="text" id="newColNameInput" class="form-input" placeholder="e.g. Grace_Marks, Remarks, Project_Title" style="width: 100%;">
+          </div>
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label for="newColDefaultValInput" style="display: block; font-weight: 600; margin-bottom: 0.35rem; font-size: 0.85rem;">Default Value (Optional):</label>
+            <input type="text" id="newColDefaultValInput" class="form-input" placeholder="Empty, 0, or text..." style="width: 100%;">
+          </div>
+          <div class="form-group">
+            <label for="newColPositionSelect" style="display: block; font-weight: 600; margin-bottom: 0.35rem; font-size: 0.85rem;">Position:</label>
+            <select id="newColPositionSelect" class="form-select" style="width: 100%;">
+              <option value="end">At End of Table</option>
+              <option value="after_active">After Selected Column</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-foot" style="justify-content: flex-end; gap: 0.5rem;">
+          <button type="button" class="btn btn-secondary" id="btnCancelAddCol">Cancel</button>
+          <button type="button" class="btn btn-primary" id="btnSubmitAddCol">Add Column</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Excel Add Row Modal -->
+    <div class="modal-backdrop hidden" id="excelAddRowModal">
+      <div class="modal-card" style="max-width: 540px;">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <div class="tabular-modal-icon" style="background: rgba(16, 185, 129, 0.15); color: #10B981;">➕</div>
+            <div>
+              <h3>Add New Student Record</h3>
+              <p class="modal-subtitle">Insert a row into the current active dataset</p>
+            </div>
+          </div>
+          <button type="button" class="btn-close" id="btnCloseAddRowModal">&times;</button>
+        </div>
+        <div class="modal-body" style="padding: 1.25rem;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+            <div class="form-group">
+              <label for="addRowSeat" style="display: block; font-weight: 600; font-size: 0.82rem; margin-bottom: 0.25rem;">Seat Number *</label>
+              <input type="text" id="addRowSeat" class="form-input" placeholder="e.g. 522001">
+            </div>
+            <div class="form-group">
+              <label for="addRowName" style="display: block; font-weight: 600; font-size: 0.82rem; margin-bottom: 0.25rem;">Student Name *</label>
+              <input type="text" id="addRowName" class="form-input" placeholder="e.g. Jane Doe">
+            </div>
+            <div class="form-group">
+              <label for="addRowPrn" style="display: block; font-weight: 600; font-size: 0.82rem; margin-bottom: 0.25rem;">PRN (Optional)</label>
+              <input type="text" id="addRowPrn" class="form-input" placeholder="e.g. 2021016400...">
+            </div>
+            <div class="form-group">
+              <label for="addRowCandidateType" style="display: block; font-weight: 600; font-size: 0.82rem; margin-bottom: 0.25rem;">Candidate Type</label>
+              <select id="addRowCandidateType" class="form-select">
+                <option value="Regular">Regular</option>
+                <option value="Diploma">Diploma / DSE</option>
+                <option value="Repeater">Repeater</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="addRowSgpi" style="display: block; font-weight: 600; font-size: 0.82rem; margin-bottom: 0.25rem;">SGPI</label>
+              <input type="number" step="0.01" min="0" max="10" id="addRowSgpi" class="form-input" placeholder="e.g. 8.75">
+            </div>
+            <div class="form-group">
+              <label for="addRowResult" style="display: block; font-weight: 600; font-size: 0.82rem; margin-bottom: 0.25rem;">Result Status</label>
+              <select id="addRowResult" class="form-select">
+                <option value="Successful">Successful (P)</option>
+                <option value="Unsuccessful">Unsuccessful (F)</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group" style="margin-top: 0.75rem;">
+            <label for="addRowPositionSelect" style="display: block; font-weight: 600; font-size: 0.82rem; margin-bottom: 0.25rem;">Insert Position:</label>
+            <select id="addRowPositionSelect" class="form-select" style="width: 100%;">
+              <option value="end">At End of Dataset</option>
+              <option value="beginning">At Top / Beginning</option>
+              <option value="after_selected">After Currently Selected Row</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-foot" style="justify-content: flex-end; gap: 0.5rem;">
+          <button type="button" class="btn btn-secondary" id="btnCancelAddRow">Cancel</button>
+          <button type="button" class="btn btn-primary" id="btnSubmitAddRow">Insert Record</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Excel Rename Column Modal -->
+    <div class="modal-backdrop hidden" id="excelRenameColModal">
+      <div class="modal-card" style="max-width: 440px;">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <div class="tabular-modal-icon" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b;">✏️</div>
+            <div>
+              <h3>Rename Column</h3>
+              <p class="modal-subtitle">Change field header across entire dataset</p>
+            </div>
+          </div>
+          <button type="button" class="btn-close" id="btnCloseRenameColModal">&times;</button>
+        </div>
+        <div class="modal-body" style="padding: 1.25rem;">
+          <input type="hidden" id="renameColOldKey">
+          <div class="form-group">
+            <label style="display: block; font-weight: 600; margin-bottom: 0.35rem; font-size: 0.85rem;">Current Name:</label>
+            <div id="renameColOldLabel" style="font-family: monospace; font-size: 0.9rem; padding: 0.5rem; background: rgba(255,255,255,0.05); border-radius: 4px; margin-bottom: 1rem; color: #94A3B8;"></div>
+          </div>
+          <div class="form-group">
+            <label for="renameColNewInput" style="display: block; font-weight: 600; margin-bottom: 0.35rem; font-size: 0.85rem;">New Column Name:</label>
+            <input type="text" id="renameColNewInput" class="form-input" placeholder="e.g. CGPA, Grade, Rank" style="width: 100%;">
+          </div>
+        </div>
+        <div class="modal-foot" style="justify-content: flex-end; gap: 0.5rem;">
+          <button type="button" class="btn btn-secondary" id="btnCancelRenameCol">Cancel</button>
+          <button type="button" class="btn btn-primary" id="btnSubmitRenameCol">Save Rename</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Excel Column Filter Popover / Modal -->
+    <div class="modal-backdrop hidden" id="excelFilterModal">
+      <div class="modal-card" style="max-width: 420px; max-height: 85vh; display: flex; flex-direction: column;">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <div class="tabular-modal-icon" style="background: rgba(99, 102, 241, 0.15); color: #818cf8;">⚡</div>
+            <div>
+              <h3 id="filterModalTitle">Filter Column</h3>
+              <p class="modal-subtitle">Select values to display</p>
+            </div>
+          </div>
+          <button type="button" class="btn-close" id="btnCloseFilterModal">&times;</button>
+        </div>
+        <div class="modal-body" style="padding: 1rem 1.25rem; flex: 1; overflow: hidden; display: flex; flex-direction: column;">
+          <input type="hidden" id="filterActiveColKey">
+          <input type="text" id="filterSearchInput" class="search-input" placeholder="Search filter values..." style="margin-bottom: 0.75rem; width: 100%;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-size: 0.8rem;">
+            <a href="#" id="filterSelectAllLink" style="color: var(--accent);">Select All</a>
+            <a href="#" id="filterClearAllLink" style="color: var(--text-muted);">Clear All</a>
+          </div>
+          <div id="filterValuesList" style="flex: 1; overflow-y: auto; max-height: 280px; border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 0.5rem;"></div>
+        </div>
+        <div class="modal-foot" style="justify-content: space-between;">
+          <button type="button" class="btn btn-sm btn-outline" id="btnClearCurrentColFilter">Reset Filter</button>
+          <div style="display: flex; gap: 0.5rem;">
+            <button type="button" class="btn btn-secondary btn-sm" id="btnCancelFilterModal">Cancel</button>
+            <button type="button" class="btn btn-primary btn-sm" id="btnApplyFilterModal">Apply Filter</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Excel Shortcuts Guide Modal -->
+    <div class="modal-backdrop hidden" id="excelShortcutsModal">
+      <div class="modal-card" style="max-width: 620px;">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <div class="tabular-modal-icon" style="background: rgba(16, 185, 129, 0.15); color: #10B981;">⌨️</div>
+            <div>
+              <h3>Excel Keyboard &amp; Grid Guide</h3>
+              <p class="modal-subtitle">Work with the result ledger just like Microsoft Excel or Google Sheets</p>
+            </div>
+          </div>
+          <button type="button" class="btn-close" id="btnCloseShortcutsModal">&times;</button>
+        </div>
+        <div class="modal-body" style="padding: 1.25rem; font-size: 0.85rem;">
+          <div class="shortcuts-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div>
+              <h4 style="color: var(--accent); margin-bottom: 0.5rem; font-size: 0.88rem;">Navigation &amp; Selection</h4>
+              <ul style="list-style: none; padding: 0; line-height: 1.8; color: #CBD5E1;">
+                <li><kbd>Click</kbd> Select cell</li>
+                <li><kbd>↑ ↓ ← →</kbd> Move cell selection</li>
+                <li><kbd>Tab</kbd> Move to right cell</li>
+                <li><kbd>Shift</kbd> + <kbd>Tab</kbd> Move to left cell</li>
+                <li><kbd>Enter</kbd> Move to cell below</li>
+                <li><kbd>Shift</kbd> + <kbd>Enter</kbd> Move to cell above</li>
+              </ul>
+            </div>
+            <div>
+              <h4 style="color: var(--accent); margin-bottom: 0.5rem; font-size: 0.88rem;">Editing &amp; Operations</h4>
+              <ul style="list-style: none; padding: 0; line-height: 1.8; color: #CBD5E1;">
+                <li><kbd>Double Click</kbd> or <kbd>F2</kbd> Edit cell</li>
+                <li><kbd>Type Any Key</kbd> Start typing to edit</li>
+                <li><kbd>Esc</kbd> Cancel cell edit</li>
+                <li><kbd>Del</kbd> / <kbd>Backspace</kbd> Clear cell value</li>
+                <li><kbd>Ctrl</kbd> + <kbd>Z</kbd> Undo table change</li>
+                <li><kbd>Ctrl</kbd> + <kbd>Y</kbd> Redo table change</li>
+                <li><kbd>Ctrl</kbd> + <kbd>F</kbd> Find &amp; Replace</li>
+                <li><kbd>Ctrl</kbd> + <kbd>S</kbd> Save to Server</li>
+              </ul>
+            </div>
+          </div>
+          <div style="margin-top: 1rem; padding: 0.75rem; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 6px; font-size: 0.82rem; color: #94A3B8;">
+            💡 <strong>Right-Click Menu:</strong> Right-click on any row or cell to quickly insert rows above/below, duplicate rows, delete rows, or add/delete columns.
+          </div>
+        </div>
+        <div class="modal-foot" style="justify-content: flex-end;">
+          <button type="button" class="btn btn-primary" id="btnDismissShortcutsModal">Got it!</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- PDF Archive Prompt Modal -->

@@ -1,0 +1,110 @@
+    <div class="modal-backdrop hidden" id="tabularModalBackdrop">
+      <div class="modal-card tabular-modal-card">
+        <div class="modal-header tabular-modal-header">
+          <div class="modal-title-group">
+            <div class="tabular-modal-icon">📊</div>
+            <div>
+              <h3 id="tabModalFilename">Tabular Data Inspection</h3>
+              <p id="tabModalSubtitle" class="modal-subtitle">Format Quality Assessment &amp; Token-Saving Ingestion</p>
+            </div>
+          </div>
+          <button type="button" class="modal-close-btn" id="btnTabModalClose" title="Close">&times;</button>
+        </div>
+
+        <div class="modal-body tabular-modal-body">
+          <!-- Multi-Sheet Selector -->
+          <div class="tabular-sheet-bar hidden" id="tabSheetBar">
+            <label for="tabSheetSelect" class="tabular-bar-label">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+              <span>Worksheet:</span>
+            </label>
+            <select id="tabSheetSelect" class="form-select form-select-sm"></select>
+          </div>
+
+          <!-- Quality Assessment Banner -->
+          <div class="tabular-assessment-banner" id="tabAssessmentBanner">
+            <div class="assessment-banner-top">
+              <div class="assessment-status-pill" id="tabStatusPill">
+                <span class="status-dot"></span>
+                <span id="tabStatusTitle">Analyzing sheet layout...</span>
+              </div>
+              <div class="assessment-score-pill" id="tabScorePill">
+                <span id="tabScoreVal">100</span>/100 Cleanliness
+              </div>
+            </div>
+            <p id="tabAssessmentMsg" class="assessment-msg">Inspection in progress...</p>
+            <div id="tabIssuesContainer" class="assessment-issues-list hidden"></div>
+          </div>
+
+          <!-- Raw Data Preview -->
+          <div class="tabular-preview-box">
+            <div class="preview-box-header">
+              <span class="preview-box-title">Raw Table Preview (Top Rows)</span>
+              <span id="tabMetaStats" class="preview-meta-badge">0 rows • 0 cols</span>
+            </div>
+            <div class="preview-table-container">
+              <table class="data-table tabular-preview-table" id="tabPreviewTable">
+                <thead>
+                  <tr id="tabPreviewHeadRow"></tr>
+                </thead>
+                <tbody id="tabPreviewBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Dual-Option Action Cards -->
+          <div class="tabular-actions-container">
+            <div class="tabular-actions-title">Choose How to Ingest:</div>
+            <div class="tabular-cards-grid">
+              <!-- Direct Import Card (Zero Tokens) -->
+              <div class="tabular-action-card" id="cardDirectImport">
+                <div class="action-card-header">
+                  <div class="action-card-title-group">
+                    <span class="action-card-icon">⚡</span>
+                    <div>
+                      <h4>Direct Tabular Import</h4>
+                      <span class="token-saver-tag">0 AI Tokens • Instant</span>
+                    </div>
+                  </div>
+                  <span class="recommended-badge hidden" id="badgeDirectRec">RECOMMENDED</span>
+                </div>
+                <p class="action-card-desc">
+                  Directly imports the table as structured records without calling any LLM. Saves 100% of tokens and executes in milliseconds.
+                </p>
+                <button type="button" class="btn btn-outline-action" id="btnTabDirectImport">
+                  <span>📥 Direct Import (Save Tokens)</span>
+                </button>
+              </div>
+
+              <!-- AI Restructuring Card -->
+              <div class="tabular-action-card" id="cardAiFix">
+                <div class="action-card-header">
+                  <div class="action-card-title-group">
+                    <span class="action-card-icon">🪄</span>
+                    <div>
+                      <h4>Fix &amp; Extract with AI</h4>
+                      <span class="ai-smart-tag">Smart Structure Fusion</span>
+                    </div>
+                  </div>
+                  <span class="recommended-badge hidden" id="badgeAiRec">RECOMMENDED</span>
+                </div>
+                <p class="action-card-desc">
+                  AI resolves multi-level headers, removes title metadata banners, maps composite course evaluations (TH, IA, TOT, GP, CG), and cleans student entities.
+                </p>
+                <div class="ai-fix-action-row">
+                  <select id="tabAiPipelineSelect" class="form-select form-select-sm" title="AI Inference Engine">
+                    <option value="local">Local AI (Ollama GPU)</option>
+                    <option value="cloud">Cloud AI (Gemini / Groq)</option>
+                  </select>
+                  <button type="button" class="btn btn-primary" id="btnTabAiFix">
+                    <span>✨ Fix with AI</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Smart Data Cleaning & Audit Diff Review Modal -->

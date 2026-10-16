@@ -1,0 +1,318 @@
+    <!-- Print & Sheet Specific Styles (Spans Full A4 Sheet with Balanced Margins) -->
+    <style id="subjectPrintStyles">
+      #modalSubjectPrintPreview,
+      #modalSemesterPrintPreview {
+        display: flex !important;
+        align-items: flex-start !important;
+        justify-content: center !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch;
+        padding: 1.5rem 0.5rem !important;
+        background: rgba(4, 7, 15, 0.85) !important;
+      }
+
+      #modalSubjectPrintPreview.hidden,
+      #modalSemesterPrintPreview.hidden {
+        display: none !important;
+      }
+
+      .print-modal-card {
+        max-height: none !important;
+        height: auto !important;
+        overflow: visible !important;
+        border: 1px solid rgba(255, 255, 255, 0.15) !important;
+      }
+
+      .print-modal-card .modal-body {
+        max-height: none !important;
+        height: auto !important;
+        overflow: visible !important;
+      }
+
+      .subject-print-sheet {
+        background: #ffffff;
+        color: #1e293b;
+        width: 100%;
+        max-width: 210mm;
+        min-height: 278mm;
+        margin: 0 auto;
+        padding: 10mm 13mm 10mm 13mm;
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+        box-sizing: border-box;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+        font-size: 11px;
+        line-height: 1.35;
+        border-radius: 4px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+
+      .print-college-name {
+        text-align: center;
+        font-size: 19px;
+        font-weight: 800;
+        color: #1F4E78;
+        letter-spacing: 0.5px;
+        margin: 0 0 2px 0;
+        text-transform: uppercase;
+      }
+
+      .print-dept-name {
+        text-align: center;
+        font-size: 13px;
+        font-weight: 700;
+        color: #334155;
+        margin: 0 0 3px 0;
+        text-transform: uppercase;
+      }
+
+      .print-report-title {
+        text-align: center;
+        font-size: 9.5px;
+        font-weight: 600;
+        color: #64748b;
+        letter-spacing: 0.8px;
+        margin: 0 0 6px 0;
+      }
+
+      .print-divider {
+        height: 2px;
+        background: linear-gradient(90deg, #1F4E78 0%, #3b82f6 50%, #1F4E78 100%);
+        margin-bottom: 8px;
+      }
+
+      .print-meta-grid {
+        display: flex;
+        justify-content: space-between;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 7px 14px;
+        margin-bottom: 8px;
+        font-size: 11px;
+      }
+
+      .print-meta-left, .print-meta-right {
+        display: flex;
+        flex-direction: column;
+        gap: 2.5px;
+      }
+
+      .print-meta-lbl {
+        color: #64748b;
+        font-weight: 600;
+        min-width: 90px;
+        display: inline-block;
+      }
+
+      .print-subject-name {
+        color: #1F4E78;
+        font-weight: 700;
+      }
+
+      .print-section {
+        margin-bottom: 8px;
+      }
+
+      .print-section-title {
+        font-size: 11px;
+        font-weight: 700;
+        color: #1F4E78;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        margin-bottom: 4px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+
+      .print-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 10.5px;
+      }
+
+      .print-table th {
+        background: #1F4E78;
+        color: #ffffff;
+        font-weight: 700;
+        padding: 4.5px 8px;
+        border: 1px solid #1F4E78;
+        text-align: left;
+      }
+
+      .print-table td {
+        padding: 4px 8px;
+        border: 1px solid #cbd5e1;
+        color: #1e293b;
+      }
+
+      .print-table tbody tr:nth-child(even) {
+        background: #f8fafc;
+      }
+
+      .print-table-graph-split {
+        display: flex;
+        gap: 12px;
+        align-items: stretch;
+      }
+
+      .print-table-wrap {
+        flex: 1.6;
+      }
+
+      .print-graph-wrap {
+        flex: 1.1;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 6px 10px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+
+      .print-chart-label {
+        font-size: 9.5px;
+        font-weight: 700;
+        color: #1F4E78;
+        text-align: center;
+        margin-bottom: 2px;
+      }
+
+      .print-dual-grid {
+        display: flex;
+        gap: 12px;
+      }
+
+      .print-dual-col {
+        flex: 1;
+      }
+
+      .print-sub-heading {
+        font-size: 10px;
+        font-weight: 700;
+        color: #334155;
+        margin-bottom: 3px;
+      }
+
+      .print-signatures {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 14px;
+        padding-top: 10px;
+        border-top: 1px dashed #cbd5e1;
+      }
+
+      .print-sig-col {
+        text-align: center;
+        font-size: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+      }
+
+      .print-sig-line {
+        color: #94a3b8;
+        margin-bottom: 2px;
+      }
+
+      .print-sig-sub {
+        font-size: 9px;
+        color: #64748b;
+      }
+
+      /* Print Media Query: Full A4 Sheet with Zero Spillover */
+      @media print {
+        @page {
+          size: A4 portrait;
+          margin: 7mm 12mm 7mm 12mm;
+        }
+
+        html, body {
+          background: #ffffff !important;
+          color: #000000 !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          width: 100% !important;
+          height: auto !important;
+        }
+
+        /* Hide entire interface except print sheet */
+        body > *:not(#modalSubjectPrintPreview):not(#modalSemesterPrintPreview),
+        .workspace-sidebar,
+        .workspace-header,
+        .tab-navigation,
+        .print-toolbar,
+        .modal-header,
+        .btn,
+        .data-extractor-nav,
+        #subjectResultsDashboard,
+        #semesterResultsDashboard,
+        #viewSubjectAnalysis > *:not(#modalSubjectPrintPreview),
+        #viewSemesterAnalysis > *:not(#modalSemesterPrintPreview) {
+          display: none !important;
+        }
+
+        #modalSubjectPrintPreview:not(.hidden),
+        #modalSemesterPrintPreview:not(.hidden) {
+          position: static !important;
+          display: block !important;
+          background: transparent !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          width: 100% !important;
+          height: auto !important;
+          box-shadow: none !important;
+          overflow: visible !important;
+        }
+
+        #modalSubjectPrintPreview.hidden,
+        #modalSemesterPrintPreview.hidden {
+          display: none !important;
+        }
+
+        .print-modal-card {
+          max-width: 100% !important;
+          width: 100% !important;
+          box-shadow: none !important;
+          border: none !important;
+          background: transparent !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+
+        .modal-body {
+          background: transparent !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          overflow: visible !important;
+          max-height: none !important;
+        }
+
+        .subject-print-sheet {
+          box-shadow: none !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          width: 100% !important;
+          min-height: 275mm !important;
+          height: auto !important;
+          page-break-inside: avoid !important;
+          page-break-after: avoid !important;
+        }
+
+        .print-table th {
+          background-color: #1F4E78 !important;
+          color: #ffffff !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+
+        .print-table tbody tr:nth-child(even) {
+          background-color: #f8fafc !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+      }
+    </style>

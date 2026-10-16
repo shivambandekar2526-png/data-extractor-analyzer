@@ -1,0 +1,161 @@
+    <!-- 1-PAGE INSTITUTIONAL SUBJECT PRINT / PREVIEW MODAL -->
+    <!-- 1-PAGE INSTITUTIONAL SUBJECT PRINT / PREVIEW MODAL -->
+    <div class="modal-backdrop hidden" id="modalSubjectPrintPreview" style="z-index: 10010; overflow-y: auto; padding: 1.5rem 0.5rem; display: flex; align-items: flex-start; justify-content: center;">
+      <div class="modal-card print-modal-card" style="max-width: 940px; width: 96%; background: var(--bg-card); border-radius: 12px; box-shadow: 0 16px 48px rgba(0,0,0,0.5); margin: 1rem auto; display: flex; flex-direction: column;">
+        <!-- Modal Toolbar (Hidden during browser printing) -->
+        <div class="modal-header print-toolbar" style="padding: 0.85rem 1.4rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; background: var(--bg-card); flex-shrink: 0; position: sticky; top: 0; z-index: 20;">
+          <div class="modal-title-group" style="display: flex; align-items: center; gap: 10px;">
+            <div class="tabular-modal-icon" style="background: rgba(31, 78, 120, 0.15); color: #1F4E78; font-size: 1.25rem; width: 38px; height: 38px; border-radius: 8px; display: flex; align-items: center; justify-content: center;">🖨️</div>
+            <div>
+              <h3 style="margin: 0; font-size: 1.15rem; font-weight: 700; color: var(--text-main);">Institutional Academic Report (1-Page Preview)</h3>
+              <p class="modal-subtitle" style="margin: 2px 0 0; font-size: 0.8rem; color: var(--text-muted);">Terna Engineering College • Departmental Clearance & Subject Audit Sheet</p>
+            </div>
+          </div>
+          <div style="display: flex; gap: 0.6rem; align-items: center;">
+            <button type="button" class="btn btn-primary btn-sm" id="btnPrintModalExecute" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; padding: 0.5rem 1rem;">
+              <span>🖨️ Print Now</span>
+            </button>
+            <button type="button" class="btn btn-outline btn-sm" id="btnModalExportDocx" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; padding: 0.5rem 1rem; border-color: #3b82f6; color: #3b82f6;">
+              <span>📄 Word (.docx)</span>
+            </button>
+            <button type="button" class="btn-close" id="btnClosePrintPreviewModal" style="margin-left: 0.4rem; cursor: pointer; font-size: 1.5rem; background: none; border: none; color: var(--text-muted);">&times;</button>
+          </div>
+        </div>
+
+        <!-- Modal Body: Printable Sheet Display Container -->
+        <div class="modal-body" style="padding: 1.5rem 1rem; overflow: visible; background: #cbd5e1; display: flex; justify-content: center;">
+          <!-- A4 Sheet Surface -->
+          <div id="subjectPrintSheet" class="subject-print-sheet">
+            <!-- Sheet Header with Top-Left Terna Logo -->
+            <div class="print-header-grid" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+              <div class="print-logo-box" style="width: 76px; height: 76px; flex-shrink: 0; display: flex; align-items: center; justify-content: flex-start;">
+                <img src="/static/img/terna_logo.png" alt="Terna Engineering College Logo" style="width: 72px; height: 72px; object-fit: contain; display: block;" />
+              </div>
+              <div class="print-header-text" style="flex: 1; text-align: center; margin-right: 76px;">
+                <h1 class="print-college-name" style="margin: 0; font-size: 20px; font-weight: 800; color: #1F4E78; letter-spacing: 0.5px; text-transform: uppercase;">TERNA ENGINEERING COLLEGE</h1>
+                <h2 class="print-dept-name" id="prnDeptName" style="margin: 2px 0 0; font-size: 13.5px; font-weight: 700; color: #334155; text-transform: uppercase;">DEPARTMENT OF ARTIFICIAL INTELLIGENCE AND DATA SCIENCE</h2>
+                <div class="print-report-title" style="margin: 2px 0 0; font-size: 9.5px; font-weight: 600; color: #64748b; letter-spacing: 0.8px;">SUBJECT-WISE RESULT ANALYSIS REPORT</div>
+              </div>
+            </div>
+            <div class="print-divider" style="height: 2px; background: linear-gradient(90deg, #1F4E78 0%, #3b82f6 50%, #1F4E78 100%); margin-bottom: 10px;"></div>
+
+            <!-- Metadata Block -->
+            <div class="print-meta-grid">
+              <div class="print-meta-left">
+                <div class="print-meta-row"><span class="print-meta-lbl">Batch:</span> <strong id="prnBatch">2021–2022</strong></div>
+                <div class="print-meta-row"><span class="print-meta-lbl">Semester:</span> <strong id="prnSemester">Semester VIII</strong></div>
+                <div class="print-meta-row"><span class="print-meta-lbl">Subject:</span> <strong id="prnSubject" class="print-subject-name">CSC801 - Advanced Artificial Intelligence</strong></div>
+              </div>
+              <div class="print-meta-right">
+                <div class="print-meta-row"><span class="print-meta-lbl">Academic Year:</span> <span id="prnAcadYear">2024–25</span></div>
+                <div class="print-meta-row"><span class="print-meta-lbl">Evaluation Max:</span> <strong id="prnMaxMarks">150 Marks</strong></div>
+                <div class="print-meta-row"><span class="print-meta-lbl">Report Date:</span> <span id="prnReportDate">07-Oct-2026</span></div>
+              </div>
+            </div>
+
+            <!-- 1. Theory Examination Table at Top with Donut/Pie Chart -->
+            <div class="print-section">
+              <div class="print-section-title">1. THEORY EXAMINATION & CLEARANCE ANALYSIS</div>
+              <div class="print-table-graph-split">
+                <div class="print-table-wrap">
+                  <table class="print-table" id="prnTblTheory">
+                    <thead>
+                      <tr>
+                        <th>Clearance Status / Performance Metric</th>
+                        <th style="text-align: right; width: 80px;">Count</th>
+                        <th style="text-align: right; width: 95px;">Percentage</th>
+                      </tr>
+                    </thead>
+                    <tbody id="prnTblTheoryBody"></tbody>
+                  </table>
+                </div>
+                <div class="print-graph-wrap" style="align-items: center; justify-content: center; flex: 0 0 255px; max-width: 255px;">
+                  <div class="print-chart-label" style="font-size: 9.5px; font-weight: 700; color: #1F4E78; text-align: center; margin-bottom: 2px;">Clearance Distribution Graph</div>
+                  <div style="width: 245px; height: 160px; max-width: 245px; max-height: 160px; overflow: hidden; position: relative; display: flex; align-items: center; justify-content: center;">
+                    <canvas id="prnChartTheory" width="245" height="160" style="width: 245px !important; height: 160px !important; max-width: 245px !important; max-height: 160px !important; display: block;"></canvas>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 2. Dual Lab Evaluation (Term Work & Practical / Oral) with Bar Charts -->
+            <div class="print-section">
+              <div class="print-section-title">2. LABORATORY EVALUATION (TERM WORK & PRACTICAL / ORAL)</div>
+              <div class="print-dual-grid">
+                <!-- Term Work Block -->
+                <div class="print-dual-col">
+                  <div class="print-sub-heading">Term Work (TW) Performance & Distribution</div>
+                  <table class="print-table" id="prnTblTw">
+                    <tbody>
+                      <tr><td>TW Students Appeared</td><td style="text-align: right;"><strong id="prnTwAppeared">0</strong></td></tr>
+                      <tr><td>TW Students Passed</td><td style="text-align: right;"><strong id="prnTwPassed" style="color: #059669;">0</strong></td></tr>
+                      <tr><td>TW Students Failed</td><td style="text-align: right;"><strong id="prnTwFailed" style="color: #dc2626;">0</strong></td></tr>
+                      <tr><td>TW Pass Percentage</td><td style="text-align: right;"><strong id="prnTwPassRate" style="color: #1F4E78;">0.00%</strong></td></tr>
+                    </tbody>
+                  </table>
+                  <div class="print-mini-chart-container" style="margin-top: 6px; text-align: center; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 5px; padding: 4px; overflow: hidden;">
+                    <div style="font-size: 9px; font-weight: 700; color: #1F4E78; margin-bottom: 2px;">TW Score Range Histogram</div>
+                    <div style="width: 240px; height: 105px; max-width: 240px; max-height: 105px; margin: 0 auto; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                      <canvas id="prnChartTw" width="240" height="105" style="width: 240px !important; height: 105px !important; max-width: 240px !important; max-height: 105px !important; display: block;"></canvas>
+                    </div>
+                  </div>
+                </div>
+                <!-- Practical / Oral Block -->
+                <div class="print-dual-col">
+                  <div class="print-sub-heading">Practical / Oral (PR / OR) Performance & Distribution</div>
+                  <table class="print-table" id="prnTblPr">
+                    <tbody>
+                      <tr><td>PR/OR Students Appeared</td><td style="text-align: right;"><strong id="prnPrAppeared">0</strong></td></tr>
+                      <tr><td>PR/OR Students Passed</td><td style="text-align: right;"><strong id="prnPrPassed" style="color: #059669;">0</strong></td></tr>
+                      <tr><td>PR/OR Students Failed</td><td style="text-align: right;"><strong id="prnPrFailed" style="color: #dc2626;">0</strong></td></tr>
+                      <tr><td>PR/OR Pass Percentage</td><td style="text-align: right;"><strong id="prnPrPassRate" style="color: #1F4E78;">0.00%</strong></td></tr>
+                    </tbody>
+                  </table>
+                  <div class="print-mini-chart-container" style="margin-top: 6px; text-align: center; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 5px; padding: 4px; overflow: hidden;">
+                    <div style="font-size: 9px; font-weight: 700; color: #1F4E78; margin-bottom: 2px;">PR/OR Score Range Histogram</div>
+                    <div style="width: 240px; height: 105px; max-width: 240px; max-height: 105px; margin: 0 auto; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                      <canvas id="prnChartPr" width="240" height="105" style="width: 240px !important; height: 105px !important; max-width: 240px !important; max-height: 105px !important; display: block;"></canvas>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 3. Subject Toppers Full-Width Merit Table (No Graph) -->
+            <div class="print-section">
+              <div class="print-section-title">3. TOP 5 MERIT LEADERS (COMBINED SUBJECT RESULT: THEORY + LAB)</div>
+              <div style="width: 100%;">
+                <table class="print-table" id="prnTblToppers">
+                  <thead>
+                    <tr>
+                      <th style="width: 85px; text-align: center;">Rank</th>
+                      <th>Student Name</th>
+                      <th style="width: 140px; text-align: center;">Seat No / PRN</th>
+                      <th style="text-align: right; width: 110px;">Total Marks</th>
+                      <th style="text-align: right; width: 105px;">Percentage</th>
+                    </tr>
+                  </thead>
+                  <tbody id="prnTblToppersBody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Institutional Signatures Block -->
+            <div class="print-signatures">
+              <div class="print-sig-col">
+                <div class="print-sig-line">__________________________</div>
+                <strong>Result Coordinator</strong>
+                <span class="print-sig-sub" id="prnSigDept1">Department of AI & DS</span>
+              </div>
+              <div class="print-sig-col">
+                <div class="print-sig-line">__________________________</div>
+                <strong>Head of Department (HOD)</strong>
+                <span class="print-sig-sub" id="prnSigDept2">Terna Engineering College</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 1-PAGE INSTITUTIONAL SEMESTER PRINT / PREVIEW MODAL -->

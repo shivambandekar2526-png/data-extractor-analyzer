@@ -1,0 +1,122 @@
+    <aside class="app-sidebar-drawer" id="appSidebarDrawer" aria-label="Application Navigation">
+      <div class="drawer-inner">
+        <!-- Drawer Brand Header -->
+        <div class="drawer-brand-card">
+          <div class="drawer-brand-group">
+            <div class="drawer-brand-badge">⚡</div>
+            <div class="drawer-brand-text">
+              <span class="drawer-app-title">Result Analysis</span>
+              <span class="drawer-app-version">AI Platform V1.0</span>
+            </div>
+          </div>
+          <button type="button" id="btnDrawerPin" class="btn-drawer-collapse-icon" title="Collapse sidebar (Ctrl+B)" aria-label="Collapse sidebar">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="11 17 6 12 11 7"></polyline>
+              <polyline points="18 17 13 12 18 7"></polyline>
+            </svg>
+          </button>
+        </div>
+
+        <nav class="drawer-nav-sections">
+          <!-- Section 1: DATA EXTRACTION -->
+          <div class="drawer-group">
+            <div class="drawer-group-title">
+              <span>Data Extraction</span>
+            </div>
+            <ul class="drawer-nav-list">
+              <li>
+                <a href="/extract" class="drawer-nav-item active" data-route="/extract" title="Extract &amp; Audit">
+                  <span class="drawer-icon-wrap"><span class="drawer-icon">⚡</span></span>
+                  <span class="drawer-label">Extract &amp; Audit</span>
+                  <span class="drawer-active-indicator" aria-hidden="true"></span>
+                </a>
+              </li>
+              <li>
+                <a href="/historical" class="drawer-nav-item" data-route="/historical" title="Historical Data">
+                  <span class="drawer-icon-wrap"><span class="drawer-icon">📚</span></span>
+                  <span class="drawer-label">Historical Data</span>
+                  <span class="drawer-active-indicator" aria-hidden="true"></span>
+                </a>
+              </li>
+            </ul>
+          </div>
+
+          <div class="drawer-divider"></div>
+
+          <!-- Section 2: DATA ANALYSIS -->
+          <div class="drawer-group">
+            <div class="drawer-group-title">
+              <span>Data Analysis</span>
+            </div>
+            <ul class="drawer-nav-list">
+              <li>
+                <a href="/analysis" class="drawer-nav-item" data-route="/analysis" title="Analysis Overview">
+                  <span class="drawer-icon-wrap"><span class="drawer-icon">📊</span></span>
+                  <span class="drawer-label">Analysis Overview</span>
+                  <span class="drawer-active-indicator" aria-hidden="true"></span>
+                </a>
+              </li>
+              <li>
+                <a href="/analysis/subject" class="drawer-nav-item" data-route="/analysis/subject" title="Subject-wise Analysis">
+                  <span class="drawer-icon-wrap"><span class="drawer-icon">📘</span></span>
+                  <span class="drawer-label">Subject-wise Analysis</span>
+                  <span class="drawer-active-indicator" aria-hidden="true"></span>
+                </a>
+              </li>
+              <li>
+                <a href="/analysis/semester" class="drawer-nav-item" data-route="/analysis/semester" title="Semester-wise Analysis">
+                  <span class="drawer-icon-wrap"><span class="drawer-icon">📑</span></span>
+                  <span class="drawer-label">Semester-wise Analysis</span>
+                  <span class="drawer-active-indicator" aria-hidden="true"></span>
+                </a>
+              </li>
+            </ul>
+          </div>
+
+          <div class="drawer-divider"></div>
+
+          <!-- Section 3: REPORTS -->
+          <div class="drawer-group">
+            <div class="drawer-group-title">
+              <span>Reports</span>
+            </div>
+            <ul class="drawer-nav-list">
+              <li>
+                <a href="/reports" class="drawer-nav-item" data-route="/reports" title="Generated Reports">
+                  <span class="drawer-icon-wrap"><span class="drawer-icon">📄</span></span>
+                  <span class="drawer-label">Generated Reports</span>
+                  <span class="drawer-active-indicator" aria-hidden="true"></span>
+                </a>
+              </li>
+            </ul>
+          </div>
+
+          <div class="drawer-divider"></div>
+
+          <!-- Section 4: SYSTEM -->
+          <div class="drawer-group">
+            <div class="drawer-group-title">
+              <span>System</span>
+            </div>
+            <ul class="drawer-nav-list">
+              <li>
+                <a href="/settings" class="drawer-nav-item" data-route="/settings" title="Settings">
+                  <span class="drawer-icon-wrap"><span class="drawer-icon">⚙️</span></span>
+                  <span class="drawer-label">Settings</span>
+                  <span class="drawer-active-indicator" aria-hidden="true"></span>
+                </a>
+              </li>
+            </ul>
+          </div>
+        </nav>
+
+        <!-- Drawer Quick Footer -->
+        <div class="drawer-footer-card">
+          <div class="drawer-footer-status">
+            <span class="status-pulse-dot"></span>
+            <span class="drawer-footer-text">Workspace Online</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+

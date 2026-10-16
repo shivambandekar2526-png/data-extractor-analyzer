@@ -1,0 +1,31 @@
+  <section id="viewReports" class="workspace-view hidden" data-view="/reports">
+    <div class="workspace-page-header">
+      <div class="workspace-title-group">
+        <div class="workspace-icon">📄</div>
+        <div>
+          <h1 class="workspace-title">Generated Reports</h1>
+          <p class="workspace-subtitle">View and export generated academic reports, accreditation compliance sheets, and gazettes.</p>
+        </div>
+      </div>
+    </div>
+
+    <section class="card reports-empty-card">
+      <div class="workspace-empty-state">
+        <div class="empty-state-icon">📄</div>
+        <h3>No Generated Reports Stored Yet</h3>
+        <p>Official institutional accreditation summaries, NAAC/NBA compliance sheets, and graduation transcripts will be archived here when generated from your extraction and analysis runs.</p>
+        <div class="empty-state-actions">
+          <button type="button" class="btn btn-primary btn-sm" onclick="navigateTo('/extract')">
+            <span>⚡</span>
+            <span>Go to Extract &amp; Audit</span>
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="navigateTo('/analysis')">
+            <span>📊</span>
+            <span>Go to Analysis Overview</span>
+          </button>
+        </div>
+      </div>
+    </section>
+  </section>
+
+  <!-- VIEW 6: Settings (/settings) -->

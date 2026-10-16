@@ -1,0 +1,898 @@
+      <section id="viewExtract" class="workspace-view active" data-view="/extract">
+        <!-- Workspace Page Header -->
+        <div class="workspace-page-header">
+          <div class="workspace-title-group">
+            <div class="workspace-icon">⚡</div>
+            <div>
+              <h1 class="workspace-title">Extract &amp; Audit</h1>
+              <p class="workspace-subtitle">Extract, verify and manage academic result data from PDF gazettes and ledgers.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Single Semester Workspace Wrapper -->
+        <div id="singleWorkspaceSection">
+      <!-- Top Workflow Grid: 1. INPUT / SOURCE & 2. EXTRACTION ENGINE -->
+      <div class="extraction-workflow-grid">
+        <!-- 1. INPUT / SOURCE CARD -->
+        <section class="card source-card" id="sourceCard">
+          <div class="card-header">
+            <div class="card-title-group">
+              <span class="workflow-step-badge">1</span>
+              <div>
+                <h2>Input / Source Document</h2>
+                <p class="card-subtitle">Upload result gazette, spreadsheet, or select an existing batch</p>
+              </div>
+            </div>
+            <span class="tag">PDF / Excel / CSV</span>
+          </div>
+
+          <!-- Drag & Drop Upload Area -->
+          <input type="file" id="fileInput" accept=".pdf,.xlsx,.xls,.csv" class="hidden-input" style="display: none;">
+          <div class="upload-area" id="dropArea" tabindex="0" role="button" aria-label="Upload academic result document">
+            <div class="upload-icon">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+            </div>
+            <p class="upload-prompt" id="uploadPrompt"><strong>Drag &amp; Drop result PDF, Excel (.xlsx, .xls) or CSV</strong> or <span class="btn-link" id="browseBtn">browse files</span></p>
+            <div class="selected-file-badge hidden" id="selectedFileBadge">
+              <span class="selected-file-icon" id="selectedFileIcon">📄</span>
+              <div class="selected-file-info">
+                <span class="selected-file-name" id="selectedFileName"></span>
+                <span class="selected-file-size" id="selectedFileSize"></span>
+              </div>
+              <span class="change-file-pill">Change file</span>
+            </div>
+            <div class="format-chips-row">
+              <span class="format-chip">📄 PDF Gazette</span>
+              <span class="format-chip">📊 Excel (.xlsx/.xls)</span>
+              <span class="format-chip">📑 CSV Sheet</span>
+            </div>
+          </div>
+
+          <!-- Divider & Historical Batch Selection -->
+          <div class="or-divider"><span>OR SELECT FROM DEPARTMENTS_DATA FOLDER</span></div>
+
+          <div class="dept-data-browser-panel" id="deptDataBrowserPanel">
+            <!-- Format Filter Toggle: PDF vs Excel -->
+            <div class="browser-format-selector-row">
+              <span class="browser-label-title">Format to Load:</span>
+              <div class="browser-format-tabs" role="tablist" aria-label="Choose Document Type">
+                <button type="button" class="btn-format-tab active" id="btnBrowseFormatPdf" data-format="pdf" role="tab" aria-selected="true">
+                  <span class="fmt-icon">📄</span>
+                  <span>PDF Gazettes</span>
+                  <span class="fmt-count-badge" id="badgePdfCount">0</span>
+                </button>
+                <button type="button" class="btn-format-tab" id="btnBrowseFormatExcel" data-format="excel" role="tab" aria-selected="false">
+                  <span class="fmt-icon">📊</span>
+                  <span>Excel Spreadsheets</span>
+                  <span class="fmt-count-badge" id="badgeExcelCount">0</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Structured Cascade: Batch Selection -> File Selection -->
+            <div class="browser-cascade-grid">
+              <div class="browser-cascade-col">
+                <label for="deptBatchSelect" class="browser-field-label">
+                  <span class="step-num-pill">1</span> Batch / Academic Year:
+                </label>
+                <select id="deptBatchSelect" class="form-select form-select-sm" aria-label="Select Department and Batch">
+                  <option value="">-- Choose Batch Folder --</option>
+                </select>
+              </div>
+              <div class="browser-cascade-col">
+                <label for="deptFileSelect" class="browser-field-label">
+                  <span class="step-num-pill">2</span> Semester File (<span id="deptFileFormatLabel">PDF</span>):
+                </label>
+                <select id="deptFileSelect" class="form-select form-select-sm" aria-label="Select Semester File" disabled>
+                  <option value="">-- First Select a Batch --</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Active Selection Info Strip -->
+            <div class="browser-active-file-strip hidden" id="browserActiveFileStrip">
+              <div class="strip-left">
+                <span class="strip-icon" id="browserStripIcon">📄</span>
+                <div class="strip-details">
+                  <span class="strip-filename" id="browserStripFilename">Semester_1.pdf</span>
+                  <span class="strip-path" id="browserStripRelPath">departments_data/pdf/...</span>
+                </div>
+              </div>
+              <button type="button" class="btn-strip-clear" id="btnBrowserClearSelection" title="Clear selection">✕ Clear</button>
+            </div>
+
+            <!-- Hidden input to keep existing batchSelect contract 100% backward compatible -->
+            <input type="hidden" id="batchSelect" value="">
+          </div>
+
+          <!-- Manual Metadata Override Controls (Department / Batch / Semester) -->
+          <div class="manual-meta-override-container">
+            <button type="button" class="btn-toggle-meta-override" id="btnToggleMetaOverride" title="Manually specify or correct department, batch, and semester">
+              <span id="metaOverrideIcon">⚙️</span>
+              <span>Dataset Details &amp; Manual Override</span>
+              <span class="meta-override-badge" id="metaOverrideStatusBadge">Auto-detected by AI</span>
+            </button>
+            <div class="meta-override-drawer" id="metaOverrideDrawer">
+              <p class="meta-override-hint">Auto-detected via AI on upload. You can adjust any values if needed before or after extraction:</p>
+              <div class="meta-override-grid">
+                <div class="meta-override-field">
+                  <label for="overrideDeptInput">Department / Branch:</label>
+                  <select id="overrideDeptInput" class="form-select form-select-sm">
+                    <option value="">-- Auto-detect from document --</option>
+                    <option value="Artificial_Intelligence_and_Data_Science">Artificial Intelligence &amp; Data Science (AIDS)</option>
+                    <option value="Computer_Engineering">Computer Engineering (COMPS)</option>
+                    <option value="Information_Technology">Information Technology (IT)</option>
+                    <option value="Electronics_and_Telecommunication">Electronics &amp; Telecommunication (EXTC)</option>
+                    <option value="Mechanical_Engineering">Mechanical Engineering (MECH)</option>
+                    <option value="Civil_Engineering">Civil Engineering (CIVIL)</option>
+                    <option value="Electrical_Engineering">Electrical Engineering (ELEC)</option>
+                    <option value="Instrumentation_Engineering">Instrumentation Engineering (INST)</option>
+                  </select>
+                </div>
+                <div class="meta-override-field">
+                  <label for="overrideBatchInput">Batch / Academic Year (e.g. 21-22):</label>
+                  <input type="text" id="overrideBatchInput" class="form-control form-control-sm" placeholder="e.g. 21-22, 22-23" pattern="^\d{2}-\d{2}$" title="Format: YY-YY (e.g. 21-22)">
+                </div>
+                <div class="meta-override-field">
+                  <label for="overrideSemInput">Semester:</label>
+                  <select id="overrideSemInput" class="form-select form-select-sm">
+                    <option value="">-- Auto-detect --</option>
+                    <option value="Semester_1">Semester 1</option>
+                    <option value="Semester_2">Semester 2</option>
+                    <option value="Semester_3">Semester 3</option>
+                    <option value="Semester_4">Semester 4</option>
+                    <option value="Semester_5">Semester 5</option>
+                    <option value="Semester_6">Semester 6</option>
+                    <option value="Semester_7">Semester 7</option>
+                    <option value="Semester_8">Semester 8</option>
+                  </select>
+                </div>
+              </div>
+              <div class="step-meta-preview-strip">
+                <div class="meta-bar-preview-box">
+                  <span class="meta-preview-title">📄 PDF Storage Location:</span>
+                  <code id="stepPdfMirrorPreview" class="meta-mirror-path">departments_data/pdf/...</code>
+                </div>
+                <div class="meta-bar-preview-box">
+                  <span class="meta-preview-title">📊 Excel Mirror Location:</span>
+                  <code id="stepExcelMirrorPreview" class="meta-mirror-path">departments_data/excel/...</code>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. EXTRACTION ENGINE CARD -->
+        <section class="card engine-card" id="engineCard">
+          <div class="card-header">
+            <div class="card-title-group">
+              <span class="workflow-step-badge">2</span>
+              <div>
+                <h2>Extraction Engine</h2>
+                <p class="card-subtitle">Choose local neural intelligence, cloud failover, or multimodal vision</p>
+              </div>
+            </div>
+            <span class="tag tag-accent" id="activeEngineTag">Local AI Active</span>
+          </div>
+
+          <div class="pipeline-options-list">
+            <label class="pipeline-radio-card active" id="pipelineLocalLabel">
+              <input type="radio" name="extractionPipeline" id="pipelineLocal" value="local" checked>
+              <div class="pipeline-radio-body">
+                <div class="pipeline-radio-header">
+                  <span class="pipeline-radio-title">⚡ Standard Local AI</span>
+                  <span class="pipeline-badge">Fast &amp; Private GPU</span>
+                </div>
+                <span class="pipeline-radio-desc">Local Ollama (Qwen2.5:7b) + deterministic rules &amp; checksum equations. Completely offline privacy.</span>
+              </div>
+            </label>
+
+            <label class="pipeline-radio-card" id="pipelineCloudLabel">
+              <input type="radio" name="extractionPipeline" id="pipelineCloud" value="cloud">
+              <div class="pipeline-radio-body">
+                <div class="pipeline-radio-header">
+                  <span class="pipeline-radio-title">☁️ Pure Cloud AI Pipeline</span>
+                  <span class="pipeline-badge">Multi-Key Failover</span>
+                </div>
+                <span class="pipeline-radio-desc">Fast ledger ingestion + 100% Cloud LLM cross-checking &amp; self-healing (Groq / Gemini / Claude).</span>
+              </div>
+            </label>
+
+            <label class="pipeline-radio-card" id="pipelineVisualLabel">
+              <input type="radio" name="extractionPipeline" id="pipelineVisual" value="visual_blueprint">
+              <div class="pipeline-radio-body">
+                <div class="pipeline-radio-header">
+                  <span class="pipeline-radio-title">👁️ Visual Blueprint & Sliced Stream</span>
+                  <span class="pipeline-badge">Universal Layouts</span>
+                </div>
+                <span class="pipeline-radio-desc">Page 1 Image Blueprint + Sliced Page-by-Page Vision AI + Transactional Rollback.</span>
+              </div>
+            </label>
+          </div>
+
+          <!-- Start Extraction Action Bar -->
+          <div class="engine-action-bar">
+            <button id="extractBtn" class="btn btn-primary btn-extract-action" disabled>
+              <span class="btn-extract-icon">⚡</span>
+              <span>Start Extraction</span>
+            </button>
+            <span class="engine-action-hint" id="extractBtnHint">Select a source file or historical batch to start</span>
+          </div>
+
+          <!-- Knowledge Base Mini Banner -->
+          <div class="kb-mini-banner">
+            <span class="kb-pulse-dot"></span>
+            <span><strong>Incremental Learning Ready:</strong> 4 learned archetypes (Tabulation, Gazette Classic, Gazette Spool, NEP 2020 Scheme).</span>
+          </div>
+        </section>
+      </div>
+
+      <!-- 3. EXTRACTION PROGRESS SECTION -->
+      <div id="progressSection" class="progress-section hidden">
+        <section class="card progress-card">
+          <div class="progress-card-header">
+            <div class="progress-header-left">
+              <span class="spinner" id="progressSpinner"></span>
+              <div>
+                <h3 class="progress-title">Extraction Progress</h3>
+                <p class="progress-message-text" id="progressMessage">Extracting records...</p>
+              </div>
+            </div>
+            <div class="progress-header-right">
+              <div class="extraction-controls-group" id="extractionControlsGroup">
+                <button type="button" id="btnPauseExtraction" class="btn-ctrl btn-ctrl-pause" title="Pause extraction temporarily">
+                  <span class="ctrl-icon">⏸</span>
+                  <span class="ctrl-label">Pause</span>
+                </button>
+                <button type="button" id="btnResumeExtraction" class="btn-ctrl btn-ctrl-resume hidden" title="Resume extraction">
+                  <span class="ctrl-icon">▶</span>
+                  <span class="ctrl-label">Resume</span>
+                </button>
+                <button type="button" id="btnStopExtraction" class="btn-ctrl btn-ctrl-stop" title="Stop extraction &amp; preserve captured records">
+                  <span class="ctrl-icon">⏹</span>
+                  <span class="ctrl-label">Stop &amp; Save</span>
+                </button>
+              </div>
+              <span id="progressPercentage" class="progress-num">0%</span>
+            </div>
+          </div>
+
+          <div class="progress-bar-track">
+            <div id="progressBar" class="progress-bar-fill" style="width: 0%;"></div>
+          </div>
+
+          <!-- Real-Time Extraction State Metrics Strip -->
+          <div class="progress-metrics-grid">
+            <div class="prog-metric-card">
+              <span class="prog-metric-label">CURRENT FILE / PAGE</span>
+              <strong class="prog-metric-val" id="progCurrentPage">Initializing...</strong>
+            </div>
+            <div class="prog-metric-card">
+              <span class="prog-metric-label">PAGES PROCESSED</span>
+              <strong class="prog-metric-val text-success" id="progPagesProcessed">0 pages processed</strong>
+            </div>
+            <div class="prog-metric-card">
+              <span class="prog-metric-label">PAGES REMAINING</span>
+              <strong class="prog-metric-val" id="progPagesRemaining">0 pages remaining</strong>
+            </div>
+            <div class="prog-metric-card">
+              <span class="prog-metric-label">RECORDS EXTRACTED</span>
+              <strong class="prog-metric-val text-accent" id="progRecordsExtracted">0 records extracted</strong>
+            </div>
+            <div class="prog-metric-card">
+              <span class="prog-metric-label">VERIFICATION STATUS</span>
+              <strong class="prog-metric-val text-success" id="progVerificationStatus">Verification Active</strong>
+            </div>
+          </div>
+        </section>
+      </div>
+
+    <!-- Results Section -->
+    <div id="resultsSection" class="results-section hidden">
+      <section class="card">
+        <div class="results-header">
+          <div>
+            <div class="results-title-row">
+              <span id="liveTableBadge" class="live-pulse-badge hidden">
+                <span class="pulse-dot"></span>
+                <span id="liveTableBadgeText">LIVE STREAMING</span>
+              </span>
+              <h2 id="resultTitle">Extracted Data</h2>
+            </div>
+            <p id="resultMeta" class="results-meta-text">Analyzing dataset...</p>
+          </div>
+          <div class="export-actions">
+            <button type="button" id="btnSaveToDatabase" class="btn btn-primary" title="Save dataset and student records directly to SQLite Database and sync to canonical Excel mirror">
+              💾 Save to Database
+            </button>
+            <a id="btnDownloadAcademicReport" class="btn btn-outline" download title="Download official university academic analysis report (6 Sheets)">
+              🏛️ Analysis Report
+            </a>
+            <div class="export-dropdown-wrapper">
+              <button type="button" class="btn btn-outline" id="btnExportMenuToggle">
+                📥 Export As ▾
+              </button>
+              <div class="export-dropdown-menu hidden" id="exportDropdownMenu">
+                <a id="btnDownloadExcel" class="export-menu-item" download>📊 Excel Workbook (.xlsx)</a>
+                <a id="btnDownloadCsv" class="export-menu-item" download>📑 CSV Spreadsheet (.csv)</a>
+                <a id="btnDownloadJson" class="export-menu-item" download>📋 Schema Catalog (.json)</a>
+              </div>
+            </div>
+            <button type="button" id="btnOpenDataCleaner" class="btn btn-outline" title="Run AI-guided data cleaning, formatting, and discrepancy repair">
+              🧹 Clean
+            </button>
+            <button type="button" id="btnCrossCheckCloud" class="btn btn-ai-crosscheck" title="Cross-Check Extracted Records with Cloud AI">
+              🔍 Cross-Check
+            </button>
+          </div>
+        </div>
+
+        <!-- 4. Extracted Data Key Summary Strip -->
+        <div class="extracted-data-summary-bar">
+          <div class="extracted-stat-badge stat-verified">
+            <span class="status-dot green"></span>
+            <span class="stat-badge-label">Verified Records:</span>
+            <strong id="auditPassedCount">0 / 0</strong>
+          </div>
+          <div class="extracted-stat-badge stat-total">
+            <span class="status-dot blue"></span>
+            <span class="stat-badge-label">Total Records:</span>
+            <strong id="extractedTotalCount">0</strong>
+          </div>
+          <div class="extracted-stat-badge stat-status">
+            <span class="stat-badge-label">Extraction Status:</span>
+            <strong id="extractionStatusBadge" class="badge-status-tag">Ready</strong>
+          </div>
+          <div class="extracted-stat-badge stat-classified hidden" id="classifiedMetaPill" title="Classified Dataset Metadata">
+            <span class="status-dot purple"></span>
+            <span class="stat-badge-label">Dataset:</span>
+            <strong id="classifiedMetaText">-</strong>
+          </div>
+
+          <!-- Corner Metadata: Live Stream & Tokens tucked into top-right corner -->
+          <div class="extracted-summary-corner" id="extractedSummaryCorner">
+            <div class="extracted-stat-badge stat-tokens-corner hidden" id="tokenPill" title="LLM Token Usage">
+              <span class="status-dot orange"></span>
+              <span id="tokenPillText">Tokens: 0 in / 0 out (0 tot)</span>
+            </div>
+            <div class="extracted-stat-badge stat-stream-corner hidden" id="liveStreamPill" title="Live Extraction Stream">
+              <span class="pulse-dot"></span>
+              <span id="liveStreamPillText">Streaming Live</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dataset Classification & Manual Target Override Bar -->
+        <div class="dataset-meta-override-bar" id="resultsMetaOverrideBar">
+          <div class="meta-bar-header">
+            <div class="meta-bar-title">
+              <span class="meta-bar-icon">🏷️</span>
+              <strong class="meta-bar-heading">Dataset Classification &amp; Target Storage:</strong>
+              <span class="meta-override-badge" id="resultsMetaBadge">Auto-detected by AI</span>
+            </div>
+            <span class="meta-bar-hint">Manually adjust Department, Batch (YY-YY), or Semester below if AI made a mistake before saving:</span>
+          </div>
+          <div class="meta-bar-inputs-grid">
+            <div class="meta-bar-field">
+              <label for="resultsDeptInput">Department / Branch:</label>
+              <select id="resultsDeptInput" class="form-select form-select-sm">
+                <option value="Artificial_Intelligence_and_Data_Science">Artificial Intelligence &amp; Data Science (AIDS)</option>
+                <option value="Computer_Engineering">Computer Engineering (COMPS)</option>
+                <option value="Information_Technology">Information Technology (IT)</option>
+                <option value="Electronics_and_Telecommunication">Electronics &amp; Telecommunication (EXTC)</option>
+                <option value="Mechanical_Engineering">Mechanical Engineering (MECH)</option>
+                <option value="Civil_Engineering">Civil Engineering (CIVIL)</option>
+                <option value="Electrical_Engineering">Electrical Engineering (ELEC)</option>
+                <option value="Instrumentation_Engineering">Instrumentation Engineering (INST)</option>
+              </select>
+            </div>
+            <div class="meta-bar-field">
+              <label for="resultsBatchInput">Batch / Academic Year (YY-YY):</label>
+              <input type="text" id="resultsBatchInput" class="form-control form-control-sm" placeholder="e.g. 21-22, 22-23" pattern="^\d{2}-\d{2}$" title="Format: YY-YY (e.g. 21-22)">
+            </div>
+            <div class="meta-bar-field">
+              <label for="resultsSemInput">Semester:</label>
+              <select id="resultsSemInput" class="form-select form-select-sm">
+                <option value="Semester_1">Semester 1</option>
+                <option value="Semester_2">Semester 2</option>
+                <option value="Semester_3">Semester 3</option>
+                <option value="Semester_4">Semester 4</option>
+                <option value="Semester_5">Semester 5</option>
+                <option value="Semester_6">Semester 6</option>
+                <option value="Semester_7">Semester 7</option>
+                <option value="Semester_8">Semester 8</option>
+              </select>
+            </div>
+            <div class="meta-bar-preview-stacked">
+              <div class="meta-bar-preview-box">
+                <span class="meta-preview-title">📄 Target PDF Storage:</span>
+                <code id="resultsPdfMirrorPathPreview" class="meta-mirror-path">departments_data/pdf/...</code>
+              </div>
+              <div class="meta-bar-preview-box">
+                <span class="meta-preview-title">📊 Target Excel Mirror:</span>
+                <code id="resultsMirrorPathPreview" class="meta-mirror-path">departments_data/excel/...</code>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <div class="results-tabs-nav">
+          <button type="button" class="results-tab-btn active" id="tabBtnTable" data-target="tabViewTable">
+            <span>📋 Data Table View</span>
+          </button>
+          <button type="button" class="results-tab-btn" id="tabBtnAnalytics" data-target="tabViewAnalytics">
+            <span>📊 AI Visual Analytics Dashboard</span>
+            <span class="tab-chip-highlight">EDA + AI</span>
+          </button>
+        </div>
+
+        <!-- TAB 1: Data Table View (Interactive Excel Grid) -->
+        <div id="tabViewTable" class="tab-content active">
+          <!-- Excel Ribbon / Action Toolbar -->
+          <div class="excel-toolbar-wrapper">
+            <div class="excel-ribbon">
+              <!-- Left Group: Search -->
+              <div class="excel-ribbon-group">
+                <input type="text" id="searchInput" class="search-input excel-search-input" placeholder="🔍 Search records...">
+                <button type="button" id="btnToggleFindReplace" class="excel-btn excel-btn-outline" title="Find and Replace (Ctrl+F)">
+                  <span>Find &amp; Replace</span>
+                </button>
+              </div>
+
+              <!-- Middle Group: Edit & Structure -->
+              <div class="excel-ribbon-group">
+                <button type="button" id="btnExcelAddRow" class="excel-btn excel-btn-primary" title="Add a new row to table">
+                  <span>➕ Row</span>
+                </button>
+                <button type="button" id="btnExcelAddCol" class="excel-btn excel-btn-outline" title="Add a new column to dataset">
+                  <span>➕ Column</span>
+                </button>
+                <button type="button" id="btnExcelDeleteRows" class="excel-btn excel-btn-danger" title="Delete selected rows" disabled>
+                  <span>🗑️ Delete <span id="excelSelectedBadge" class="excel-count-badge hidden">0</span></span>
+                </button>
+                <button type="button" id="btnExcelUndo" class="excel-btn excel-btn-icon" title="Undo (Ctrl+Z)" disabled>
+                  <span>↩</span>
+                </button>
+                <button type="button" id="btnExcelRedo" class="excel-btn excel-btn-icon" title="Redo (Ctrl+Y)" disabled>
+                  <span>↪</span>
+                </button>
+                <button type="button" id="btnExcelAiFix" class="excel-btn excel-btn-ai" title="Auto-repair formulas, course totals, and discrepancies with AI">
+                  <span>🪄 Fix with AI</span>
+                </button>
+              </div>
+
+              <!-- Right Group: State & Reset -->
+              <div class="excel-ribbon-group excel-ribbon-right">
+                <div class="excel-save-status-pill" id="excelSaveStatus">
+                  <span class="status-dot dot-synced" id="excelSaveDot"></span>
+                  <span id="excelSaveStatusText">Saved</span>
+                </div>
+                <button type="button" id="btnExcelReset" class="excel-btn excel-btn-outline" title="Reset dataset to original extracted state">
+                  <span>↺ Reset</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Expandable Find & Replace Bar -->
+            <div id="excelFindReplaceBar" class="excel-find-replace-bar hidden">
+              <div class="find-replace-inner">
+                <div class="find-replace-field">
+                  <label for="findInput">Find:</label>
+                  <input type="text" id="findInput" class="excel-mini-input" placeholder="Text to find...">
+                </div>
+                <div class="find-replace-field">
+                  <label for="replaceInput">Replace:</label>
+                  <input type="text" id="replaceInput" class="excel-mini-input" placeholder="Replacement text...">
+                </div>
+                <div class="find-replace-field">
+                  <label for="findColSelect">Column:</label>
+                  <select id="findColSelect" class="excel-mini-select">
+                    <option value="_all_">All Columns</option>
+                  </select>
+                </div>
+                <div class="find-replace-checks">
+                  <label class="excel-checkbox-label">
+                    <input type="checkbox" id="findMatchCase"> Match Case
+                  </label>
+                </div>
+                <div class="find-replace-actions">
+                  <button type="button" id="btnFindPrev" class="btn btn-sm btn-outline">▲ Prev</button>
+                  <button type="button" id="btnFindNext" class="btn btn-sm btn-outline">▼ Next</button>
+                  <button type="button" id="btnReplaceOne" class="btn btn-sm btn-primary">Replace</button>
+                  <button type="button" id="btnReplaceAll" class="btn btn-sm btn-primary">Replace All</button>
+                  <span id="findMatchCount" class="find-match-badge">0 matches</span>
+                  <button type="button" id="btnCloseFindReplace" class="btn-close-sm" title="Close Find/Replace">✕</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Excel Interactive Table Container (directly below ribbon) -->
+          <div class="table-container excel-table-container" id="excelTableContainer" tabindex="0">
+            <table class="data-table excel-data-table" id="dataTable">
+              <thead>
+                <tr id="tableHeadRow"></tr>
+              </thead>
+              <tbody id="tableBody"></tbody>
+            </table>
+          </div>
+
+          <!-- Excel Real-Time Status & Formula Summary Bar -->
+          <div class="excel-status-bar" id="excelStatusBar">
+            <div class="excel-status-left">
+              <span id="paginationInfo">Showing records 1 - 25</span>
+              <div class="excel-page-size-picker">
+                <label for="pageSizeSelect">Page Size:</label>
+                <select id="pageSizeSelect" class="excel-mini-select">
+                  <option value="25" selected>25</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                  <option value="250">250</option>
+                  <option value="1000">All</option>
+                </select>
+              </div>
+              <div class="pagination-btns">
+                <button id="prevPageBtn" class="btn btn-sm">Previous</button>
+                <button id="nextPageBtn" class="btn btn-sm">Next</button>
+              </div>
+            </div>
+
+            <div class="excel-status-center">
+              <span id="excelActiveCellCoords" class="excel-coord-badge">Ready</span>
+            </div>
+
+            <div class="excel-status-right" id="excelStatsStrip">
+              <div class="excel-stat-chip" id="statChipCount" title="Count of non-empty cells in active column">
+                <span class="stat-name">COUNT:</span> <strong id="valStatCount">0</strong>
+              </div>
+              <div class="excel-stat-chip" id="statChipSum" title="Sum of numeric values">
+                <span class="stat-name">SUM:</span> <strong id="valStatSum">0.00</strong>
+              </div>
+              <div class="excel-stat-chip" id="statChipAvg" title="Average of numeric values">
+                <span class="stat-name">AVG:</span> <strong id="valStatAvg">0.00</strong>
+              </div>
+              <div class="excel-stat-chip" id="statChipMin" title="Minimum numeric value">
+                <span class="stat-name">MIN:</span> <strong id="valStatMin">0.00</strong>
+              </div>
+              <div class="excel-stat-chip" id="statChipMax" title="Maximum numeric value">
+                <span class="stat-name">MAX:</span> <strong id="valStatMax">0.00</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 2: AI Visual Analytics Dashboard -->
+        <div id="tabViewAnalytics" class="tab-content hidden">
+          <!-- Analytics Toolbar -->
+          <div class="eda-toolbar">
+            <div class="eda-toolbar-left">
+              <span class="eda-badge">⚡ Deterministic EDA Engine</span>
+              <span class="eda-meta-pill" id="edaTokensSaved">✨ ~99.6% Tokens Saved (Zero Token Aggregation)</span>
+            </div>
+            <div class="eda-toolbar-right">
+              <button type="button" id="btnRefreshEda" class="btn btn-sm btn-outline">↻ Re-compute Stats</button>
+              <button type="button" id="btnGenInsights" class="btn btn-sm btn-primary">🧠 Generate AI Executive Insights</button>
+              <button type="button" id="btnExportEdaJson" class="btn btn-sm btn-outline">📥 Export Metrics JSON</button>
+            </div>
+          </div>
+
+          <!-- Top Academic KPI Strip -->
+          <div class="eda-kpi-grid">
+            <div class="eda-kpi-card">
+              <span class="eda-kpi-label">TOTAL COHORT</span>
+              <strong class="eda-kpi-value" id="kpiTotalStudents">0</strong>
+              <span class="eda-kpi-sub" id="kpiAppearSub">Enrolled Candidates</span>
+            </div>
+            <div class="eda-kpi-card kpi-success">
+              <span class="eda-kpi-label">OVERALL PASS RATE</span>
+              <strong class="eda-kpi-value text-success" id="kpiPassRate">0%</strong>
+              <span class="eda-kpi-sub" id="kpiPassedCount">0 Passed</span>
+            </div>
+            <div class="eda-kpi-card kpi-accent">
+              <span class="eda-kpi-label">AVERAGE SGPI</span>
+              <strong class="eda-kpi-value text-accent" id="kpiAvgSgpi">0.00</strong>
+              <span class="eda-kpi-sub" id="kpiMedianSgpi">Median: 0.00 | Std: 0.00</span>
+            </div>
+            <div class="eda-kpi-card">
+              <span class="eda-kpi-label">HIGHEST SGPI (TOPPER)</span>
+              <strong class="eda-kpi-value text-warning" id="kpiMaxSgpi">0.00</strong>
+              <span class="eda-kpi-sub" id="kpiMaxMarks">Max Marks: 0</span>
+            </div>
+            <div class="eda-kpi-card">
+              <span class="eda-kpi-label">LOWEST SGPI (CLEARED)</span>
+              <strong class="eda-kpi-value text-accent" id="kpiMinSgpi">0.00</strong>
+              <span class="eda-kpi-sub" id="kpiMinStudentName">Cleared Student</span>
+            </div>
+            <div class="eda-kpi-card">
+              <span class="eda-kpi-label">DISTINCTION (≥ 7.5)</span>
+              <strong class="eda-kpi-value" id="kpiDistinction">0</strong>
+              <span class="eda-kpi-sub" id="kpiDistinctionPct">0% of cohort</span>
+            </div>
+            <div class="eda-kpi-card kpi-danger">
+              <span class="eda-kpi-label">KT / ATKT / FAIL</span>
+              <strong class="eda-kpi-value text-danger" id="kpiFailCount">0</strong>
+              <span class="eda-kpi-sub" id="kpiFailPct">0% KT / Backlog</span>
+            </div>
+          </div>
+
+          <!-- AI Executive Insights Card -->
+          <div class="eda-insights-card" id="edaInsightsCard">
+            <div class="eda-insights-header">
+              <div class="insights-title-group">
+                <span class="insights-sparkle">✦</span>
+                <h3>AI Executive Academic Briefing & NAAC/NBA Recommendations</h3>
+              </div>
+              <div class="insights-meta-group">
+                <span class="badge-engine" id="insightsEngineBadge">Standby</span>
+                <button type="button" class="btn-sm btn-outline" id="btnToggleInsightsCollapse">Collapse</button>
+              </div>
+            </div>
+            <div class="eda-insights-body" id="edaInsightsContent">
+              <div class="eda-insights-placeholder">
+                <p>Click <strong>"Generate AI Executive Insights"</strong> to synthesize departmental observations and NAAC/NBA remedial action plans using minimal tokens (~150 tokens).</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Charts Grid -->
+          <div class="eda-charts-grid">
+            <!-- Chart 1: SGPI Distribution Bell Curve -->
+            <div class="chart-box">
+              <div class="chart-header">
+                <h4>📈 SGPI Distribution & Frequency Curve</h4>
+                <span class="chart-tag">Grade Intervals</span>
+              </div>
+              <div class="chart-canvas-container">
+                <canvas id="chartSgpiDist"></canvas>
+              </div>
+            </div>
+
+            <!-- Chart 2: Grade Classification Pie -->
+            <div class="chart-box">
+              <div class="chart-header">
+                <h4>🎓 Cohort Grade Classification</h4>
+                <span class="chart-tag">Distinction to Fail</span>
+              </div>
+              <div class="chart-canvas-container">
+                <canvas id="chartGradeClass"></canvas>
+              </div>
+            </div>
+
+            <!-- Chart 3: Subject Pass Rates (Horizontal Bars) -->
+            <div class="chart-box chart-box-wide">
+              <div class="chart-header">
+                <h4>🎯 Subject-Wise Pass Percentage (Curriculum Difficulty Profiler)</h4>
+                <span class="chart-tag">Identifies Bottlenecks</span>
+              </div>
+              <div class="chart-canvas-container">
+                <canvas id="chartSubjectPass"></canvas>
+              </div>
+            </div>
+
+            <!-- Chart 4: Subject Average Scores -->
+            <div class="chart-box chart-box-wide">
+              <div class="chart-header">
+                <h4>📊 Subject Average Scores & Theory vs. Lab Breakdown</h4>
+                <span class="chart-tag">Scoring Profile</span>
+              </div>
+              <div class="chart-canvas-container">
+                <canvas id="chartSubjectMarks"></canvas>
+              </div>
+            </div>
+
+            <!-- Chart 5: Regular vs Diploma Comparison -->
+            <div class="chart-box">
+              <div class="chart-header">
+                <h4>👥 Regular vs. Lateral Entry (Diploma) Performance</h4>
+                <span class="chart-tag">Cohort Segments</span>
+              </div>
+              <div class="chart-canvas-container">
+                <canvas id="chartCohortSegments"></canvas>
+              </div>
+            </div>
+
+            <!-- Chart 6: Gender Performance -->
+            <div class="chart-box">
+              <div class="chart-header">
+                <h4>⚖️ Gender Demographics & Pass Ratio</h4>
+                <span class="chart-tag">Male vs. Female</span>
+              </div>
+              <div class="chart-canvas-container">
+                <canvas id="chartGenderDist"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- Mini Detail Tables: Top Performers, Bottom Cleared Performers & Remedial Alerts -->
+          <div class="eda-tables-grid">
+            <!-- Top Performers -->
+            <div class="eda-subtable-card">
+              <div class="subtable-header">
+                <h4>🏆 Top 5 Academic Performers (Honor Roll)</h4>
+                <span class="subtable-badge">Merit</span>
+              </div>
+              <div class="table-responsive-mini">
+                <table class="eda-mini-table" id="topPerformersTable">
+                  <thead>
+                    <tr>
+                      <th>Rank</th>
+                      <th>Seat No</th>
+                      <th>Student Name</th>
+                      <th>SGPI</th>
+                      <th>Total Marks</th>
+                    </tr>
+                  </thead>
+                  <tbody id="topPerformersBody">
+                    <tr><td colspan="5" class="empty-cell">No records available</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Bottom 5 Cleared Performers -->
+            <div class="eda-subtable-card">
+              <div class="subtable-header">
+                <h4>📉 Lowest 5 Cleared Performers (Borderline Monitoring)</h4>
+                <span class="subtable-badge text-warning">Passed (At-Risk)</span>
+              </div>
+              <div class="table-responsive-mini">
+                <table class="eda-mini-table" id="bottomPerformersTable">
+                  <thead>
+                    <tr>
+                      <th>Rank</th>
+                      <th>Seat No</th>
+                      <th>Student Name</th>
+                      <th>SGPI</th>
+                      <th>Total Marks</th>
+                    </tr>
+                  </thead>
+                  <tbody id="bottomPerformersBody">
+                    <tr><td colspan="5" class="empty-cell">No records available</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Remedial Action List -->
+            <div class="eda-subtable-card full-width">
+              <div class="subtable-header">
+                <h4>⚠️ At-Risk / Slow Learners Mentoring List (NAAC 2.2.1)</h4>
+                <span class="subtable-badge text-danger">Target Remedial / Backlog</span>
+              </div>
+              <div class="table-responsive-mini">
+                <table class="eda-mini-table" id="remedialTable">
+                  <thead>
+                    <tr>
+                      <th>Seat No</th>
+                      <th>Student Name</th>
+                      <th>SGPI</th>
+                      <th>Remedial Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody id="remedialBody">
+                    <tr><td colspan="4" class="empty-cell">No students require remedial intervention.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+    </div> <!-- /resultsSection -->
+
+    <!-- Interactive Chatbox for Ollama -->
+    <section class="card chat-card hidden" id="chatSection">
+      <div class="card-header chat-header">
+        <div class="chat-header-left">
+          <h2>💬 Chat with Ollama (Live Data Assistant)</h2>
+          <span class="tag tag-accent" id="chatModelTag">qwen2.5:7b</span>
+        </div>
+        <div class="chat-header-actions">
+          <button type="button" id="btnUndoChat" class="btn-sm btn-outline" disabled title="Revert last modification">↩ Undo</button>
+          <button type="button" id="btnResetData" class="btn-sm btn-outline" title="Reset dataset to original extracted state">↺ Reset Original</button>
+        </div>
+      </div>
+
+      <!-- Quick Action Chips -->
+      <div class="chat-suggestion-chips">
+        <button type="button" class="chip-btn" data-prompt="remove the first 2 records">✂️ Remove first 2 records</button>
+        <button type="button" class="chip-btn" data-prompt="update candidate type to Diploma for students with PRN starting with 2022">🎓 Mark 2022 PRN as Diploma</button>
+        <button type="button" class="chip-btn" data-prompt="remove failed students">✓ Remove Failed Students</button>
+        <button type="button" class="chip-btn" data-prompt="sort by SGPI descending">📊 Sort by SGPI (Highest First)</button>
+        <button type="button" class="chip-btn" data-prompt="how many students passed and failed?">❓ Passed vs Failed Count</button>
+        <button type="button" class="chip-btn" data-prompt="who is the topper?">🏆 Who is the Topper?</button>
+        <button type="button" class="chip-btn" data-prompt="what is the average SGPI?">📈 Average SGPI & Marks</button>
+        <button type="button" class="chip-btn" data-prompt="how many diploma students?">🎓 Diploma vs Regular Count</button>
+        <button type="button" class="chip-btn" data-prompt="who failed?">❌ List Failed Students</button>
+        <button type="button" class="chip-btn" data-prompt="give me an overview of the results">📋 Cohort Overview</button>
+        <button type="button" class="chip-btn" data-prompt="export academic analysis excel sheet">🏛️ Export Academic Analysis Excel (6 Sheets)</button>
+      </div>
+
+      <!-- Chat History Stream -->
+      <div class="chat-history-container" id="chatHistory">
+        <div class="chat-message msg-assistant">
+          <div class="msg-avatar">🤖</div>
+          <div class="msg-body">
+            <p><strong>Ollama Ready:</strong> Ask me anything about the extracted records, or request modifications like <em>"remove the first 2 records"</em>, <em>"sort by SGPI"</em>, or <em>"set candidate type to Diploma for PRN 2022*"</em>.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chat Input Row -->
+      <form id="chatForm" class="chat-input-row">
+        <input type="text" id="chatInput" class="chat-input" placeholder="Ask Ollama to modify or analyze this dataset (e.g. 'remove first 2 records')..." autocomplete="off">
+        <button type="submit" id="chatSendBtn" class="btn btn-primary btn-chat-send">
+          <span>Send</span>
+        </button>
+      </form>
+    </section>
+
+    <!-- 5. TECHNICAL AUDIT CONSOLE (DEFAULT STATE = COLLAPSED) -->
+    <section class="card audit-card audit-console-collapsed" id="aiAuditSection">
+      <div class="card-header audit-header" id="auditHeaderClickable">
+        <div class="audit-header-left">
+          <div class="terminal-dots">
+            <span class="dot red"></span>
+            <span class="dot yellow"></span>
+            <span class="dot green"></span>
+          </div>
+          <div class="audit-header-title-wrap">
+            <h2>Technical Audit Console</h2>
+            <div class="audit-collapsed-meta">
+              <span id="auditCollapsedEngine" class="audit-collapsed-chip">Engine: Qwen 2.5 7B</span>
+              <span id="auditCollapsedStatus" class="audit-collapsed-chip status-ready">Status: Ready</span>
+            </div>
+          </div>
+        </div>
+        <div class="audit-header-actions">
+          <button type="button" id="btnToggleAuditConsole" class="btn btn-sm btn-outline audit-toggle-btn" title="Expand or Collapse Technical Audit Console">
+            <span id="auditToggleBtnIcon">▼</span>
+            <span id="auditToggleBtnText">Expand</span>
+          </button>
+          <button type="button" id="auditAutoScrollBtn" class="btn-sm btn-outline active audit-expanded-only" title="Toggle Auto-Scroll">Scroll: ON</button>
+          <button type="button" id="auditCopyBtn" class="btn-sm btn-outline audit-expanded-only" title="Copy Raw Audit Log">📋 Copy Log</button>
+          <button type="button" id="auditClearBtn" class="btn-sm btn-outline audit-expanded-only" title="Clear Console">✕ Clear</button>
+        </div>
+      </div>
+
+      <!-- Expandable Body Container -->
+      <div class="audit-collapsible-body" id="auditCollapsibleBody">
+        <!-- Mini Telemetry Strip -->
+        <div class="audit-telemetry-strip">
+          <div class="telemetry-item">
+            <span class="telemetry-label">INFERENCE ENGINE:</span>
+            <strong id="telemEngine" class="telemetry-val">Qwen 2.5 (7B) on RTX 4060 GPU</strong>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-label">PIPELINE STATUS:</span>
+            <strong id="telemStatus" class="telemetry-val text-success">STANDBY</strong>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-label">AI AUDIT EVENTS:</span>
+            <strong id="telemEventCount" class="telemetry-val">0</strong>
+          </div>
+          <div class="telemetry-item" id="telemTokenBox">
+            <span class="telemetry-label">TOKENS USED:</span>
+            <strong id="telemTokens" class="telemetry-val" style="color: #38bdf8;">In: 0 | Out: 0 (Tot: 0)</strong>
+          </div>
+        </div>
+
+        <!-- Scrollable Terminal Window -->
+        <div class="audit-terminal" id="auditTerminal">
+          <div class="audit-empty" id="auditEmptyMsg">
+            <span class="terminal-prompt">$</span> Waiting for extraction job. Real-time Cloud AI models, failover switches, LLM prompts/responses, token metrics, and checksum equations will stream here live.
+          </div>
+          <div id="auditLogStream" class="audit-stream"></div>
+        </div>
+      </div>
+    </section>
+
+  </div> <!-- End singleWorkspaceSection -->
+      </section> <!-- End viewExtract -->
+
+      <!-- VIEW 2: Historical Data (/historical) -->

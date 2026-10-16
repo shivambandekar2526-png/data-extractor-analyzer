@@ -1,0 +1,27 @@
+    <!-- Floating Context Menu (Right-Click) -->
+    <div id="excelContextMenu" class="excel-context-menu hidden">
+      <div class="ctx-item" data-action="edit_cell"><span>✏️ Edit Cell</span><span class="ctx-kbd">F2</span></div>
+      <div class="ctx-item" data-action="copy_cell"><span>📋 Copy Cell Value</span><span class="ctx-kbd">Ctrl+C</span></div>
+      <div class="ctx-item" data-action="clear_cell"><span>🧹 Clear Cell</span><span class="ctx-kbd">Del</span></div>
+      <div class="ctx-divider"></div>
+      <div class="ctx-item" data-action="insert_row_above"><span>⬆️ Insert Row Above</span></div>
+      <div class="ctx-item" data-action="insert_row_below"><span>⬇️ Insert Row Below</span></div>
+      <div class="ctx-item" data-action="duplicate_row"><span>📄 Duplicate Row</span></div>
+      <div class="ctx-item text-danger" data-action="delete_row"><span>🗑️ Delete Row</span></div>
+      <div class="ctx-divider"></div>
+      <div class="ctx-item" data-action="add_column"><span>➕ Add Column...</span></div>
+      <div class="ctx-item" data-action="rename_column"><span>✏️ Rename Column...</span></div>
+      <div class="ctx-item text-danger" data-action="delete_column"><span>❌ Delete Column</span></div>
+    </div>
+
+    <!-- Column Header Menu Dropdown -->
+    <div id="excelColMenu" class="excel-context-menu hidden">
+      <div class="ctx-item" data-col-action="sort_asc"><span>▲ Sort Ascending (A-Z / Min-Max)</span></div>
+      <div class="ctx-item" data-col-action="sort_desc"><span>▼ Sort Descending (Z-A / Max-Min)</span></div>
+      <div class="ctx-item" data-col-action="filter_col"><span>⚡ Filter by Value...</span></div>
+      <div class="ctx-divider"></div>
+      <div class="ctx-item" data-col-action="add_col_right"><span>➕ Insert Column Right</span></div>
+      <div class="ctx-item" data-col-action="rename_col"><span>✏️ Rename Column...</span></div>
+      <div class="ctx-item" data-col-action="clear_col"><span>🧹 Clear All Values in Column</span></div>
+      <div class="ctx-item text-danger" data-col-action="delete_col"><span>❌ Delete Column</span></div>
+    </div>

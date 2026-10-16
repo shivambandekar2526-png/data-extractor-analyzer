@@ -1,0 +1,374 @@
+    <div id="cloudModalOverlay" class="modal-overlay hidden">
+      <div class="modal-card cloud-modal-card">
+        <div class="modal-header cloud-modal-header">
+          <div class="modal-header-left">
+            <div class="modal-header-icon">⚡</div>
+            <div class="modal-title-group">
+              <div class="modal-title-row">
+                <h3 class="modal-title">Cloud AI &amp; Multi-Engine Orchestrator</h3>
+                <span class="badge-modal-tag">Enterprise</span>
+              </div>
+              <p class="modal-subtitle">Configure multi-provider keys, 429 zero-downtime rotation pools, and auto-stickiness routing.</p>
+            </div>
+          </div>
+          <button type="button" id="btnCloseCloudModal" class="modal-close-btn" title="Close (Esc)">&times;</button>
+        </div>
+
+        <form id="cloudConfigForm" class="modal-body cloud-modal-body">
+          <!-- Active Locked Engine Status Banner -->
+          <div id="orchestratorActiveBanner" class="orchestrator-active-banner">
+            <div class="orchestrator-banner-left">
+              <div class="orchestrator-status-pulse">
+                <span class="pulse-ring"></span>
+                <span class="pulse-dot"></span>
+              </div>
+              <div class="orchestrator-text-wrap">
+                <div class="orchestrator-title" id="lockedModelTitle">Locked Engine: Detecting...</div>
+                <div class="orchestrator-subtitle" id="lockedModelSubtitle">Auto-Failover Active • Zero-downtime multi-key rotation</div>
+              </div>
+            </div>
+            <div class="orchestrator-banner-right">
+              <button type="button" id="btnProbeAllKeys" class="btn-sm btn-outline-glow" title="Probe all keys with live pings across providers">
+                <span class="btn-icon">⚡</span> Probe All Keys
+              </button>
+              <span class="orchestrator-badge" id="lockedModelBadge">READY</span>
+            </div>
+          </div>
+
+          <!-- Segmented Tab Navigation Bar -->
+          <div class="cloud-tabs-nav" role="tablist">
+            <button type="button" class="cloud-tab-btn active" data-target-panel="cloudTabPanelKeys" role="tab">
+              <span class="tab-icon">🔑</span>
+              <span class="tab-label">Provider Keys &amp; Pools</span>
+              <span class="tab-count-pill">5 Providers</span>
+            </button>
+            <button type="button" class="cloud-tab-btn" data-target-panel="cloudTabPanelRouting" role="tab">
+              <span class="tab-icon">⚙️</span>
+              <span class="tab-label">Routing &amp; Model Selection</span>
+            </button>
+            <button type="button" class="cloud-tab-btn" data-target-panel="cloudTabPanelDiagnostics" role="tab">
+              <span class="tab-icon">📊</span>
+              <span class="tab-label">Live Diagnostics</span>
+            </button>
+          </div>
+
+          <!-- Tab Panel 1: Provider Keys & Pools -->
+          <div id="cloudTabPanelKeys" class="cloud-tab-panel active">
+            <!-- Multi-Key Rotation Pool Callout -->
+            <div class="pool-guide-card">
+              <div class="pool-guide-icon">🔀</div>
+              <div class="pool-guide-content">
+                <strong>Multi-Key Rotation Pool Supported:</strong>
+                <span>Paste multiple keys separated by commas, semicolons, or newlines (e.g. <code>key1, key2, key3</code>). On HTTP 429 rate limits, the engine rotates instantly to the next un-cooled key with zero downtime.</span>
+              </div>
+            </div>
+
+            <!-- Provider Cards Container -->
+            <div class="api-keys-grid">
+              <!-- Groq Key Card -->
+              <div class="provider-key-card prov-groq">
+                <div class="provider-key-header">
+                  <div class="provider-meta">
+                    <span class="prov-brand-icon">⚡</span>
+                    <div>
+                      <div class="prov-name-wrap">
+                        <span class="prov-name">Groq Cloud</span>
+                        <span class="prov-badge">Ultra-Fast 120B / 27B</span>
+                      </div>
+                      <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" class="provider-key-link">Get API Key ↗</a>
+                    </div>
+                  </div>
+                  <span id="groqKeyBadge" class="key-status-badge missing">⚪ Not set</span>
+                </div>
+                <div class="key-input-row">
+                  <div class="password-input-wrapper">
+                    <input type="password" id="cloudApiKeyGroq" class="form-input prov-key-input" placeholder="gsk_... (or paste comma-separated key pool)" autocomplete="off">
+                    <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyGroq" title="Show / Hide">👁️</button>
+                  </div>
+                  <button type="button" class="btn-test-key-inline" data-provider="groq" title="Test Groq Key">
+                    <span>⚡ Test Key</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Google Gemini Key Card -->
+              <div class="provider-key-card prov-gemini">
+                <div class="provider-key-header">
+                  <div class="provider-meta">
+                    <span class="prov-brand-icon">🌐</span>
+                    <div>
+                      <div class="prov-name-wrap">
+                        <span class="prov-name">Google Gemini</span>
+                        <span class="prov-badge">Flash Latest &amp; High Quota</span>
+                      </div>
+                      <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" class="provider-key-link">Get API Key ↗</a>
+                    </div>
+                  </div>
+                  <span id="geminiKeyBadge" class="key-status-badge missing">⚪ Not set</span>
+                </div>
+                <div class="key-input-row">
+                  <div class="password-input-wrapper">
+                    <input type="password" id="cloudApiKeyGemini" class="form-input prov-key-input" placeholder="AIzaSy... (or paste comma-separated key pool)" autocomplete="off">
+                    <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyGemini" title="Show / Hide">👁️</button>
+                  </div>
+                  <button type="button" class="btn-test-key-inline" data-provider="gemini" title="Test Gemini Key">
+                    <span>⚡ Test Key</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Anthropic Claude Key Card -->
+              <div class="provider-key-card prov-anthropic">
+                <div class="provider-key-header">
+                  <div class="provider-meta">
+                    <span class="prov-brand-icon">🧠</span>
+                    <div>
+                      <div class="prov-name-wrap">
+                        <span class="prov-name">Anthropic Claude</span>
+                        <span class="prov-badge">Claude 3.5 Sonnet &amp; Haiku</span>
+                      </div>
+                      <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" class="provider-key-link">Get API Key ↗</a>
+                    </div>
+                  </div>
+                  <span id="anthropicKeyBadge" class="key-status-badge missing">⚪ Not set</span>
+                </div>
+                <div class="key-input-row">
+                  <div class="password-input-wrapper">
+                    <input type="password" id="cloudApiKeyAnthropic" class="form-input prov-key-input" placeholder="sk-ant-... (or paste comma-separated key pool)" autocomplete="off">
+                    <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyAnthropic" title="Show / Hide">👁️</button>
+                  </div>
+                  <button type="button" class="btn-test-key-inline" data-provider="anthropic" title="Test Anthropic Key">
+                    <span>⚡ Test Key</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- DeepSeek Key Card -->
+              <div class="provider-key-card prov-deepseek">
+                <div class="provider-key-header">
+                  <div class="provider-meta">
+                    <span class="prov-brand-icon">🐋</span>
+                    <div>
+                      <div class="prov-name-wrap">
+                        <span class="prov-name">DeepSeek AI</span>
+                        <span class="prov-badge">V3 Flagship &amp; R1 Reasoner</span>
+                      </div>
+                      <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener noreferrer" class="provider-key-link">Get API Key ↗</a>
+                    </div>
+                  </div>
+                  <span id="deepseekKeyBadge" class="key-status-badge missing">⚪ Not set</span>
+                </div>
+                <div class="key-input-row">
+                  <div class="password-input-wrapper">
+                    <input type="password" id="cloudApiKeyDeepseek" class="form-input prov-key-input" placeholder="sk-... (or paste comma-separated key pool)" autocomplete="off">
+                    <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyDeepseek" title="Show / Hide">👁️</button>
+                  </div>
+                  <button type="button" class="btn-test-key-inline" data-provider="deepseek" title="Test DeepSeek Key">
+                    <span>⚡ Test Key</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- OpenAI Key Card -->
+              <div class="provider-key-card prov-openai">
+                <div class="provider-key-header">
+                  <div class="provider-meta">
+                    <span class="prov-brand-icon">🤖</span>
+                    <div>
+                      <div class="prov-name-wrap">
+                        <span class="prov-name">OpenAI</span>
+                        <span class="prov-badge">GPT-4o &amp; GPT-4o-mini</span>
+                      </div>
+                      <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" class="provider-key-link">Get API Key ↗</a>
+                    </div>
+                  </div>
+                  <span id="openaiKeyBadge" class="key-status-badge missing">⚪ Not set</span>
+                </div>
+                <div class="key-input-row">
+                  <div class="password-input-wrapper">
+                    <input type="password" id="cloudApiKeyOpenAI" class="form-input prov-key-input" placeholder="sk-... (or paste comma-separated key pool)" autocomplete="off">
+                    <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyOpenAI" title="Show / Hide">👁️</button>
+                  </div>
+                  <button type="button" class="btn-test-key-inline" data-provider="openai" title="Test OpenAI Key">
+                    <span>⚡ Test Key</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- OpenRouter Key Card -->
+              <div class="provider-key-card prov-openrouter">
+                <div class="provider-key-header">
+                  <div class="provider-meta">
+                    <span class="prov-brand-icon">🌐</span>
+                    <div>
+                      <div class="prov-name-wrap">
+                        <span class="prov-name">OpenRouter</span>
+                        <span class="prov-badge">Free Vision Models (Gemma 4, Qwen 2.5)</span>
+                      </div>
+                      <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" class="provider-key-link">Get API Key ↗</a>
+                    </div>
+                  </div>
+                  <span id="openrouterKeyBadge" class="key-status-badge missing">⚪ Not set</span>
+                </div>
+                <div class="key-input-row">
+                  <div class="password-input-wrapper">
+                    <input type="password" id="cloudApiKeyOpenrouter" class="form-input prov-key-input" placeholder="sk-or-v1-... (or paste comma-separated key pool)" autocomplete="off">
+                    <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyOpenrouter" title="Show / Hide">👁️</button>
+                  </div>
+                  <button type="button" class="btn-test-key-inline" data-provider="openrouter" title="Test OpenRouter Key">
+                    <span>⚡ Test Key</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab Panel 2: Routing & Model Selection -->
+          <div id="cloudTabPanelRouting" class="cloud-tab-panel hidden">
+            <!-- Auto-Orchestrate Toggle Card -->
+            <label class="toggle-orchestrate-box" for="cloudAutoOrchestrate">
+              <input type="checkbox" id="cloudAutoOrchestrate" checked>
+              <div class="toggle-orchestrate-content">
+                <div class="toggle-orchestrate-header">
+                  <span class="toggle-orchestrate-title">Intelligent Auto-Orchestrate &amp; Model Stickiness</span>
+                  <span class="badge-recommended">Recommended</span>
+                </div>
+                <span class="toggle-orchestrate-desc">Continuously discovers the fastest working flagship model among your configured keys, locks stickiness onto it, and immediately rotates candidates on rate limits or API downtime.</span>
+              </div>
+            </label>
+
+            <!-- Routing Strategy Dropdown -->
+            <div class="form-group form-group-card">
+              <label for="cloudRoutingMode" class="form-group-title">
+                <span>Routing Strategy Preference</span>
+                <small class="text-muted">Controls how queries are partitioned between local GPU and Cloud AI</small>
+              </label>
+              <select id="cloudRoutingMode" class="form-select modern-select">
+                <option value="auto_hybrid">⚡ Auto-Hybrid (Recommended: Deterministic Math ➔ Local Engine, Complex ➔ Cloud AI)</option>
+                <option value="prefer_cloud">🌐 Prefer Cloud AI (Direct all analytical and cross-check tasks to Cloud Flagship)</option>
+                <option value="prefer_ollama">💻 Prefer Local Ollama (Always use local GPU unless offline or failed)</option>
+              </select>
+            </div>
+
+            <!-- Manual Override Group -->
+            <div class="form-group form-group-card" id="manualOverrideGroup" style="display: none;">
+              <div class="label-with-hint">
+                <label for="cloudProviderSelect" class="form-group-title">Manual Provider &amp; Model Lock</label>
+                <button type="button" id="btnToggleCustomModel" class="btn-link-text">✏️ Custom Model ID</button>
+              </div>
+              <div class="grid-two-cols">
+                <div>
+                  <label class="sublabel" for="cloudProviderSelect">Active Provider</label>
+                  <select id="cloudProviderSelect" class="form-select modern-select">
+                    <option value="groq">Groq Cloud</option>
+                    <option value="gemini">Google Gemini</option>
+                    <option value="openrouter">OpenRouter (Free Vision)</option>
+                    <option value="anthropic">Anthropic Claude</option>
+                    <option value="deepseek">DeepSeek AI</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="custom">Custom Endpoint</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="sublabel" for="cloudModelSelect">Model Engine Preset</label>
+                  <select id="cloudModelSelect" class="form-select modern-select">
+                    <!-- Populated dynamically -->
+                  </select>
+                </div>
+              </div>
+              <div class="custom-model-wrapper" id="customModelWrapper" style="display: none; margin-top: 0.5rem;">
+                <label class="sublabel" for="cloudModelInput">Custom Model Identifier</label>
+                <input type="text" id="cloudModelInput" class="form-input" placeholder="e.g. openai/gpt-oss-120b or custom-model-name">
+              </div>
+              <div class="form-group" id="customUrlGroup" style="display: none; margin-top: 0.5rem;">
+                <label class="sublabel" for="cloudCustomUrl">Custom OpenAI-Compatible Base URL</label>
+                <input type="text" id="cloudCustomUrl" class="form-input" placeholder="http://localhost:8000/v1">
+              </div>
+            </div>
+
+            <!-- Agentic Token-Saving Callout -->
+            <div class="token-saving-callout">
+              <div class="callout-icon">💡</div>
+              <div class="callout-text">
+                <strong>Autonomous Query Planner Active:</strong>
+                Local Ollama infers analytical intent and slices minimal DataFrame matrices (~150 tokens) before dispatching to Cloud AI, cutting token consumption by ~95% and eliminating rate limit bottlenecks.
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab Panel 3: Live Diagnostics -->
+          <div id="cloudTabPanelDiagnostics" class="cloud-tab-panel hidden">
+            <div class="diag-header-card">
+              <div class="diag-header-text">
+                <strong>Real-Time Provider Benchmarking</strong>
+                <p>Send lightweight health pings across all configured providers to measure round-trip latency and verify authentication.</p>
+              </div>
+            </div>
+
+            <!-- Provider Latency Grid -->
+            <div class="diag-grid">
+              <div class="diag-card" id="diagGroqCard">
+                <div class="diag-card-top">
+                  <span class="diag-prov-name">⚡ Groq</span>
+                  <span class="diag-status" id="diagGroqStatus">—</span>
+                </div>
+                <div class="diag-latency" id="diagGroqLatency">Standby</div>
+              </div>
+              <div class="diag-card" id="diagGeminiCard">
+                <div class="diag-card-top">
+                  <span class="diag-prov-name">🌐 Gemini</span>
+                  <span class="diag-status" id="diagGeminiStatus">—</span>
+                </div>
+                <div class="diag-latency" id="diagGeminiLatency">Standby</div>
+              </div>
+              <div class="diag-card" id="diagOpenrouterCard">
+                <div class="diag-card-top">
+                  <span class="diag-prov-name">🌐 OpenRouter</span>
+                  <span class="diag-status" id="diagOpenrouterStatus">—</span>
+                </div>
+                <div class="diag-latency" id="diagOpenrouterLatency">Standby</div>
+              </div>
+              <div class="diag-card" id="diagAnthropicCard">
+                <div class="diag-card-top">
+                  <span class="diag-prov-name">🧠 Anthropic</span>
+                  <span class="diag-status" id="diagAnthropicStatus">—</span>
+                </div>
+                <div class="diag-latency" id="diagAnthropicLatency">Standby</div>
+              </div>
+              <div class="diag-card" id="diagDeepseekCard">
+                <div class="diag-card-top">
+                  <span class="diag-prov-name">🐋 DeepSeek</span>
+                  <span class="diag-status" id="diagDeepseekStatus">—</span>
+                </div>
+                <div class="diag-latency" id="diagDeepseekLatency">Standby</div>
+              </div>
+              <div class="diag-card" id="diagOpenaiCard">
+                <div class="diag-card-top">
+                  <span class="diag-prov-name">🤖 OpenAI</span>
+                  <span class="diag-status" id="diagOpenaiStatus">—</span>
+                </div>
+                <div class="diag-latency" id="diagOpenaiLatency">Standby</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Alert / Diagnostic Result Message -->
+          <div id="cloudTestAlert" class="alert-box hidden"></div>
+
+          <!-- Modal Footer Actions -->
+          <div class="modal-footer cloud-modal-footer">
+            <button type="button" id="btnTestCloudConn" class="btn btn-outline btn-test-active">
+              <span class="btn-icon">⚡</span> Test Active AI
+            </button>
+            <div class="modal-footer-right">
+              <button type="button" id="btnCancelCloudModal" class="btn btn-outline">Cancel</button>
+              <button type="submit" id="btnSaveCloudConfig" class="btn btn-primary btn-save-cloud">
+                <span>💾 Save Keys &amp; Settings</span>
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- AI Cross-Check & Self-Healing Review Modal -->

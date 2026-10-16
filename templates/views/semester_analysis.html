@@ -1,0 +1,284 @@
+  <section id="viewSemesterAnalysis" class="workspace-view hidden" data-view="/analysis/semester">
+    <div class="workspace-page-header">
+      <div class="workspace-title-group">
+        <div class="workspace-icon">📑</div>
+        <div>
+          <h1 class="workspace-title">Semester-wise Analysis</h1>
+          <p class="workspace-subtitle">Analyze complete cohort performance, clearance thresholds, SGPI distribution, and semester success rate for entire semesters.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 1. CASCADING SELECTION PANEL -->
+    <section class="card subject-controls-card">
+      <div class="card-header">
+        <div class="card-title-group">
+          <span class="workflow-step-badge">1</span>
+          <div>
+            <h2>Semester Analytics Configuration</h2>
+            <p class="card-subtitle">Select cohort parameters to dynamically query historical examination ledgers</p>
+          </div>
+        </div>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <span id="liveFolderWatcherBadgeSem" class="tag" style="background: rgba(16, 185, 129, 0.1); color: #059669; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 0.75rem; display: inline-flex; align-items: center; gap: 0.4rem;" title="Changes in department_data/excel or output folders update automatically without page refresh"><span style="width: 7px; height: 7px; border-radius: 50%; background: #10b981; display: inline-block;"></span> Live Folder Sync</span>
+          <span class="tag tag-accent">Semester-Level Analysis</span>
+        </div>
+      </div>
+
+      <div class="subject-selection-grid">
+        <div class="form-group">
+          <label class="control-label" for="semDepartmentSelect">
+            <strong>Department:</strong>
+          </label>
+          <select id="semDepartmentSelect" class="form-select">
+            <option value="">-- Select Department --</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="control-label" for="semBatchSelect">
+            <strong>Batch:</strong>
+          </label>
+          <select id="semBatchSelect" class="form-select" disabled>
+            <option value="">-- Select Batch --</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="control-label" for="semSemesterSelect">
+            <strong>Semester Excel Sheet:</strong>
+          </label>
+          <select id="semSemesterSelect" class="form-select" disabled>
+            <option value="">-- Select Semester Excel Sheet --</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="subject-action-bar">
+        <span id="semStatusHint" class="results-meta-text">Select Department, Batch, and Semester Excel sheet to begin</span>
+        <button type="button" id="btnRunSemesterAnalysis" class="btn btn-primary" style="padding: 0.75rem 1.75rem; font-size: 0.95rem;" disabled>
+          <span>🚀 Generate Analysis</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Empty State Before Generation -->
+    <section class="card subject-empty-card" id="semesterEmptyState">
+      <div class="workspace-empty-state">
+        <div class="empty-state-icon">📑</div>
+        <h3>Select a Semester Dataset to Begin</h3>
+        <p>Choose a Department, Batch, and Semester Excel Sheet to analyze the complete semester.</p>
+      </div>
+    </section>
+
+    <!-- Loading Spinner During Computation -->
+    <div id="semesterLoadingState" class="progress-section hidden" style="margin-bottom: 1.5rem;">
+      <div class="card" style="padding: 1.8rem; text-align: center;">
+        <span class="spinner" style="width: 28px; height: 28px; margin: 0 auto 0.8rem; display: block;"></span>
+        <strong id="semesterLoadingText">Computing deterministic semester metrics...</strong>
+      </div>
+    </div>
+
+    <!-- 2. SEMESTER ANALYTICS DASHBOARD CONTAINER -->
+    <div id="semesterResultsDashboard" class="subject-results-dashboard hidden">
+      <!-- 2. SEMESTER HEADER -->
+      <section class="card subject-header-card">
+        <div class="subject-header-grid">
+          <div class="subject-header-main">
+            <span class="subject-code-chip" id="hdrSemSemesterChip">Semester VIII</span>
+            <h2 class="subject-title" id="hdrSemTitle">Semester Performance Analysis</h2>
+            <p class="subject-dataset-label" id="hdrSemDatasetLabel">Dataset: Selected Gazette</p>
+          </div>
+          <div class="subject-meta-grid">
+            <div class="sub-meta-pill">
+              <span class="sub-meta-key">Academic Year:</span>
+              <strong class="sub-meta-val" id="hdrSemAcademicYear">2024–25</strong>
+            </div>
+            <div class="sub-meta-pill">
+              <span class="sub-meta-key">Branch:</span>
+              <strong class="sub-meta-val" id="hdrSemBranch">Computer Engineering</strong>
+            </div>
+            <div class="sub-meta-pill">
+              <span class="sub-meta-key">Semester:</span>
+              <strong class="sub-meta-val" id="hdrSemSemester">Semester VIII</strong>
+            </div>
+            <div class="sub-meta-pill">
+              <span class="sub-meta-key">Total Appeared:</span>
+              <strong class="sub-meta-val" id="hdrSemTotalAppeared">65 Students</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- Print & Export Action Bar -->
+        <div class="subject-header-actions" style="margin-top: 1rem; display: flex; justify-content: flex-end; gap: 0.75rem; align-items: center; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 0.85rem; flex-wrap: wrap;">
+          <button type="button" id="btnSemesterPrintPreview" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; padding: 0.55rem 1.15rem; font-size: 0.88rem; box-shadow: 0 2px 8px rgba(31,78,120,0.3);">
+            <span>🖨️ View & Print 1-Page Report</span>
+          </button>
+          <button type="button" id="btnSemesterExportDocx" class="btn btn-outline" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; padding: 0.55rem 1.15rem; font-size: 0.88rem; border-color: #3b82f6; color: #3b82f6;">
+            <span>📄 Export Word (.docx)</span>
+          </button>
+        </div>
+
+        <!-- Data Validation Strip -->
+        <div class="data-validation-strip" id="semesterDataValidationStrip">
+          <span class="validation-dot-green">●</span>
+          <span id="semesterDataValidationSummary">Data Verified: 65 students analyzed • 0 duplicates • 0 absent</span>
+        </div>
+      </section>
+
+      <!-- 3. SUMMARY KPI CARDS -->
+      <div class="subject-kpi-grid">
+        <div class="eda-kpi-card">
+          <span class="eda-kpi-label">STUDENTS APPEARED</span>
+          <strong class="eda-kpi-value" id="kpiSemAppeared">0</strong>
+          <span class="eda-kpi-sub">Total in Examination</span>
+        </div>
+        <div class="eda-kpi-card kpi-success">
+          <span class="eda-kpi-label">STUDENTS PASSED</span>
+          <strong class="eda-kpi-value text-success" id="kpiSemPassed">0</strong>
+          <span class="eda-kpi-sub">All Clear in Semester</span>
+        </div>
+        <div class="eda-kpi-card">
+          <span class="eda-kpi-label">STUDENTS FAILED</span>
+          <strong class="eda-kpi-value text-danger" id="kpiSemFailed">0</strong>
+          <span class="eda-kpi-sub">Semester Backlog / KT</span>
+        </div>
+        <div class="eda-kpi-card kpi-accent" style="border: 2px solid #1F4E78;">
+          <span class="eda-kpi-label" style="color: #1F4E78;">PASS PERCENTAGE</span>
+          <strong class="eda-kpi-value" id="kpiSemPassRate" style="color: #1F4E78; font-size: 1.8rem;">0.00%</strong>
+          <span class="eda-kpi-sub">Passed / Appeared</span>
+        </div>
+        <div class="eda-kpi-card">
+          <span class="eda-kpi-label">FAIL PERCENTAGE</span>
+          <strong class="eda-kpi-value text-warning" id="kpiSemFailRate">0.00%</strong>
+          <span class="eda-kpi-sub">Failed / Appeared</span>
+        </div>
+        <div class="eda-kpi-card kpi-accent" style="border: 2px solid #059669; background: rgba(5, 150, 105, 0.05);">
+          <span class="eda-kpi-label" style="color: #059669;">SEMESTER SUCCESS RATE</span>
+          <strong class="eda-kpi-value" id="kpiSemSuccessRate" style="color: #059669; font-size: 1.8rem;">0.00%</strong>
+          <span class="eda-kpi-sub">(Passed / Appeared) × 100</span>
+        </div>
+        <div class="eda-kpi-card" style="border-left: 4px solid #2563eb;">
+          <span class="eda-kpi-label" style="color: #2563eb;">FIRST CLASS & DISTINCTION</span>
+          <strong class="eda-kpi-value" id="kpiSemFirstClassDist" style="color: #2563eb;">0</strong>
+          <span class="eda-kpi-sub" id="kpiSemFirstClassDistSub">≥ 60% of students</span>
+        </div>
+      </div>
+
+      <!-- 4 & 5. SEMESTER CLEARANCE & CLASSIFICATION ROW -->
+      <div class="subject-two-col-grid">
+        <!-- 4. SEMESTER CLEARANCE -->
+        <section class="card">
+          <div class="card-header">
+            <div>
+              <h3>Semester Clearance & Success Rate Analysis</h3>
+              <p class="results-meta-text">Clearance breakdown and institutional classification</p>
+            </div>
+            <span class="tag">Clearance Status</span>
+          </div>
+          <div class="chart-and-table-wrapper">
+            <div class="chart-box" style="position: relative; height: 230px; margin-bottom: 1rem;">
+              <canvas id="chartSemesterPassFail"></canvas>
+            </div>
+            <div class="table-container" style="max-height: 220px;">
+              <table class="academic-table" id="tblSemesterPassFail">
+                <thead>
+                  <tr>
+                    <th>Status / Category</th>
+                    <th style="text-align: right;">Students</th>
+                    <th style="text-align: right;">Percentage</th>
+                  </tr>
+                </thead>
+                <tbody id="tblSemesterPassFailBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 5. CLASSIFICATION -->
+        <section class="card">
+          <div class="card-header">
+            <div>
+              <h3>Institutional Classification (Passed Students)</h3>
+              <p class="results-meta-text">Distinction, First Class, Second Class, Pass Class breakdown</p>
+            </div>
+            <span class="tag tag-accent">Grading Standard</span>
+          </div>
+          <div class="chart-and-table-wrapper">
+            <div class="chart-box" style="position: relative; height: 230px; margin-bottom: 1rem;">
+              <canvas id="chartSemesterClassification"></canvas>
+            </div>
+            <div class="table-container" style="max-height: 200px;">
+              <table class="academic-table" id="tblSemesterClassification">
+                <thead>
+                  <tr>
+                    <th>Classification</th>
+                    <th style="text-align: right;">Students</th>
+                    <th style="text-align: right;">Percentage</th>
+                  </tr>
+                </thead>
+                <tbody id="tblSemesterClassificationBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- 6. SGPI DISTRIBUTION (REPLACES MARKS DISTRIBUTION) -->
+      <section class="card" style="margin-top: 1.5rem;">
+        <div class="card-header">
+          <div>
+            <h3>SGPI Distribution</h3>
+            <p class="results-meta-text" id="sgpiDistMetaText">Distribution based on semester SGPI values from examination ledger</p>
+          </div>
+          <span class="tag">Histogram</span>
+        </div>
+        <div class="subject-two-col-grid" style="align-items: center;">
+          <div class="chart-box" style="position: relative; height: 260px;">
+            <canvas id="chartSgpiDistribution"></canvas>
+          </div>
+          <div class="table-container" style="max-height: 280px; overflow-y: auto;">
+            <table class="academic-table" id="tblSgpiDistribution">
+              <thead>
+                <tr>
+                  <th>SGPI Range</th>
+                  <th style="text-align: right;">Students</th>
+                  <th style="text-align: right;">Percentage</th>
+                </tr>
+              </thead>
+              <tbody id="tblSgpiDistributionBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 7. TOP 5 TOPPERS -->
+      <section class="card" style="margin-top: 1.5rem; margin-bottom: 2rem;">
+        <div class="card-header">
+          <div>
+            <h3>🏆 TOP 5 TOPPERS</h3>
+            <p class="results-meta-text">Ranked strictly by semester SGPI and examination performance</p>
+          </div>
+          <span class="tag tag-accent">Semester Merit Leaders</span>
+        </div>
+        <div class="table-container">
+          <table class="academic-table" id="tblSemesterTopStudents">
+            <thead>
+              <tr>
+                <th style="width: 80px; text-align: center;">Rank</th>
+                <th>Student Name</th>
+                <th>Seat No / PRN</th>
+                <th style="text-align: right;">Semester SGPI</th>
+                <th style="text-align: right;">Percentage / Score</th>
+              </tr>
+            </thead>
+            <tbody id="tblSemesterTopStudentsBody">
+              <tr><td colspan="5" style="text-align: center; color: var(--text-muted);">No student rankings generated yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </section>
+
+  <!-- VIEW 5: Generated Reports (/reports) -->

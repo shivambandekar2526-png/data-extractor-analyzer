@@ -1,0 +1,106 @@
+      <section id="viewHistorical" class="workspace-view hidden" data-view="/historical">
+        <div class="workspace-page-header">
+          <div class="workspace-title-group">
+            <div class="workspace-icon">📚</div>
+            <div>
+              <h1 class="workspace-title">Historical Data</h1>
+              <p class="workspace-subtitle">Review, open, export, or analyze previously extracted academic datasets.</p>
+            </div>
+          </div>
+          <div class="workspace-header-actions">
+            <button type="button" id="refreshHistoryBtn" class="btn btn-sm btn-outline" title="Refresh extraction history archive">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+              <span>Refresh History</span>
+            </button>
+            <button type="button" class="btn btn-sm btn-primary" onclick="navigateTo('/extract')" title="Start a new extraction">
+              <span>⚡ New Extraction</span>
+            </button>
+          </div>
+        </div>
+
+        <section class="card history-workspace-card">
+          <!-- Search & Filter Controls Bar -->
+          <div class="history-controls-bar">
+            <div class="history-search-wrapper">
+              <span class="history-search-icon">🔍</span>
+              <input type="text" id="historySearchInput" class="history-search-input" placeholder="Search extraction history by name, department, batch, or semester...">
+            </div>
+
+            <!-- Lightweight Filter Dropdowns -->
+            <div class="history-filters-row">
+              <div class="history-filter-item">
+                <label for="historyFilterDept">Department:</label>
+                <select id="historyFilterDept" class="form-select form-select-sm">
+                  <option value="">All Departments</option>
+                  <option value="Artificial_Intelligence_and_Data_Science">AI &amp; Data Science</option>
+                  <option value="Computer_Engineering">Computer Engineering</option>
+                  <option value="Information_Technology">Information Technology</option>
+                  <option value="Electronics_and_Telecommunication">EXTC</option>
+                  <option value="Mechanical_Engineering">Mechanical</option>
+                  <option value="Civil_Engineering">Civil</option>
+                  <option value="Electrical_Engineering">Electrical</option>
+                </select>
+              </div>
+
+              <div class="history-filter-item">
+                <label for="historyFilterBatch">Batch / Year:</label>
+                <select id="historyFilterBatch" class="form-select form-select-sm">
+                  <option value="">All Batches</option>
+                  <option value="21-22">21-22</option>
+                  <option value="22-23">22-23</option>
+                  <option value="23-24">23-24</option>
+                  <option value="24-25">24-25</option>
+                  <option value="25-26">25-26</option>
+                </select>
+              </div>
+
+              <div class="history-filter-item">
+                <label for="historyFilterSem">Semester:</label>
+                <select id="historyFilterSem" class="form-select form-select-sm">
+                  <option value="">All Semesters</option>
+                  <option value="Semester_1">Semester 1</option>
+                  <option value="Semester_2">Semester 2</option>
+                  <option value="Semester_3">Semester 3</option>
+                  <option value="Semester_4">Semester 4</option>
+                  <option value="Semester_5">Semester 5</option>
+                  <option value="Semester_6">Semester 6</option>
+                  <option value="Semester_7">Semester 7</option>
+                  <option value="Semester_8">Semester 8</option>
+                </select>
+              </div>
+
+              <div class="history-filter-item">
+                <label for="historyFilterSource">Source / Type:</label>
+                <select id="historyFilterSource" class="form-select form-select-sm">
+                  <option value="">All Sources</option>
+                  <option value="PDF">PDF Gazette</option>
+                  <option value="Excel">Excel / Ingested</option>
+                  <option value="Database">Database Saved</option>
+                </select>
+              </div>
+
+              <button type="button" id="btnResetHistoryFilters" class="btn btn-sm btn-ghost history-reset-btn" title="Clear search and filters">
+                ✕ Reset
+              </button>
+            </div>
+          </div>
+
+          <!-- History Summary Bar -->
+          <div class="history-status-strip">
+            <span class="history-status-count" id="historyCountBadge">Showing 0 extractions</span>
+            <span class="history-status-hint">Sorted by most recently extracted first</span>
+          </div>
+
+          <!-- Extractions History List Container -->
+          <div id="historyList" class="history-grid-list">
+            <div class="history-empty-state">
+              <div class="empty-icon">📂</div>
+              <h3>No extraction history yet.</h3>
+              <p>Your completed extractions will automatically appear here.</p>
+              <button type="button" class="btn btn-primary" onclick="navigateTo('/extract')">Go to Extract &amp; Audit</button>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <!-- VIEW 3: Analysis Overview (/analysis) -->
