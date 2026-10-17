@@ -30,6 +30,42 @@ from models import ExamMeta
 
 history_bp = Blueprint("history_api", __name__)
 
+
+def _norm_history_key(s: str) -> str:
+    if not s:
+        return ""
+    clean = str(s).replace("supabase_", "").replace("db_", "").replace("excel/", "").replace(".xlsx", "").replace(".pdf", "")
+    clean = re.sub(r"[\s_\-]+", "_", clean.lower()).strip("_")
+    clean = clean.replace("semester", "sem")
+    return clean
+
+
+def _match_cloud_semester(folder_identifier: str, cloud_hier: list):
+    """
+    Given a folder identifier (synth_id, raw folder name, or path), finds the
+    matching semester entry, batch entry, and department entry in cloud_hier.
+    Returns (semester_dict, batch_dict, dept_dict) or (None, None, None).
+    """
+    if not folder_identifier or not cloud_hier:
+        return None, None, None
+    nt = _norm_history_key(folder_identifier)
+    for d in cloud_hier:
+        for b in d.get("batches", []):
+            for s in b.get("semesters", []):
+                s_name = s.get("semester_name") or ""
+                f_stem = os.path.splitext(s.get("file_name", ""))[0]
+                r_stem = os.path.splitext(s.get("rel_path", ""))[0]
+                candidates = [
+                    _norm_history_key(f"{d['id']}_{b['id']}_{s_name}"),
+                    _norm_history_key(f"{d['id']}_{b['id']}_{f_stem}"),
+                    _norm_history_key(r_stem),
+                    _norm_history_key(s.get("storage_path", ""))
+                ]
+                if nt in candidates or any(c == nt for c in candidates):
+                    return s, b, d
+    return None, None, None
+
+
 @history_bp.route("/api/history", methods=["GET"])
 def list_history():
     """
@@ -157,7 +193,8 @@ def list_history():
                         if ds_key in seen_keys:
                             continue
                         seen_keys.add(ds_key)
-                        synth_id = f"db_{d_dept}_{d_batch}_{d_sem}"
+                        d_sem_clean = str(d_sem).replace(" ", "_")
+                        synth_id = f"db_{d_dept}_{d_batch}_{d_sem_clean}"
                         history_entries.append({
                             "id": synth_id,
                             "folder_name": synth_id,
@@ -190,119 +227,115 @@ def list_history():
     return resp
 
 
-@history_bp.route("/api/history/<folder_name>", methods=["GET"])
+@history_bp.route("/api/history/<path:folder_name>", methods=["GET"])
 def load_history_entry(folder_name):
     """
     Load extracted records from history.
-    Supports either output/ directory folder names or SQLite synth_ids (db_<dept>_<batch>_<sem>).
+    Supports Supabase Cloud datasets, SQLite synth_ids, or ephemeral output/ folder names.
     """
     clean_folder = safe_folder_name(folder_name)
 
-    # 1. If it's a database synth_id: db_<dept>_<batch>_<sem>
-    if clean_folder.startswith("db_"):
-        parts = clean_folder[3:].split("_")
-        # Try finding match in SQLite database
-        try:
-            db_datasets = list_datasets_from_db(DB_PATH)
-            matched = None
-            for ds in db_datasets:
-                test_id = f"db_{ds['department']}_{ds['batch']}_{ds['semester']}"
-                if test_id.lower() == clean_folder.lower():
-                    matched = ds
-                    break
-            if matched:
-                db_data = get_dataset_from_db(
-                    DB_PATH,
-                    matched["department"],
-                    matched["batch"],
-                    matched["semester"]
-                )
-                if db_data:
-                    students = db_data.get("students", [])
-                    ds_meta = {
-                        "department": matched["department"],
-                        "batch": matched["batch"],
+    # 1. Try finding match in SQLite database if DB exists
+    try:
+        db_datasets = list_datasets_from_db(DB_PATH)
+        matched = None
+        for ds in db_datasets:
+            test_id = f"db_{ds['department']}_{ds['batch']}_{ds['semester']}"
+            if test_id.lower() in (clean_folder.lower(), folder_name.lower()):
+                matched = ds
+                break
+        if matched:
+            db_data = get_dataset_from_db(
+                DB_PATH,
+                matched["department"],
+                matched["batch"],
+                matched["semester"]
+            )
+            if db_data:
+                students = db_data.get("students", [])
+                ds_meta = {
+                    "department": matched["department"],
+                    "batch": matched["batch"],
+                    "semester": matched["semester"],
+                    "pdf_path": matched.get("pdf_path"),
+                    "excel_path": matched.get("excel_path")
+                }
+                return jsonify({
+                    "success": True,
+                    "folder_name": clean_folder,
+                    "csv_file": f"{clean_folder}_extracted_data.csv",
+                    "excel_file": f"{clean_folder}_extracted_data.xlsx",
+                    "json_file": f"{clean_folder}_catalog.json",
+                    "academic_report_file": f"{clean_folder}_Academic_Report.xlsx",
+                    "total_students": len(students),
+                    "students": students,
+                    "dataset_meta": ds_meta,
+                    "meta": {
+                        "exam_title": f"{matched['department']} {matched['batch']} {matched['semester']}",
                         "semester": matched["semester"],
-                        "pdf_path": matched.get("pdf_path"),
-                        "excel_path": matched.get("excel_path")
+                        "college_name": matched["department"],
+                        "archetype": "tabulation",
+                        "dataset_meta": ds_meta
                     }
+                })
+    except Exception as e:
+        logger.debug(f"SQLite check bypassed/not present: {e}")
+
+    # 2. Check Supabase Cloud via robust hierarchy matcher
+    try:
+        from services.supabase_service import get_supabase_service
+        supabase_svc = get_supabase_service()
+        if supabase_svc.is_configured:
+            cloud_hier = supabase_svc.get_cloud_departments_hierarchy()
+            s_item, b_item, d_item = _match_cloud_semester(folder_name, cloud_hier)
+            if not s_item:
+                s_item, b_item, d_item = _match_cloud_semester(clean_folder, cloud_hier)
+
+            if s_item and s_item.get("rel_path"):
+                from services.academic_service import resolve_subject_dataset
+                records, catalog, meta = resolve_subject_dataset(f"supabase_excel_{s_item['rel_path']}")
+                if records is not None:
+                    dept_id = (d_item and d_item.get("id")) or meta.get("department") or ""
+                    dept_name = (d_item and d_item.get("name")) or meta.get("department") or dept_id
+                    batch_id = (b_item and b_item.get("id")) or meta.get("batch") or ""
+                    sem_name = (s_item and s_item.get("semester_name")) or meta.get("semester") or ""
+
+                    ds_meta = {
+                        "department": dept_id,
+                        "batch": batch_id,
+                        "semester": sem_name,
+                        "excel_path": s_item.get("storage_path"),
+                        "pdf_path": s_item.get("pdf_storage_path")
+                    }
+                    academic_fn = get_academic_filename(clean_folder, {
+                        "dataset_meta": ds_meta,
+                        "department": dept_id,
+                        "college_name": dept_name,
+                        "batch": batch_id,
+                        "semester": sem_name
+                    })
                     return jsonify({
                         "success": True,
                         "folder_name": clean_folder,
                         "csv_file": f"{clean_folder}_extracted_data.csv",
                         "excel_file": f"{clean_folder}_extracted_data.xlsx",
                         "json_file": f"{clean_folder}_catalog.json",
-                        "academic_report_file": f"{clean_folder}_Academic_Report.xlsx",
-                        "total_students": len(students),
-                        "students": students,
+                        "academic_report_file": academic_fn,
+                        "total_students": len(records),
+                        "students": records,
                         "dataset_meta": ds_meta,
                         "meta": {
-                            "exam_title": f"{matched['department']} {matched['batch']} {matched['semester']}",
-                            "semester": matched["semester"],
-                            "college_name": matched["department"],
+                            "exam_title": meta.get("dataset_name") or f"{dept_name} {batch_id} {sem_name}",
+                            "semester": sem_name or meta.get("semester"),
+                            "college_name": dept_name,
                             "archetype": "tabulation",
                             "dataset_meta": ds_meta
                         }
                     })
-        except Exception as e:
-            logger.warning(f"Failed loading DB dataset for history item {clean_folder}: {e}")
+    except Exception as sup_load_err:
+        logger.warning(f"Failed loading Supabase dataset for history item {clean_folder}: {sup_load_err}")
 
-        # Try loading directly via resolve_subject_dataset from Supabase!
-        try:
-            from services.academic_service import resolve_subject_dataset
-            # Match plain path: e.g. db_Artificial_Intelligence_and_Data_Science_21-22_Semester_1
-            # Replace prefix and map to supabase_excel_<dept>/<batch>/<sem>.xlsx
-            from services.supabase_service import get_supabase_service
-            supabase_svc = get_supabase_service()
-            if supabase_svc.is_configured:
-                cloud_hier = supabase_svc.get_cloud_departments_hierarchy()
-                plain = clean_folder.replace("supabase_", "").replace("db_", "")
-                target_rel = None
-                for d in cloud_hier:
-                    for b in d.get("batches", []):
-                        for s in b.get("semesters", []):
-                            s_name = s.get("semester_name") or os.path.splitext(s.get("file_name", ""))[0]
-                            k = f"{d['id']}_{b['id']}_{s_name}".lower()
-                            if k == plain.lower():
-                                target_rel = s.get("rel_path")
-                                break
-                        if target_rel:
-                            break
-                    if target_rel:
-                        break
-
-                if target_rel:
-                    records, catalog, meta = resolve_subject_dataset(f"supabase_excel_{target_rel}")
-                    if records:
-                        ds_meta = {
-                            "department": meta.get("department"),
-                            "batch": meta.get("batch"),
-                            "semester": meta.get("semester"),
-                            "excel_path": meta.get("storage_path"),
-                            "pdf_path": meta.get("pdf_storage_path")
-                        }
-                        return jsonify({
-                            "success": True,
-                            "folder_name": clean_folder,
-                            "csv_file": f"{clean_folder}_extracted_data.csv",
-                            "excel_file": f"{clean_folder}_extracted_data.xlsx",
-                            "json_file": f"{clean_folder}_catalog.json",
-                            "academic_report_file": f"{clean_folder}_Academic_Report.xlsx",
-                            "total_students": len(records),
-                            "students": records,
-                            "dataset_meta": ds_meta,
-                            "meta": {
-                                "exam_title": meta.get("dataset_name"),
-                                "semester": meta.get("semester"),
-                                "college_name": meta.get("department"),
-                                "archetype": "tabulation",
-                                "dataset_meta": ds_meta
-                            }
-                        })
-        except Exception as sup_load_err:
-            logger.warning(f"Failed loading Supabase dataset for history item {clean_folder}: {sup_load_err}")
-
-    # 2. Otherwise load from output/<folder_name>
+    # 3. Otherwise fall back to local output/<clean_folder>
     folder_path = os.path.join(OUTPUT_DIR, clean_folder)
     if not os.path.isdir(folder_path):
         return jsonify({"success": False, "error": f"History dataset '{folder_name}' not found."}), 404
@@ -353,7 +386,7 @@ def delete_history_entry(folder_name):
     """
     Delete an extraction record from history.
     Requires explicit user confirmation from UI.
-    Removes output/ entry folder and removes SQLite datasets entry if applicable.
+    Removes output/ entry folder and removes SQLite/Supabase datasets entry if applicable.
     Safely leaves original source documents intact.
     """
     clean_folder = safe_folder_name(folder_name)
@@ -373,7 +406,6 @@ def delete_history_entry(folder_name):
             }
             if clean_folder.lower() in candidates or folder_name.lower() in candidates:
                 delete_dataset_from_db(DB_PATH, ds["department"], ds["batch"], ds["semester"])
-                # Also remove associated clean excel from departments_data/excel if present
                 excel_p = ds.get("excel_path")
                 if excel_p and os.path.isfile(excel_p):
                     try:
@@ -385,13 +417,28 @@ def delete_history_entry(folder_name):
     except Exception as e:
         logger.warning(f"Error checking/removing dataset from SQLite: {e}")
 
-    # 2. Check output/ directory (test both clean_folder and raw folder_name)
+    # 2. Check Supabase Cloud catalog and storage
+    try:
+        from services.supabase_service import get_supabase_service
+        supabase_svc = get_supabase_service()
+        if supabase_svc.is_configured:
+            cloud_hier = supabase_svc.get_cloud_departments_hierarchy()
+            s_item, b_item, d_item = _match_cloud_semester(folder_name, cloud_hier)
+            if not s_item:
+                s_item, b_item, d_item = _match_cloud_semester(clean_folder, cloud_hier)
+            if s_item and d_item and b_item:
+                sem_name = s_item.get("semester_name") or os.path.splitext(s_item.get("file_name", ""))[0]
+                if supabase_svc.delete_dataset_record(d_item["id"], b_item["id"], sem_name):
+                    deleted_any = True
+    except Exception as e:
+        logger.warning(f"Error removing dataset from Supabase: {e}")
+
+    # 3. Check output/ directory (test both clean_folder and raw folder_name)
     targets = [t for t in [clean_folder, folder_name] if t]
     for target_name in targets:
         folder_path = os.path.join(OUTPUT_DIR, target_name)
         if os.path.isdir(folder_path):
             try:
-                # Check catalog.json if it references a DB dataset to sync SQLite deletion
                 cat_file = os.path.join(folder_path, f"{target_name}_catalog.json")
                 if not os.path.isfile(cat_file):
                     for f in os.listdir(folder_path):
@@ -411,7 +458,6 @@ def delete_history_entry(folder_name):
                     except Exception as err:
                         logger.warning(f"Error reading catalog to delete from DB: {err}")
 
-                # Safely remove the directory on Windows
                 try:
                     shutil.rmtree(folder_path, onexc=_handle_remove_readonly)
                 except TypeError:
@@ -420,7 +466,7 @@ def delete_history_entry(folder_name):
             except Exception as e:
                 return jsonify({"success": False, "error": f"Failed deleting folder: {str(e)}"}), 500
 
-    # 3. Synchronize in-memory job state
+    # 4. Synchronize in-memory job state
     with jobs_lock:
         to_del = [jid for jid, job in jobs.items() if job.get("folder_name") in (clean_folder, folder_name)]
         for jid in to_del:
@@ -437,8 +483,6 @@ def delete_history_entry(folder_name):
     return resp
 
 
-
-
 @history_bp.route("/api/download/<folder>/<filename>", methods=["GET"])
 def download_extracted_file(folder, filename):
     """Download exported CSV, Excel, or JSON, with streaming from Supabase Storage."""
@@ -450,48 +494,47 @@ def download_extracted_file(folder, filename):
         if os.path.isfile(fpath):
             return send_from_directory(folder_path, clean_filename, as_attachment=True)
 
-    # Check Supabase Storage if folder is db_ or supabase_ or file not found locally
+    # Stream from Supabase Storage
     try:
         from services.supabase_service import get_supabase_service
         supabase_svc = get_supabase_service()
         if supabase_svc.is_configured:
             cloud_hier = supabase_svc.get_cloud_departments_hierarchy()
-            target_storage_path = None
-            is_pdf = clean_filename.lower().endswith(".pdf")
+            s_item, b_item, d_item = _match_cloud_semester(folder, cloud_hier)
+            if not s_item:
+                s_item, b_item, d_item = _match_cloud_semester(clean_folder, cloud_hier)
 
-            # Try matching department, batch, semester from folder name
-            plain = clean_folder.replace("supabase_", "").replace("db_", "")
-            for d in cloud_hier:
-                d_id = d["id"]
-                for b in d.get("batches", []):
-                    b_id = b["id"]
-                    for s in b.get("semesters", []):
-                        s_name = s.get("semester_name") or os.path.splitext(s.get("file_name", ""))[0]
-                        candidate_keys = [
-                            f"{d_id}_{b_id}_{s_name}".lower(),
-                            f"{d_id}_{b_id}_{s.get('file_name', '')}".lower(),
-                            f"{b_id}_{s_name}".lower()
-                        ]
-                        if any(k in plain.lower() or plain.lower() in k for k in candidate_keys):
-                            target_storage_path = s.get("pdf_storage_path") if is_pdf else s.get("storage_path")
-                            break
-                    if target_storage_path:
-                        break
-                if target_storage_path:
-                    break
+            if s_item:
+                is_pdf = clean_filename.lower().endswith(".pdf")
+                is_csv = clean_filename.lower().endswith(".csv")
+                is_json = clean_filename.lower().endswith(".json")
 
-            if not target_storage_path:
-                # Direct folder search in Supabase
-                prefix = "pdf" if is_pdf else "excel"
-                ext = ".pdf" if is_pdf else ".xlsx"
-                # Check if filename already contains path
-                target_storage_path = f"{prefix}/{clean_folder}/{clean_filename}"
+                if is_pdf and s_item.get("pdf_storage_path"):
+                    pdf_bytes = supabase_svc.download_file_bytes(s_item["pdf_storage_path"])
+                    if pdf_bytes:
+                        return send_file(io.BytesIO(pdf_bytes), download_name=clean_filename, as_attachment=True, mimetype="application/pdf")
 
-            if target_storage_path:
-                file_bytes = supabase_svc.download_file_bytes(target_storage_path)
-                if file_bytes:
-                    mime = "application/pdf" if is_pdf else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    return send_file(io.BytesIO(file_bytes), download_name=clean_filename, as_attachment=True, mimetype=mime)
+                elif is_csv and s_item.get("rel_path"):
+                    from services.academic_service import resolve_subject_dataset
+                    records, _, _ = resolve_subject_dataset(f"supabase_excel_{s_item['rel_path']}")
+                    if records:
+                        output = io.StringIO()
+                        writer = csv.DictWriter(output, fieldnames=list(records[0].keys()))
+                        writer.writeheader()
+                        writer.writerows(records)
+                        csv_bytes = output.getvalue().encode("utf-8-sig")
+                        return send_file(io.BytesIO(csv_bytes), download_name=clean_filename, as_attachment=True, mimetype="text/csv")
+
+                elif is_json and s_item.get("rel_path"):
+                    from services.academic_service import resolve_subject_dataset
+                    records, cat, meta = resolve_subject_dataset(f"supabase_excel_{s_item['rel_path']}")
+                    json_bytes = json.dumps({"students": records or [], "catalog": cat or {}, "meta": meta or {}}, indent=2).encode("utf-8")
+                    return send_file(io.BytesIO(json_bytes), download_name=clean_filename, as_attachment=True, mimetype="application/json")
+
+                elif s_item.get("storage_path"):
+                    excel_bytes = supabase_svc.download_file_bytes(s_item["storage_path"])
+                    if excel_bytes:
+                        return send_file(io.BytesIO(excel_bytes), download_name=clean_filename, as_attachment=True, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     except Exception as e:
         logger.warning(f"Error streaming download from Supabase: {e}")
 
@@ -503,51 +546,101 @@ def export_academic_analysis(folder):
     """
     Generate and stream the publication-grade 6-sheet Academic Analysis Workbook
     (e.g. '21-22 sem 8.xlsx') matching the exact departmental Google Sheet format.
+    Streams directly from Supabase Cloud or disk buffer.
     """
     clean_folder = safe_folder_name(folder)
     folder_path = os.path.join(OUTPUT_DIR, clean_folder)
-    if not os.path.isdir(folder_path):
-        return jsonify({"success": False, "error": f"Folder '{clean_folder}' not found in output."}), 404
 
-    csv_path = os.path.join(folder_path, f"{clean_folder}_extracted_data.csv")
-    cat_path = os.path.join(folder_path, f"{clean_folder}_catalog.json")
+    # 1. Check local output/<clean_folder>
+    if os.path.isdir(folder_path):
+        csv_path = os.path.join(folder_path, f"{clean_folder}_extracted_data.csv")
+        cat_path = os.path.join(folder_path, f"{clean_folder}_catalog.json")
 
-    cat_meta = {}
-    if os.path.isfile(cat_path):
-        try:
-            with open(cat_path, "r", encoding="utf-8") as f:
-                cat_meta = json.load(f)
-        except Exception:
-            pass
+        cat_meta = {}
+        if os.path.isfile(cat_path):
+            try:
+                with open(cat_path, "r", encoding="utf-8") as f:
+                    cat_meta = json.load(f)
+            except Exception:
+                pass
 
-    records = []
-    fieldnames = []
-    if os.path.isfile(csv_path):
-        with open(csv_path, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            fieldnames = list(reader.fieldnames or [])
-            records = list(reader)
+        records = []
+        fieldnames = []
+        if os.path.isfile(csv_path):
+            with open(csv_path, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                fieldnames = list(reader.fieldnames or [])
+                records = list(reader)
 
-    if not records:
-        return jsonify({"success": False, "error": "No extracted student records found to generate analysis sheet."}), 400
+        if records:
+            academic_filename = get_academic_filename(clean_folder, cat_meta)
+            academic_path = os.path.join(folder_path, academic_filename)
+            try:
+                generator = AcademicExcelReportGenerator(
+                    students=records,
+                    catalog=cat_meta,
+                    meta=cat_meta,
+                    folder_name=clean_folder,
+                    fieldnames=fieldnames
+                )
+                generator.generate_workbook(academic_path)
+                return send_from_directory(folder_path, academic_filename, as_attachment=True)
+            except Exception as e:
+                return jsonify({"success": False, "error": f"Failed to generate academic analysis report: {str(e)}"}), 500
 
-    academic_filename = get_academic_filename(clean_folder, cat_meta)
-    academic_path = os.path.join(folder_path, academic_filename)
-
-    # Always ensure workbook is fresh and generated
+    # 2. Check Supabase Cloud directly
     try:
-        generator = AcademicExcelReportGenerator(
-            students=records,
-            catalog=cat_meta,
-            meta=cat_meta,
-            folder_name=clean_folder,
-            fieldnames=fieldnames
-        )
-        generator.generate_workbook(academic_path)
-    except Exception as e:
-        return jsonify({"success": False, "error": f"Failed to generate academic analysis report: {str(e)}"}), 500
+        from services.supabase_service import get_supabase_service
+        supabase_svc = get_supabase_service()
+        if supabase_svc.is_configured:
+            cloud_hier = supabase_svc.get_cloud_departments_hierarchy()
+            s_item, b_item, d_item = _match_cloud_semester(folder, cloud_hier)
+            if not s_item:
+                s_item, b_item, d_item = _match_cloud_semester(clean_folder, cloud_hier)
 
-    return send_from_directory(folder_path, academic_filename, as_attachment=True)
+            if s_item and s_item.get("rel_path"):
+                from services.academic_service import resolve_subject_dataset
+                records, catalog_meta, meta = resolve_subject_dataset(f"supabase_excel_{s_item['rel_path']}")
+                if records:
+                    dept_id = (d_item and d_item.get("id")) or meta.get("department") or ""
+                    dept_name = (d_item and d_item.get("name")) or meta.get("department") or dept_id
+                    batch_id = (b_item and b_item.get("id")) or meta.get("batch") or ""
+                    sem_name = (s_item and s_item.get("semester_name")) or meta.get("semester") or ""
+
+                    ds_meta = {
+                        "department": dept_id,
+                        "batch": batch_id,
+                        "semester": sem_name
+                    }
+                    full_meta = {
+                        "dataset_meta": ds_meta,
+                        "department": dept_id,
+                        "college_name": dept_name,
+                        "batch": batch_id,
+                        "semester": sem_name
+                    }
+                    academic_filename = get_academic_filename(clean_folder, full_meta)
+                    out_buf = io.BytesIO()
+                    generator = AcademicExcelReportGenerator(
+                        students=records,
+                        catalog=catalog_meta or full_meta,
+                        meta=full_meta,
+                        folder_name=clean_folder,
+                        fieldnames=list(records[0].keys())
+                    )
+                    wb = generator.generate_workbook()
+                    wb.save(out_buf)
+                    out_buf.seek(0)
+                    return send_file(
+                        out_buf,
+                        download_name=academic_filename,
+                        as_attachment=True,
+                        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+    except Exception as e:
+        logger.warning(f"Error generating academic report from Supabase: {e}")
+
+    return jsonify({"success": False, "error": f"Dataset '{folder}' not found."}), 404
 
 
 @history_bp.route("/api/dataset/sync", methods=["POST"])

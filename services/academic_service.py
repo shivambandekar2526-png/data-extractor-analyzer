@@ -224,6 +224,11 @@ def resolve_subject_dataset(dataset_id: str) -> Tuple[List[Dict[str, Any]], Opti
             from services.supabase_service import get_supabase_service
             svc = get_supabase_service()
             file_bytes = svc.download_file_bytes(storage_path)
+            if not file_bytes:
+                # Try fallback variation: Sem_ <-> Semester_
+                alt_path = storage_path.replace("Semester_", "Sem_") if "Semester_" in storage_path else storage_path.replace("Sem_", "Semester_")
+                file_bytes = svc.download_file_bytes(alt_path)
+
             if file_bytes:
                 bio = io.BytesIO(file_bytes)
                 xl = pd.ExcelFile(bio)
@@ -265,6 +270,7 @@ def resolve_subject_dataset(dataset_id: str) -> Tuple[List[Dict[str, Any]], Opti
                 return records, catalog, meta
         except Exception as e:
             logger.error(f"Error reading Supabase Excel dataset {clean_id}: {e}")
+        return records, catalog, meta
 
     # Case 1: Database dataset (db_<dept>_<batch>_<sem>)
     if clean_id.startswith("db_"):
@@ -352,7 +358,9 @@ def resolve_subject_dataset(dataset_id: str) -> Tuple[List[Dict[str, Any]], Opti
         clean_rel = rel_path.replace("\\", "/").strip("/")
         if clean_rel.startswith("excel/"):
             clean_rel = clean_rel[6:]
-        return resolve_subject_dataset(f"supabase_excel_{clean_rel}")
+        if not clean_id.startswith("supabase_excel_"):
+            return resolve_subject_dataset(f"supabase_excel_{clean_rel}")
+        return [], None, {}
 
     if os.path.isfile(excel_full_path):
         try:
