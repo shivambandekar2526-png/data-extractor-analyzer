@@ -1,0 +1,161 @@
+    <div class="modal-backdrop hidden" id="modalBatchPrintPreview" style="z-index: 10010; overflow-y: auto; padding: 1.5rem 0.5rem; display: flex; align-items: flex-start; justify-content: center;">
+      <div class="modal-card print-modal-card" style="max-width: 940px; width: 96%; background: var(--bg-card); border-radius: 12px; box-shadow: 0 16px 48px rgba(0,0,0,0.5); margin: 1rem auto; display: flex; flex-direction: column;">
+        <!-- Modal Toolbar -->
+        <div class="modal-header print-toolbar" style="padding: 0.85rem 1.4rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; background: var(--bg-card); flex-shrink: 0; position: sticky; top: 0; z-index: 20;">
+          <div class="modal-title-group" style="display: flex; align-items: center; gap: 10px;">
+            <div class="tabular-modal-icon" style="background: rgba(31, 78, 120, 0.15); color: #1F4E78; font-size: 1.25rem; width: 38px; height: 38px; border-radius: 8px; display: flex; align-items: center; justify-content: center;">🖨️</div>
+            <div>
+              <h3 style="margin: 0; font-size: 1.15rem; font-weight: 700; color: var(--text-main);">Institutional Academic Batch Report (1-Page Preview)</h3>
+              <p class="modal-subtitle" style="margin: 2px 0 0; font-size: 0.8rem; color: var(--text-muted);">Terna Engineering College • Departmental Multi-Semester Cohort Audit Sheet</p>
+            </div>
+          </div>
+          <div style="display: flex; gap: 0.6rem; align-items: center;">
+            <button type="button" class="btn btn-primary btn-sm" id="btnPrintModalBatchExecute" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; padding: 0.5rem 1rem;">
+              <span>🖨️ Print Now</span>
+            </button>
+            <button type="button" class="btn btn-outline btn-sm" id="btnModalBatchExportDocx" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; padding: 0.5rem 1rem; border-color: #3b82f6; color: #3b82f6;">
+              <span>📄 Word (.docx)</span>
+            </button>
+            <button type="button" class="btn-close" id="btnCloseBatchPrintPreviewModal" style="margin-left: 0.4rem; cursor: pointer; font-size: 1.5rem; background: none; border: none; color: var(--text-muted);">&times;</button>
+          </div>
+        </div>
+
+        <!-- Modal Body: Printable Sheet Display Container -->
+        <div class="modal-body" style="padding: 1.5rem 1rem; overflow: visible; background: #cbd5e1; display: flex; justify-content: center;">
+          <!-- A4 Sheet Surface -->
+          <div id="batchPrintSheet" class="subject-print-sheet">
+            <!-- Sheet Header with Top-Left Terna Logo -->
+            <div class="print-header-grid" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+              <div class="print-logo-box" style="width: 76px; height: 76px; flex-shrink: 0; display: flex; align-items: center; justify-content: flex-start;">
+                <img src="/static/img/terna_logo.png" alt="Terna Engineering College Logo" style="width: 72px; height: 72px; object-fit: contain; display: block;" />
+              </div>
+              <div class="print-header-text" style="flex: 1; text-align: center; margin-right: 76px;">
+                <h1 class="print-college-name" style="margin: 0; font-size: 20px; font-weight: 800; color: #1F4E78; letter-spacing: 0.5px; text-transform: uppercase;">TERNA ENGINEERING COLLEGE</h1>
+                <h2 class="print-dept-name" id="prnBatchDeptName" style="margin: 2px 0 0; font-size: 13.5px; font-weight: 700; color: #334155; text-transform: uppercase;">DEPARTMENT OF ARTIFICIAL INTELLIGENCE AND DATA SCIENCE</h2>
+                <div class="print-report-title" style="margin: 2px 0 0; font-size: 9.5px; font-weight: 600; color: #64748b; letter-spacing: 0.8px;">BATCH ACADEMIC PERFORMANCE &amp; COHORT RESULT ANALYSIS REPORT</div>
+              </div>
+            </div>
+            <div class="print-divider" style="height: 2px; background: linear-gradient(90deg, #1F4E78 0%, #3b82f6 50%, #1F4E78 100%); margin-bottom: 10px;"></div>
+
+            <!-- Metadata Block -->
+            <div class="print-meta-grid">
+              <div class="print-meta-left">
+                <div class="print-meta-row"><span class="print-meta-lbl">Batch / Cohort:</span> <strong id="prnBatchCohort">2021–2022</strong></div>
+                <div class="print-meta-row"><span class="print-meta-lbl">Semester Scope:</span> <strong id="prnBatchSemesterRange" class="print-subject-name">Semesters 1 to 8 Full Suite</strong></div>
+                <div class="print-meta-row"><span class="print-meta-lbl">Standard:</span> <strong>NBA / NAAC Compliance Metric</strong></div>
+              </div>
+              <div class="print-meta-right">
+                <div class="print-meta-row"><span class="print-meta-lbl">Academic Year:</span> <span id="prnBatchAcadYear">2024–25</span></div>
+                <div class="print-meta-row"><span class="print-meta-lbl">Total Cohort Intake:</span> <strong id="prnBatchTotalIntake">75 Students (N1+N3)</strong></div>
+                <div class="print-meta-row"><span class="print-meta-lbl">Report Date:</span> <span id="prnBatchReportDate">16-Oct-2026</span></div>
+              </div>
+            </div>
+
+            <!-- 1. Batch Clearance & Success Rate Table with Donut Chart -->
+            <div class="print-section">
+              <div class="print-section-title">1. BATCH CLEARANCE &amp; OFFICIAL SUCCESS RATE ANALYSIS</div>
+              <div class="print-table-graph-split">
+                <div class="print-table-wrap">
+                  <table class="print-table" id="prnTblBatchClearance">
+                    <thead>
+                      <tr>
+                        <th>Clearance Status / Intake Metric</th>
+                        <th style="text-align: right; width: 80px;">Count</th>
+                        <th style="text-align: right; width: 95px;">Percentage</th>
+                      </tr>
+                    </thead>
+                    <tbody id="prnTblBatchClearanceBody"></tbody>
+                  </table>
+                </div>
+                <div class="print-graph-wrap" style="width: 255px; min-width: 255px; max-width: 255px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden;">
+                  <div style="font-size: 9.5px; font-weight: 700; color: #1F4E78; margin-bottom: 2px;">Graduation &amp; Clearance</div>
+                  <div style="position: relative; width: 235px; height: 160px; max-width: 235px; max-height: 160px; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                    <canvas id="prnChartBatchClearance" width="235" height="160" style="width: 235px !important; height: 160px !important; max-width: 235px !important; max-height: 160px !important; display: block;"></canvas>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 2. Institutional Classification & SGPI Distribution -->
+            <div class="print-section">
+              <div class="print-section-title">2. INSTITUTIONAL CLASSIFICATION &amp; SGPI DISTRIBUTION</div>
+              <div class="print-dual-grid">
+                <!-- Classification Table -->
+                <div class="print-dual-col">
+                  <div class="print-sub-heading">Institutional Classification (Cohort Grade)</div>
+                  <table class="print-table" id="prnTblBatchClassification">
+                    <thead>
+                      <tr>
+                        <th>Classification</th>
+                        <th style="text-align: right; width: 70px;">Count</th>
+                        <th style="text-align: right; width: 80px;">Share</th>
+                      </tr>
+                    </thead>
+                    <tbody id="prnTblBatchClassificationBody"></tbody>
+                  </table>
+                  <div class="print-mini-chart-container" style="margin-top: 6px; text-align: center; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 5px; padding: 4px; overflow: hidden;">
+                    <div style="font-size: 9px; font-weight: 700; color: #1F4E78; margin-bottom: 2px;">Institutional Classification Chart</div>
+                    <div style="width: 240px; height: 110px; max-width: 240px; max-height: 110px; margin: 0 auto; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                      <canvas id="prnChartBatchClassification" width="240" height="110" style="width: 240px !important; height: 110px !important; max-width: 240px !important; max-height: 110px !important; display: block;"></canvas>
+                    </div>
+                  </div>
+                </div>
+                <!-- SGPI Range Distribution -->
+                <div class="print-dual-col">
+                  <div class="print-sub-heading">Cumulative SGPI Range Distribution</div>
+                  <table class="print-table" id="prnTblBatchSgpiDist">
+                    <thead>
+                      <tr>
+                        <th>SGPI Range</th>
+                        <th style="text-align: right; width: 70px;">Count</th>
+                        <th style="text-align: right; width: 80px;">Share</th>
+                      </tr>
+                    </thead>
+                    <tbody id="prnTblBatchSgpiDistBody"></tbody>
+                  </table>
+                  <div class="print-mini-chart-container" style="margin-top: 6px; text-align: center; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 5px; padding: 4px; overflow: hidden;">
+                    <div style="font-size: 9px; font-weight: 700; color: #1F4E78; margin-bottom: 2px;">SGPI Score Distribution Chart</div>
+                    <div style="width: 240px; height: 110px; max-width: 240px; max-height: 110px; margin: 0 auto; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                      <canvas id="prnChartBatchSgpiDist" width="240" height="110" style="width: 240px !important; height: 110px !important; max-width: 240px !important; max-height: 110px !important; display: block;"></canvas>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 3. Top Batch Merit Leaders Table -->
+            <div class="print-section">
+              <div class="print-section-title">3. TOP BATCH MERIT LEADERS (CONSISTENT HONOR ROLL)</div>
+              <div style="width: 100%;">
+                <table class="print-table" id="prnTblBatchToppers">
+                  <thead>
+                    <tr>
+                      <th style="width: 85px; text-align: center;">Rank</th>
+                      <th>Student Name</th>
+                      <th style="width: 140px; text-align: center;">PRN / Seat No</th>
+                      <th style="text-align: center; width: 140px;">Top 10 Consistency</th>
+                      <th style="text-align: right; width: 110px;">Cumulative SGPI</th>
+                    </tr>
+                  </thead>
+                  <tbody id="prnTblBatchToppersBody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Institutional Signatures Block -->
+            <div class="print-signatures">
+              <div class="print-sig-col">
+                <div class="print-sig-line">__________________________</div>
+                <strong>Result Coordinator</strong>
+                <span class="print-sig-sub" id="prnBatchSigDept1">Department of AI &amp; DS</span>
+              </div>
+              <div class="print-sig-col">
+                <div class="print-sig-line">__________________________</div>
+                <strong>Head of Department (HOD)</strong>
+                <span class="print-sig-sub" id="prnBatchSigDept2">Terna Engineering College</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>

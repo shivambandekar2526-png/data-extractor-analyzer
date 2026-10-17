@@ -1,7 +1,8 @@
     <!-- Print & Sheet Specific Styles (Spans Full A4 Sheet with Balanced Margins) -->
     <style id="subjectPrintStyles">
       #modalSubjectPrintPreview,
-      #modalSemesterPrintPreview {
+      #modalSemesterPrintPreview,
+      #modalBatchPrintPreview {
         display: flex !important;
         align-items: flex-start !important;
         justify-content: center !important;
@@ -12,7 +13,8 @@
       }
 
       #modalSubjectPrintPreview.hidden,
-      #modalSemesterPrintPreview.hidden {
+      #modalSemesterPrintPreview.hidden,
+      #modalBatchPrintPreview.hidden {
         display: none !important;
       }
 
@@ -240,7 +242,7 @@
         }
 
         /* Hide entire interface except print sheet */
-        body > *:not(#modalSubjectPrintPreview):not(#modalSemesterPrintPreview),
+        body > *:not(#modalSubjectPrintPreview):not(#modalSemesterPrintPreview):not(#modalBatchPrintPreview),
         .workspace-sidebar,
         .workspace-header,
         .tab-navigation,
@@ -250,13 +252,16 @@
         .data-extractor-nav,
         #subjectResultsDashboard,
         #semesterResultsDashboard,
+        #batchResultsDashboard,
         #viewSubjectAnalysis > *:not(#modalSubjectPrintPreview),
-        #viewSemesterAnalysis > *:not(#modalSemesterPrintPreview) {
+        #viewSemesterAnalysis > *:not(#modalSemesterPrintPreview),
+        #viewAnalysis > *:not(#modalBatchPrintPreview) {
           display: none !important;
         }
 
         #modalSubjectPrintPreview:not(.hidden),
-        #modalSemesterPrintPreview:not(.hidden) {
+        #modalSemesterPrintPreview:not(.hidden),
+        #modalBatchPrintPreview:not(.hidden) {
           position: static !important;
           display: block !important;
           background: transparent !important;
@@ -269,7 +274,8 @@
         }
 
         #modalSubjectPrintPreview.hidden,
-        #modalSemesterPrintPreview.hidden {
+        #modalSemesterPrintPreview.hidden,
+        #modalBatchPrintPreview.hidden {
           display: none !important;
         }
 

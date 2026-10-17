@@ -3,14 +3,14 @@
           <div class="workspace-title-group">
             <div class="workspace-icon">📊</div>
             <div>
-              <h1 class="workspace-title">Analysis Overview</h1>
-              <p class="workspace-subtitle">Review academic performance across stored datasets and multi-semester cohorts.</p>
+              <h1 class="workspace-title">Batch Multi-Semester Analysis</h1>
+              <p class="workspace-subtitle">Review academic performance, cohort retention, and NBA/NAAC institutional metrics across multi-semester cohorts.</p>
             </div>
           </div>
         </div>
 
         <div id="batchWorkspaceSection">
-      <!-- Batch Selection & Inspection Card -->
+      <!-- 1. Batch Selection & Inspection Card -->
       <section class="card batch-workspace-card">
         <div class="card-header">
           <div>
@@ -32,7 +32,7 @@
           </div>
           <div>
             <label class="batch-select-label" for="batchYearSelect">
-              <span class="batch-step-badge">2</span> Academic Year:
+              <span class="batch-step-badge">2</span> Academic Year / Batch:
             </label>
             <select id="batchYearSelect" class="form-select" disabled>
               <option value="">-- Select Academic Year --</option>
@@ -40,7 +40,7 @@
           </div>
           <div>
             <label class="batch-select-label" for="batchSemesterSelect">
-              <span class="batch-step-badge">3</span> Semesters (1–8):
+              <span class="batch-step-badge">3</span> Semesters Scope:
             </label>
             <select id="batchSemesterSelect" class="form-select" disabled>
               <option value="all">⚡ All Semesters (Sem 1–8 Full Suite)</option>
@@ -48,7 +48,7 @@
           </div>
           <div>
             <button type="button" id="btnInspectBatch" class="btn btn-outline" style="height: 42px; margin-top: auto;" title="Scan directory for semester files">
-              <span>🔍 Scan</span>
+              <span>🔍 Scan Files</span>
             </button>
           </div>
         </div>
@@ -58,9 +58,14 @@
         <select id="batchSuiteSelect" class="form-select hidden" style="display: none;"></select>
 
         <!-- Semester 1-8 Visual Discovery Matrix -->
-        <div class="semester-grid-title">
-          <span>📁 Detected Cohort Semesters (1st Sem to 8th Sem)</span>
-          <span id="batchDetectSummary" class="chip chip-active hidden">8 Semesters Ready</span>
+        <div class="semester-grid-title" style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem;">
+          <span style="font-weight: 600;">📁 Detected Cohort Semesters (1st Sem to 8th Sem)</span>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <button type="button" id="btnToggleBatchFilesTable" class="btn btn-outline btn-sm" style="font-size: 0.75rem; padding: 2px 8px; display: none;">
+              <span>Toggle Sheet Details</span>
+            </button>
+            <span id="batchDetectSummary" class="chip chip-active hidden">8 Semesters Ready</span>
+          </div>
         </div>
 
         <div class="semester-grid" id="semesterGridContainer">
@@ -74,25 +79,25 @@
           <div class="sem-card missing" id="semCard8"><span class="sem-num-badge">Sem 8</span><span class="sem-filename-text">No File</span></div>
         </div>
 
-        <!-- Excel Sheets of the Selected Batch Table -->
-        <div id="batchExcelFilesSection" class="batch-excel-files-section hidden" style="margin-top: 1.25rem; background: var(--card-bg, #ffffff); border: 1px solid var(--border-color, #e2e8f0); border-radius: 10px; padding: 1rem 1.25rem;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
-            <div style="display: flex; align-items: center; gap: 0.6rem;">
-              <span style="font-size: 1.1rem;">📊</span>
-              <strong style="font-size: 0.95rem; color: var(--text-primary, #1e293b);">Excel Sheets Available in Selected Batch</strong>
+        <!-- Excel Sheets of the Selected Batch Table (Collapsible) -->
+        <div id="batchExcelFilesSection" class="batch-excel-files-section hidden" style="margin-top: 1rem; background: var(--card-bg, #ffffff); border: 1px solid var(--border-color, #e2e8f0); border-radius: 8px; padding: 0.85rem 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <span>📊</span>
+              <strong style="font-size: 0.88rem; color: var(--text-primary, #1e293b);">Excel Sheets Available in Selected Batch</strong>
               <span id="batchExcelSheetCountBadge" class="chip chip-active">0 Sheets</span>
             </div>
-            <span id="batchExcelSourcePath" style="font-size: 0.8rem; color: var(--text-muted, #64748b); font-family: monospace;"></span>
+            <span id="batchExcelSourcePath" style="font-size: 0.75rem; color: var(--text-muted, #64748b); font-family: monospace;"></span>
           </div>
-          <div class="table-responsive" style="max-height: 250px; overflow-y: auto; border: 1px solid var(--border-color, #e2e8f0); border-radius: 6px;">
-            <table class="table table-sm table-hover mb-0" style="font-size: 0.85rem; width: 100%; border-collapse: collapse;">
+          <div class="table-responsive" style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border-color, #e2e8f0); border-radius: 6px;">
+            <table class="table table-sm table-hover mb-0" style="font-size: 0.82rem; width: 100%; border-collapse: collapse;">
               <thead style="background: var(--bg-secondary, #f8fafc); position: sticky; top: 0; z-index: 2;">
                 <tr>
-                  <th style="padding: 8px 12px; text-align: left;">Semester</th>
-                  <th style="padding: 8px 12px; text-align: left;">Excel Filename</th>
-                  <th style="padding: 8px 12px; text-align: center;">Format</th>
-                  <th style="padding: 8px 12px; text-align: right;">File Size</th>
-                  <th style="padding: 8px 12px; text-align: center;">Status</th>
+                  <th style="padding: 6px 10px; text-align: left;">Semester</th>
+                  <th style="padding: 6px 10px; text-align: left;">Excel Filename</th>
+                  <th style="padding: 6px 10px; text-align: center;">Format</th>
+                  <th style="padding: 6px 10px; text-align: right;">File Size</th>
+                  <th style="padding: 6px 10px; text-align: center;">Status</th>
                 </tr>
               </thead>
               <tbody id="batchExcelFilesTableBody">
@@ -102,25 +107,14 @@
           </div>
         </div>
 
-        <!-- Excel AI Restructuring Prompt Banner -->
-        <div id="batchExcelPromptBanner" class="excel-ai-prompt-banner hidden">
-          <div class="excel-ai-prompt-left">
-            <span class="excel-ai-prompt-icon">🪄</span>
-            <div class="excel-ai-prompt-text">
-              <strong>Excel Spreadsheets Detected in Batch:</strong>
-              <span>Choose whether AI should restructure multi-tier headers and normalize course codes, or ingest directly without token consumption.</span>
-            </div>
-          </div>
-          <div class="excel-ai-prompt-right">
-            <select id="batchExcelModeSelect" class="form-select form-select-sm" style="max-width: 260px;">
-              <option value="direct">⚡ Keep As Is (Direct Import - 0 Tokens)</option>
-              <option value="ai_fix">✨ Fix with AI (Restructure with LLM)</option>
-            </select>
-          </div>
-        </div>
+        <!-- Hidden proxy for backward compatibility -->
+        <select id="batchExcelModeSelect" class="form-select hidden" style="display: none;">
+          <option value="direct">direct</option>
+          <option value="ai_fix">ai_fix</option>
+        </select>
 
         <!-- Engine & Options Selection -->
-        <div class="batch-options-grid">
+        <div class="batch-options-grid" style="margin-top: 1rem;">
           <div class="batch-option-box">
             <label class="batch-option-title" for="batchPdfPipelineSelect">
               <span>📄 PDF Gazette Extraction Engine:</span>
@@ -146,7 +140,7 @@
         </div>
 
         <!-- Run Analysis Button -->
-        <div style="display: flex; justify-content: flex-end; gap: 1rem; align-items: center;">
+        <div style="display: flex; justify-content: flex-end; gap: 1rem; align-items: center; margin-top: 1.25rem;">
           <span id="batchReadyHint" class="results-meta-text">Select a batch to begin analysis</span>
           <button type="button" id="btnRunBatchAnalysis" class="btn btn-primary" style="padding: 0.85rem 1.8rem; font-size: 0.95rem;" disabled>
             <span>🚀 Run Complete Batch Analysis (Sem 1–8)</span>
@@ -171,557 +165,801 @@
       </div>
     </div>
 
-    <!-- Batch Analysis Interactive Showcase Dashboard -->
+    <!-- ===================================================================== -->
+    <!-- BATCH ANALYSIS RESULTS: TWO SECTIONS ARCHITECTURE                     -->
+    <!-- Section 1: Batch Performance Analysis (Matching Semester/Subject)    -->
+    <!-- Section 2: 10-Sheet Multi-Semester Audit & Excel Suite                -->
+    <!-- ===================================================================== -->
     <div id="batchResultsSection" class="batch-results-section hidden">
-      <section class="card">
-        <!-- Results Header -->
-        <div class="batch-results-header">
-          <div>
-            <h2 id="batchResultTitle">Academic Degree Cohort Intelligence</h2>
-            <p id="batchResultMeta" class="results-meta-text">Batch Analysis Complete</p>
+      <!-- MASTER SECTION TAB SWITCHER -->
+      <div class="batch-master-section-nav" style="display: flex; gap: 0.85rem; margin-bottom: 1.25rem; flex-wrap: wrap;">
+        <button type="button" class="btn batch-master-tab-btn active" id="btnTabSectionExecutive" data-section="secBatchPerformanceAnalysis" style="font-weight: 700; padding: 0.7rem 1.5rem; font-size: 0.95rem; display: inline-flex; align-items: center; gap: 8px; border-radius: 8px;">
+          <span>🎓 Section 1: Batch Performance Analysis (Institutional Report)</span>
+        </button>
+        <button type="button" class="btn btn-outline batch-master-tab-btn" id="btnTabSectionAuditSuite" data-section="secBatchAuditExcelSuite" style="font-weight: 700; padding: 0.7rem 1.5rem; font-size: 0.95rem; display: inline-flex; align-items: center; gap: 8px; border-radius: 8px;">
+          <span>🏛️ Section 2: 10-Sheet Multi-Semester Audit &amp; Excel Suite</span>
+        </button>
+      </div>
+
+      <!-- ================================================================= -->
+      <!-- SECTION 1: BATCH PERFORMANCE ANALYSIS (INSTITUTIONAL REPORT)     -->
+      <!-- ================================================================= -->
+      <div id="secBatchPerformanceAnalysis" class="batch-master-section-content">
+        <!-- 1. BATCH HEADER CARD -->
+        <section class="card subject-header-card">
+          <div class="subject-header-grid">
+            <div class="subject-header-main">
+              <span class="subject-code-chip" id="hdrBatchSemesterChip">Semesters 1 to 8 Full Suite</span>
+              <h2 class="subject-title" id="hdrBatchTitle">Batch Performance Analysis</h2>
+              <p class="subject-dataset-label" id="hdrBatchDatasetLabel">Dataset: Complete Cohort Examination Ledgers</p>
+            </div>
+            <div class="subject-meta-grid">
+              <div class="sub-meta-pill">
+                <span class="sub-meta-key">Academic Year:</span>
+                <strong class="sub-meta-val" id="hdrBatchAcademicYear">2021–2022</strong>
+              </div>
+              <div class="sub-meta-pill">
+                <span class="sub-meta-key">Branch / Dept:</span>
+                <strong class="sub-meta-val" id="hdrBatchBranch">Computer Engineering</strong>
+              </div>
+              <div class="sub-meta-pill">
+                <span class="sub-meta-key">Semester Scope:</span>
+                <strong class="sub-meta-val" id="hdrBatchSemesterRange">Sem 1 to 8</strong>
+              </div>
+              <div class="sub-meta-pill">
+                <span class="sub-meta-key">Total Cohort Intake:</span>
+                <strong class="sub-meta-val" id="hdrBatchTotalAppeared">75 Students</strong>
+              </div>
+            </div>
           </div>
-          <div class="batch-actions-row">
-            <a id="btnDownloadBatchExcel" class="btn btn-primary" download title="Download official 10-sheet Academic Excel workbook">
-              🏛️ Export 10-Sheet Batch Excel (.xlsx)
-            </a>
-            <a id="btnDownloadBatchJson" class="btn btn-outline" download title="Download full analytical metrics JSON">
-              📑 Export Analysis JSON
-            </a>
+
+          <!-- Print & Word Export Action Bar -->
+          <div class="subject-header-actions" style="margin-top: 1rem; display: flex; justify-content: flex-end; gap: 0.75rem; align-items: center; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 0.85rem; flex-wrap: wrap;">
+            <button type="button" id="btnBatchPrintPreview" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; padding: 0.55rem 1.25rem; font-size: 0.88rem; box-shadow: 0 2px 8px rgba(31,78,120,0.3);">
+              <span>🖨️ View &amp; Print 1-Page Report</span>
+            </button>
+            <button type="button" id="btnBatchExportDocx" class="btn btn-outline" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; padding: 0.55rem 1.25rem; font-size: 0.88rem; border-color: #3b82f6; color: #3b82f6;">
+              <span>📄 Export Word (.docx)</span>
+            </button>
+          </div>
+
+          <!-- Data Validation Strip -->
+          <div class="data-validation-strip" id="batchDataValidationStrip">
+            <span class="validation-dot-green">●</span>
+            <span id="batchDataValidationSummary">Data Verified: 75 students analyzed • 64 regular (N1) • 11 lateral entry (N3)</span>
+          </div>
+        </section>
+
+        <!-- 2. SUMMARY KPI CARDS (7 CARDS) -->
+        <div class="subject-kpi-grid">
+          <div class="eda-kpi-card">
+            <span class="eda-kpi-label">TOTAL COHORT INTAKE</span>
+            <strong class="eda-kpi-value" id="kpiBatchOverviewIntake">0</strong>
+            <span class="eda-kpi-sub">Base Admitted: N1 + N3</span>
+          </div>
+          <div class="eda-kpi-card kpi-success">
+            <span class="eda-kpi-label">GRADUATED / PASSED</span>
+            <strong class="eda-kpi-value text-success" id="kpiBatchOverviewPassed">0</strong>
+            <span class="eda-kpi-sub">Final Semester Cleared</span>
+          </div>
+          <div class="eda-kpi-card">
+            <span class="eda-kpi-label">STUDENTS WITH KT</span>
+            <strong class="eda-kpi-value text-danger" id="kpiBatchOverviewKt">0</strong>
+            <span class="eda-kpi-sub">Encountered Backlog</span>
+          </div>
+          <div class="eda-kpi-card kpi-accent" style="border: 2px solid #1F4E78;">
+            <span class="eda-kpi-label" style="color: #1F4E78;">OFFICIAL SUCCESS RATE</span>
+            <strong class="eda-kpi-value" id="kpiBatchOverviewSuccessRate" style="color: #1F4E78; font-size: 1.8rem;">0.00%</strong>
+            <span class="eda-kpi-sub">P / (N1 + N3) × 100</span>
+          </div>
+          <div class="eda-kpi-card kpi-success">
+            <span class="eda-kpi-label">WITHOUT BACKLOG (P_no_kt)</span>
+            <strong class="eda-kpi-value text-success" id="kpiBatchOverviewNoKt">0%</strong>
+            <span class="eda-kpi-sub">Graduated Zero KT</span>
+          </div>
+          <div class="eda-kpi-card kpi-accent" style="border: 2px solid #059669; background: rgba(5, 150, 105, 0.05);">
+            <span class="eda-kpi-label" style="color: #059669;">BATCH AVERAGE SGPI</span>
+            <strong class="eda-kpi-value" id="kpiBatchOverviewAvgSgpi" style="color: #059669; font-size: 1.8rem;">0.00</strong>
+            <span class="eda-kpi-sub">Mean Cumulative Scoring</span>
+          </div>
+          <div class="eda-kpi-card" style="border-left: 4px solid #2563eb;">
+            <span class="eda-kpi-label" style="color: #2563eb;">FIRST CLASS &amp; DISTINCTION</span>
+            <strong class="eda-kpi-value" id="kpiBatchOverviewFirstClassDist" style="color: #2563eb;">0</strong>
+            <span class="eda-kpi-sub">SGPI ≥ 6.75 (≥ 60%)</span>
           </div>
         </div>
 
-        <!-- Navigation Tabs for 10 Showcase Views -->
-        <div class="batch-nav-tabs">
-          <button type="button" class="batch-tab-btn active" data-batch-tab="tabBatchSuccessRate">🎯 1. Success Rate &amp; Intake</button>
-          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchSemester">📊 2. Semester-Wise Analysis</button>
-          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchSummary">📋 3. Overall Summary</button>
-          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchProgression">🎓 4. Student Progression (Sem 1-8)</button>
-          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchKt">⚠️ 5. KT &amp; Backlog Analysis</button>
-          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchTopper">🏆 6. Topper Analysis</button>
-          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchRetention">👥 7. Retention &amp; Progression</button>
-          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchPerformance">📈 8. Student Performance</button>
-          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchQuality">🛡️ 9. Data Quality Log</button>
-          <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchData">📑 10. Semester Data Trace</button>
-        </div>
-
-        <!-- TAB 1: Official Success Rate & Intake Audit -->
-        <div id="tabBatchSuccessRate" class="batch-tab-content active">
-          <!-- Formula & Accreditation Methodology Banner -->
-          <div class="success-rate-formula-card" style="background: rgba(31, 78, 120, 0.08); border: 1px solid rgba(31, 78, 120, 0.25); border-radius: 8px; padding: 1.2rem; margin-bottom: 1.5rem;">
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem;">
+        <!-- 3. BATCH CLEARANCE & CLASSIFICATION ROW -->
+        <div class="subject-two-col-grid" style="margin-top: 1.5rem;">
+          <!-- Clearance & Success Rate Analysis -->
+          <section class="card">
+            <div class="card-header">
               <div>
-                <span style="font-size: 0.78rem; font-weight: 700; color: #1F4E78; text-transform: uppercase; letter-spacing: 0.05em;">University Accreditation Success Rate Standard</span>
-                <h3 style="margin: 0.2rem 0; font-size: 1.15rem; color: #1F4E78;">Formula: Success Rate = [ P<sub>final</sub> / (N<sub>1</sub> + N<sub>3</sub>) ] × 100%</h3>
+                <h3>Batch Clearance &amp; Official Success Rate</h3>
+                <p class="results-meta-text">Cohort graduation rate &amp; clearance status audit</p>
               </div>
-              <div style="background: #1F4E78; color: #fff; padding: 0.4rem 0.9rem; border-radius: 6px; font-weight: 700; font-size: 0.85rem;">
-                Official NBA / NAAC Formula
+              <span class="tag">Clearance Status</span>
+            </div>
+            <div class="chart-and-table-wrapper">
+              <div class="chart-box" style="position: relative; height: 230px; margin-bottom: 1rem;">
+                <canvas id="chartBatchClearancePassFail"></canvas>
+              </div>
+              <div class="table-container" style="max-height: 240px;">
+                <table class="academic-table" id="tblBatchClearancePassFail">
+                  <thead>
+                    <tr>
+                      <th>Status / Performance Metric</th>
+                      <th style="text-align: right;">Count</th>
+                      <th style="text-align: right;">Percentage</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tblBatchClearancePassFailBody"></tbody>
+                </table>
               </div>
             </div>
-            <p style="margin: 0.6rem 0 0; font-size: 0.85rem; color: #475569;">
-              <strong>N<sub>1</sub></strong>: Regular intake admitted in 1st Semester &bull; 
-              <strong>N<sub>3</sub></strong>: Lateral Entry (DSE) admitted in 3rd Semester &bull; 
-              <strong>P<sub>final</sub></strong>: Students successfully cleared/graduated in final semester &bull; 
-              <strong>P<sub>no_kt</sub></strong>: Passed final semester with zero backlogs throughout.
-            </p>
-          </div>
+          </section>
 
-          <!-- Success Rate KPI Cards -->
-          <div class="eda-kpi-grid">
-            <div class="eda-kpi-card">
-              <span class="eda-kpi-label">REGULAR INTAKE (N1)</span>
-              <strong class="eda-kpi-value" id="kpiBatchN1">0</strong>
-              <span class="eda-kpi-sub">Admitted Semester 1</span>
+          <!-- Institutional Classification -->
+          <section class="card">
+            <div class="card-header">
+              <div>
+                <h3>Institutional Classification (Cohort Grade)</h3>
+                <p class="results-meta-text">Distinction, First Class, Second Class, Pass Class breakdown</p>
+              </div>
+              <span class="tag tag-accent">Grading Standard</span>
             </div>
-            <div class="eda-kpi-card">
-              <span class="eda-kpi-label">LATERAL ENTRY (N3)</span>
-              <strong class="eda-kpi-value text-accent" id="kpiBatchN3">0</strong>
-              <span class="eda-kpi-sub">Direct 2nd Year (Sem 3)</span>
+            <div class="chart-and-table-wrapper">
+              <div class="chart-box" style="position: relative; height: 230px; margin-bottom: 1rem;">
+                <canvas id="chartBatchClassificationMain"></canvas>
+              </div>
+              <div class="table-container" style="max-height: 240px;">
+                <table class="academic-table" id="tblBatchClassificationMain">
+                  <thead>
+                    <tr>
+                      <th>Classification</th>
+                      <th style="text-align: right;">Students</th>
+                      <th style="text-align: right;">Cohort Share</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tblBatchClassificationMainBody"></tbody>
+                </table>
+              </div>
             </div>
-            <div class="eda-kpi-card">
-              <span class="eda-kpi-label">TOTAL COHORT INTAKE</span>
-              <strong class="eda-kpi-value" id="kpiBatchIntake">0</strong>
-              <span class="eda-kpi-sub">Base: N1 + N3</span>
-            </div>
-            <div class="eda-kpi-card kpi-success">
-              <span class="eda-kpi-label">FINAL SEM PASSED (P)</span>
-              <strong class="eda-kpi-value text-success" id="kpiBatchPassedFinal">0</strong>
-              <span class="eda-kpi-sub">Graduated Candidates</span>
-            </div>
-            <div class="eda-kpi-card kpi-accent" style="border: 2px solid #1F4E78;">
-              <span class="eda-kpi-label" style="color: #1F4E78;">OFFICIAL SUCCESS RATE</span>
-              <strong class="eda-kpi-value" id="kpiBatchSuccessRate" style="color: #1F4E78; font-size: 1.8rem;">0%</strong>
-              <span class="eda-kpi-sub">P / (N1 + N3)</span>
-            </div>
-            <div class="eda-kpi-card kpi-success">
-              <span class="eda-kpi-label">WITHOUT BACKLOG (P_no_kt)</span>
-              <strong class="eda-kpi-value text-success" id="kpiBatchSuccessRateNoKt">0%</strong>
-              <span class="eda-kpi-sub" id="kpiBatchNoKtSub">0 Cleared Zero KT</span>
-            </div>
-            <div class="eda-kpi-card">
-              <span class="eda-kpi-label">WITH BACKLOG (P_with_kt)</span>
-              <strong class="eda-kpi-value text-warning" id="kpiBatchSuccessRateWithKt">0%</strong>
-              <span class="eda-kpi-sub" id="kpiBatchWithKtSub">0 Cleared Backlogs</span>
-            </div>
-            <div class="eda-kpi-card">
-              <span class="eda-kpi-label">DIPLOMA INTAKE (DSE)</span>
-              <strong class="eda-kpi-value text-accent" id="kpiBatchDiploma">0</strong>
-              <span class="eda-kpi-sub">Admitted Lateral Entry</span>
-            </div>
-            <div class="eda-kpi-card">
-              <span class="eda-kpi-label">MULTIPLE ENTRY</span>
-              <strong class="eda-kpi-value" id="kpiBatchMultipleEntry">0</strong>
-              <span class="eda-kpi-sub">NEP 2020 Flexible Entry</span>
-            </div>
-            <div class="eda-kpi-card">
-              <span class="eda-kpi-label">MULTIPLE EXIT (Y1)</span>
-              <strong class="eda-kpi-value text-warning" id="kpiBatchMultipleExit">0</strong>
-              <span class="eda-kpi-sub">Left After First Year</span>
-            </div>
-          </div>
+          </section>
+        </div>
 
-          <!-- Visual Charts Row: Intake vs Grad & Backlog Split -->
-          <div class="eda-charts-grid" style="margin-top: 1.5rem; margin-bottom: 1.5rem;">
-            <div class="chart-box">
-              <div class="chart-header">
-                <h4>📊 Admission Intake vs. Final Graduation by Category</h4>
-                <span class="chart-tag">Accreditation Comparison</span>
-              </div>
-              <div class="chart-canvas-container" style="height: 270px;">
-                <canvas id="chartBatchIntakeGrad"></canvas>
-              </div>
+        <!-- 4. SGPI SCORE DISTRIBUTION -->
+        <section class="card" style="margin-top: 1.5rem;">
+          <div class="card-header">
+            <div>
+              <h3>Cumulative SGPI Range Distribution</h3>
+              <p class="results-meta-text" id="batchSgpiDistMetaText">Distribution of candidates based on cumulative SGPI scoring</p>
             </div>
-            <div class="chart-box">
-              <div class="chart-header">
-                <h4>🍩 Final Graduation &amp; Backlog Status Breakdown</h4>
-                <span class="chart-tag">P_no_kt vs. P_with_kt</span>
-              </div>
-              <div class="chart-canvas-container" style="height: 270px;">
-                <canvas id="chartBatchBacklogSplit"></canvas>
-              </div>
-            </div>
+            <span class="tag">Score Histogram</span>
           </div>
-
-          <!-- Regular vs Lateral Entry Progression Table -->
-          <div style="margin-top: 1.8rem;">
-            <h4 style="margin-bottom: 0.8rem;">👥 Admission Category Breakdown &amp; Completion Audit</h4>
-            <div class="batch-table-container">
-              <table id="batchSuccessBreakdownTable">
+          <div class="subject-two-col-grid" style="align-items: center;">
+            <div class="chart-box" style="position: relative; height: 260px;">
+              <canvas id="chartBatchSgpiDistMain"></canvas>
+            </div>
+            <div class="table-container" style="max-height: 280px; overflow-y: auto;">
+              <table class="academic-table" id="tblBatchSgpiDistribution">
                 <thead>
                   <tr>
-                    <th>Cohort Category</th>
-                    <th>Entry Semester</th>
-                    <th>Admitted Students</th>
-                    <th>Passed Final Sem</th>
-                    <th>Passed Without KT</th>
-                    <th>Passed With KT</th>
-                    <th>Category Success Rate (%)</th>
+                    <th>SGPI Range</th>
+                    <th style="text-align: right;">Students</th>
+                    <th style="text-align: right;">Percentage</th>
                   </tr>
                 </thead>
-                <tbody id="batchSuccessBreakdownBody"></tbody>
+                <tbody id="tblBatchSgpiDistMainBody"></tbody>
               </table>
             </div>
           </div>
+        </section>
 
-          <!-- Multiple Exit & Multiple Entry Tables Grid -->
-          <div class="eda-tables-grid" style="margin-top: 1.8rem; margin-bottom: 1.8rem;">
-            <!-- Multiple Exit Candidates -->
-            <div class="eda-subtable-card">
-              <div class="subtable-header">
-                <h4>🚪 NEP 2020 Multiple Exit Students (Left After First Year)</h4>
-                <span class="subtable-badge text-warning" id="badgeBatchExitCount">4 Students</span>
-              </div>
-              <div class="table-responsive-mini">
-                <table class="eda-mini-table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>Student Name</th>
-                      <th>PRN</th>
-                      <th>Semesters Appeared</th>
-                      <th>Exit Status</th>
-                    </tr>
-                  </thead>
-                  <tbody id="batchMultipleExitBody">
-                    <tr><td colspan="5" class="empty-cell">No multiple exit records.</td></tr>
-                  </tbody>
-                </table>
-              </div>
+        <!-- 5. TOP BATCH MERIT LEADERS (HONOR ROLL) -->
+        <section class="card" style="margin-top: 1.5rem;">
+          <div class="card-header">
+            <div>
+              <h3>🏆 Top Batch Merit Leaders (Consistent Honor Roll)</h3>
+              <p class="results-meta-text">Candidates ranked in top 10 merit positions across multiple semesters</p>
             </div>
-
-            <!-- Multiple Entry Candidates -->
-            <div class="eda-subtable-card">
-              <div class="subtable-header">
-                <h4>🚪 NEP 2020 Multiple Entry Students (Flexible Entry)</h4>
-                <span class="subtable-badge text-accent" id="badgeBatchEntryCount">11 Students</span>
-              </div>
-              <div class="table-responsive-mini">
-                <table class="eda-mini-table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>Student Name</th>
-                      <th>PRN</th>
-                      <th>Entry Sem</th>
-                      <th>Category</th>
-                    </tr>
-                  </thead>
-                  <tbody id="batchMultipleEntryBody">
-                    <tr><td colspan="5" class="empty-cell">No multiple entry records.</td></tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <span class="tag tag-accent">Cohort Merit Leaders</span>
           </div>
-
-          <!-- Student Progression & Verification Roster -->
-          <div style="margin-top: 2rem;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem; flex-wrap: wrap; gap: 0.5rem;">
-              <h4 style="margin: 0;">🎓 Student Cross-Checking &amp; Success Verification Roster</h4>
-              <input type="text" id="batchSuccessRosterSearch" class="batch-search-input" style="max-width: 320px;" placeholder="🔍 Filter student roster by name, seat, or PRN...">
-            </div>
-            <div class="batch-table-container">
-              <table id="batchSuccessRosterTable">
-                <thead>
-                  <tr id="batchSuccessRosterHead">
-                    <th>Sr No</th>
-                    <th>Student ID</th>
-                    <th>Student Name</th>
-                    <th>PRN</th>
-                    <th>Entry Category</th>
-                    <th>Entry Sem</th>
-                    <th>Sem 1</th>
-                    <th>Sem 2</th>
-                    <th>Sem 3</th>
-                    <th>Sem 4</th>
-                    <th>Sem 5</th>
-                    <th>Sem 6</th>
-                    <th>Sem 7</th>
-                    <th>Sem 8</th>
-                    <th>Final Status</th>
-                    <th>Zero KT?</th>
-                    <th>Avg SGPI</th>
-                  </tr>
-                </thead>
-                <tbody id="batchSuccessRosterBody"></tbody>
-              </table>
-            </div>
+          <div class="table-container">
+            <table class="academic-table" id="tblBatchTopStudentsMain">
+              <thead>
+                <tr>
+                  <th style="width: 80px; text-align: center;">Rank</th>
+                  <th>Candidate Name</th>
+                  <th>Seat No / PRN</th>
+                  <th style="text-align: center;">Top 10 Consistency</th>
+                  <th style="text-align: right;">Cumulative Average SGPI</th>
+                </tr>
+              </thead>
+              <tbody id="tblBatchTopStudentsMainBody">
+                <tr><td colspan="5" style="text-align: center; color: var(--text-muted);">No student rankings generated yet.</td></tr>
+              </tbody>
+            </table>
           </div>
-        </div>
+        </section>
 
-        <!-- TAB 2: Semester-Wise Result Analysis -->
-        <div id="tabBatchSemester" class="batch-tab-content hidden">
-          <!-- Visual Charts Row: Semester Pass Rate & SGPI Trend -->
-          <div class="eda-charts-grid" style="margin-bottom: 1.5rem;">
-            <div class="chart-box">
-              <div class="chart-header">
-                <h4>📈 Semester Pass Rate (%) Progression</h4>
-                <span class="chart-tag">Sem 1 to Sem 8</span>
-              </div>
-              <div class="chart-canvas-container" style="height: 260px;">
-                <canvas id="chartBatchSemPassTrend"></canvas>
-              </div>
+        <!-- 6. SEMESTER-WISE COHORT TRAJECTORY SUMMARY TABLE -->
+        <section class="card" style="margin-top: 1.5rem; margin-bottom: 2rem;">
+          <div class="card-header">
+            <div>
+              <h3>📈 Semester-by-Semester Cohort Trajectory Overview</h3>
+              <p class="results-meta-text">Semester-wise enrollment, pass rates, and SGPI progression from Sem 1 to Sem 8</p>
             </div>
-            <div class="chart-box">
-              <div class="chart-header">
-                <h4>🎯 Average SGPI Trajectory Trend</h4>
-                <span class="chart-tag">Academic Scoring Mean</span>
-              </div>
-              <div class="chart-canvas-container" style="height: 260px;">
-                <canvas id="chartBatchSemSgpiTrend"></canvas>
-              </div>
-            </div>
+            <span class="tag">Sem 1 ➔ Sem 8 Trajectory</span>
           </div>
-
           <div class="batch-table-container">
-            <table id="batchSemesterTable">
+            <table class="academic-table" id="tblBatchSemesterOverview">
               <thead>
                 <tr>
                   <th>Semester</th>
                   <th>Format</th>
-                  <th>Total Enrolled</th>
-                  <th>Regular (N1)</th>
-                  <th>Lateral (N3)</th>
-                  <th>Passed</th>
-                  <th>Failed / KT</th>
-                  <th>Pass Rate (%)</th>
-                  <th>Fail Rate (%)</th>
-                  <th>Average SGPI</th>
-                  <th>Highest SGPI</th>
-                  <th>Lowest SGPI</th>
-                  <th>Distinction (≥7.5)</th>
-                  <th>First Class</th>
-                  <th>Second Class</th>
-                  <th>Pass Class</th>
-                  <th>KT Students</th>
-                  <th>Total KT Subjects</th>
+                  <th style="text-align: right;">Enrolled</th>
+                  <th style="text-align: right;">Regular (N1)</th>
+                  <th style="text-align: right;">Lateral (N3)</th>
+                  <th style="text-align: right;">Passed</th>
+                  <th style="text-align: right;">Failed</th>
+                  <th style="text-align: right;">Pass Rate (%)</th>
+                  <th style="text-align: right;">Average SGPI</th>
+                  <th style="text-align: right;">Highest SGPI</th>
                 </tr>
               </thead>
-              <tbody id="batchSemesterBody"></tbody>
+              <tbody id="tblBatchSemesterOverviewBody"></tbody>
             </table>
           </div>
-        </div>
+        </section>
+      </div>
 
-        <!-- TAB 3: Overall Summary -->
-        <div id="tabBatchSummary" class="batch-tab-content hidden">
-          <div class="eda-kpi-grid">
-            <div class="eda-kpi-card">
-              <span class="eda-kpi-label">TOTAL STUDENTS</span>
-              <strong class="eda-kpi-value" id="kpiBatchTotalStudents">0</strong>
-              <span class="eda-kpi-sub">Distinct Enrolled Candidates</span>
+      <!-- ================================================================= -->
+      <!-- SECTION 2: 10-SHEET MULTI-SEMESTER AUDIT & EXCEL SUITE            -->
+      <!-- ================================================================= -->
+      <div id="secBatchAuditExcelSuite" class="batch-master-section-content hidden">
+        <section class="card">
+          <!-- Results Header & Excel Export Bar -->
+          <div class="batch-results-header" style="border-bottom: 1px solid var(--border-color); padding-bottom: 1.25rem; margin-bottom: 1.25rem;">
+            <div>
+              <h2 id="batchResultTitle">Official 10-Sheet Multi-Semester Academic Workbook &amp; Audit</h2>
+              <p id="batchResultMeta" class="results-meta-text">Batch Analysis Complete • Official Academic Spreadsheets Ready</p>
             </div>
-            <div class="eda-kpi-card kpi-success">
-              <span class="eda-kpi-label">CLEARED ALL AVAILABLE</span>
-              <strong class="eda-kpi-value text-success" id="kpiBatchClearedAll">0</strong>
-              <span class="eda-kpi-sub" id="kpiBatchClearedPct">0% Zero Backlogs</span>
-            </div>
-            <div class="eda-kpi-card kpi-danger">
-              <span class="eda-kpi-label">STUDENTS WITH KT</span>
-              <strong class="eda-kpi-value text-danger" id="kpiBatchAnyKt">0</strong>
-              <span class="eda-kpi-sub" id="kpiBatchKtPct">0% Backlog Burden</span>
-            </div>
-            <div class="eda-kpi-card kpi-accent">
-              <span class="eda-kpi-label">BATCH AVERAGE SGPI</span>
-              <strong class="eda-kpi-value text-accent" id="kpiBatchAvgSgpi">0.00</strong>
-              <span class="eda-kpi-sub">Mean Cumulative Performance</span>
-            </div>
-            <div class="eda-kpi-card">
-              <span class="eda-kpi-label">TOPPER SGPI</span>
-              <strong class="eda-kpi-value text-warning" id="kpiBatchMaxSgpi">0.00</strong>
-              <span class="eda-kpi-sub">Highest Scored Across Sems</span>
-            </div>
-            <div class="eda-kpi-card kpi-success">
-              <span class="eda-kpi-label">GRADUATION ELIGIBLE</span>
-              <strong class="eda-kpi-value text-success" id="kpiBatchGraduated">0</strong>
-              <span class="eda-kpi-sub">Cleared Sem 8 Requirements</span>
+            <div class="batch-actions-row">
+              <a id="btnDownloadBatchExcel" class="btn btn-primary" download title="Download official 10-sheet Academic Excel workbook" style="font-weight: 600;">
+                🏛️ Export 10-Sheet Batch Excel (.xlsx)
+              </a>
+              <a id="btnDownloadBatchJson" class="btn btn-outline" download title="Download full analytical metrics JSON" style="font-weight: 600;">
+                📑 Export Analysis JSON
+              </a>
             </div>
           </div>
 
-          <div style="margin-top: 1.5rem;">
-            <h4 style="margin-bottom: 0.8rem;">🎓 Cohort Grade &amp; Performance Distribution</h4>
+          <!-- Navigation Tabs for 10 Showcase Views -->
+          <div class="batch-nav-tabs">
+            <button type="button" class="batch-tab-btn active" data-batch-tab="tabBatchSuccessRate">🎯 1. Success Rate &amp; Intake</button>
+            <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchSemester">📊 2. Semester-Wise Analysis</button>
+            <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchSummary">📋 3. Overall Summary</button>
+            <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchProgression">🎓 4. Student Progression (Sem 1-8)</button>
+            <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchKt">⚠️ 5. KT &amp; Backlog Analysis</button>
+            <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchTopper">🏆 6. Topper Analysis</button>
+            <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchRetention">👥 7. Retention &amp; Progression</button>
+            <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchPerformance">📈 8. Student Performance</button>
+            <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchQuality">🛡️ 9. Data Quality Log</button>
+            <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchData">📑 10. Semester Data Trace</button>
+          </div>
+
+          <!-- TAB 1: Official Success Rate & Intake Audit -->
+          <div id="tabBatchSuccessRate" class="batch-tab-content active">
+            <!-- Formula & Accreditation Methodology Banner -->
+            <div class="success-rate-formula-card" style="background: rgba(31, 78, 120, 0.08); border: 1px solid rgba(31, 78, 120, 0.25); border-radius: 8px; padding: 1.2rem; margin-bottom: 1.5rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem;">
+                <div>
+                  <span style="font-size: 0.78rem; font-weight: 700; color: #1F4E78; text-transform: uppercase; letter-spacing: 0.05em;">University Accreditation Success Rate Standard</span>
+                  <h3 style="margin: 0.2rem 0; font-size: 1.15rem; color: #1F4E78;">Formula: Success Rate = [ P<sub>final</sub> / (N<sub>1</sub> + N<sub>3</sub>) ] × 100%</h3>
+                </div>
+                <div style="background: #1F4E78; color: #fff; padding: 0.4rem 0.9rem; border-radius: 6px; font-weight: 700; font-size: 0.85rem;">
+                  Official NBA / NAAC Formula
+                </div>
+              </div>
+              <p style="margin: 0.6rem 0 0; font-size: 0.85rem; color: #475569;">
+                <strong>N<sub>1</sub></strong>: Regular intake admitted in 1st Semester &bull; 
+                <strong>N<sub>3</sub></strong>: Lateral Entry (DSE) admitted in 3rd Semester &bull; 
+                <strong>P<sub>final</sub></strong>: Students successfully cleared/graduated in final semester &bull; 
+                <strong>P<sub>no_kt</sub></strong>: Passed final semester with zero backlogs throughout.
+              </p>
+            </div>
+
+            <!-- Success Rate KPI Cards -->
+            <div class="eda-kpi-grid">
+              <div class="eda-kpi-card">
+                <span class="eda-kpi-label">REGULAR INTAKE (N1)</span>
+                <strong class="eda-kpi-value" id="kpiBatchN1">0</strong>
+                <span class="eda-kpi-sub">Admitted Semester 1</span>
+              </div>
+              <div class="eda-kpi-card">
+                <span class="eda-kpi-label">LATERAL ENTRY (N3)</span>
+                <strong class="eda-kpi-value text-accent" id="kpiBatchN3">0</strong>
+                <span class="eda-kpi-sub">Direct 2nd Year (Sem 3)</span>
+              </div>
+              <div class="eda-kpi-card">
+                <span class="eda-kpi-label">TOTAL COHORT INTAKE</span>
+                <strong class="eda-kpi-value" id="kpiBatchIntake">0</strong>
+                <span class="eda-kpi-sub">Base: N1 + N3</span>
+              </div>
+              <div class="eda-kpi-card kpi-success">
+                <span class="eda-kpi-label">FINAL SEM PASSED (P)</span>
+                <strong class="eda-kpi-value text-success" id="kpiBatchPassedFinal">0</strong>
+                <span class="eda-kpi-sub">Graduated Candidates</span>
+              </div>
+              <div class="eda-kpi-card kpi-accent" style="border: 2px solid #1F4E78;">
+                <span class="eda-kpi-label" style="color: #1F4E78;">OFFICIAL SUCCESS RATE</span>
+                <strong class="eda-kpi-value" id="kpiBatchSuccessRate" style="color: #1F4E78; font-size: 1.8rem;">0%</strong>
+                <span class="eda-kpi-sub">P / (N1 + N3)</span>
+              </div>
+              <div class="eda-kpi-card kpi-success">
+                <span class="eda-kpi-label">WITHOUT BACKLOG (P_no_kt)</span>
+                <strong class="eda-kpi-value text-success" id="kpiBatchSuccessRateNoKt">0%</strong>
+                <span class="eda-kpi-sub" id="kpiBatchNoKtSub">0 Cleared Zero KT</span>
+              </div>
+              <div class="eda-kpi-card">
+                <span class="eda-kpi-label">WITH BACKLOG (P_with_kt)</span>
+                <strong class="eda-kpi-value text-warning" id="kpiBatchSuccessRateWithKt">0%</strong>
+                <span class="eda-kpi-sub" id="kpiBatchWithKtSub">0 Cleared Backlogs</span>
+              </div>
+              <div class="eda-kpi-card">
+                <span class="eda-kpi-label">DIPLOMA INTAKE (DSE)</span>
+                <strong class="eda-kpi-value text-accent" id="kpiBatchDiploma">0</strong>
+                <span class="eda-kpi-sub">Admitted Lateral Entry</span>
+              </div>
+              <div class="eda-kpi-card">
+                <span class="eda-kpi-label">REGULAR SUCCESS RATE</span>
+                <strong class="eda-kpi-value text-primary" id="kpiBatchRegularRate">0%</strong>
+                <span class="eda-kpi-sub" id="kpiBatchRegularRateSub">P_reg / N1</span>
+              </div>
+              <div class="eda-kpi-card">
+                <span class="eda-kpi-label">LATERAL SUCCESS RATE</span>
+                <strong class="eda-kpi-value text-accent" id="kpiBatchLateralRate">0%</strong>
+                <span class="eda-kpi-sub" id="kpiBatchLateralRateSub">P_lat / N3</span>
+              </div>
+            </div>
+
+            <!-- Visual Charts Row: Intake vs Grad & Backlog Split -->
+            <div class="eda-charts-grid" style="margin-top: 1.5rem; margin-bottom: 1.5rem;">
+              <div class="chart-box">
+                <div class="chart-header">
+                  <h4>📊 Admission Intake vs. Final Graduation by Category</h4>
+                  <span class="chart-tag">Accreditation Comparison</span>
+                </div>
+                <div class="chart-canvas-container" style="height: 270px;">
+                  <canvas id="chartBatchIntakeGrad"></canvas>
+                </div>
+              </div>
+              <div class="chart-box">
+                <div class="chart-header">
+                  <h4>🍩 Final Graduation &amp; Backlog Status Breakdown</h4>
+                  <span class="chart-tag">P_no_kt vs. P_with_kt</span>
+                </div>
+                <div class="chart-canvas-container" style="height: 270px;">
+                  <canvas id="chartBatchBacklogSplit"></canvas>
+                </div>
+              </div>
+            </div>
+
+            <!-- Regular vs Lateral Entry Progression Table -->
+            <div style="margin-top: 1.8rem;">
+              <h4 style="margin-bottom: 0.8rem;">👥 Admission Category Breakdown &amp; Completion Audit</h4>
+              <div class="batch-table-container">
+                <table id="batchSuccessBreakdownTable">
+                  <thead>
+                    <tr>
+                      <th>Cohort Category</th>
+                      <th>Entry Semester</th>
+                      <th>Admitted Students</th>
+                      <th>Passed Final Sem</th>
+                      <th>Passed Without KT</th>
+                      <th>Passed With KT</th>
+                      <th>Category Success Rate (%)</th>
+                    </tr>
+                  </thead>
+                  <tbody id="batchSuccessBreakdownBody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Direct Second Year Diploma (N3) & Category Summary Grid -->
+            <div class="eda-tables-grid" style="margin-top: 1.8rem; margin-bottom: 1.8rem;">
+              <!-- Direct Second Year Diploma (N3) Candidates -->
+              <div class="eda-subtable-card">
+                <div class="subtable-header">
+                  <h4>🎓 Direct Second Year Diploma Students (N<sub>3</sub>)</h4>
+                  <span class="subtable-badge text-accent" id="badgeBatchDiplomaCount">0 Students</span>
+                </div>
+                <div class="table-responsive-mini">
+                  <table class="eda-mini-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Student Name</th>
+                        <th>PRN</th>
+                        <th>Entry Semester</th>
+                        <th>Graduation Status</th>
+                      </tr>
+                    </thead>
+                    <tbody id="batchDiplomaStudentsBody">
+                      <tr><td colspan="5" class="empty-cell">No diploma entry records.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Cohort Retention & Entry Audit -->
+              <div class="eda-subtable-card">
+                <div class="subtable-header">
+                  <h4>🏛️ Cohort Intake &amp; Retention Audit</h4>
+                  <span class="subtable-badge text-primary" id="badgeBatchIntakeAudit">Verified</span>
+                </div>
+                <div class="table-responsive-mini">
+                  <table class="eda-mini-table">
+                    <thead>
+                      <tr>
+                        <th>Parameter</th>
+                        <th style="text-align: right;">Count</th>
+                        <th style="text-align: right;">Percentage</th>
+                      </tr>
+                    </thead>
+                    <tbody id="batchIntakeAuditBody">
+                      <tr><td colspan="3" class="empty-cell">Loading audit...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- Student Progression & Verification Roster -->
+            <div style="margin-top: 2rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem; flex-wrap: wrap; gap: 0.5rem;">
+                <h4 style="margin: 0;">🎓 Student Cross-Checking &amp; Success Verification Roster</h4>
+                <input type="text" id="batchSuccessRosterSearch" class="batch-search-input" style="max-width: 320px;" placeholder="🔍 Filter student roster by name, seat, or PRN...">
+              </div>
+              <div class="batch-table-container">
+                <table id="batchSuccessRosterTable">
+                  <thead>
+                    <tr id="batchSuccessRosterHead">
+                      <th>Sr No</th>
+                      <th>Student ID</th>
+                      <th>Student Name</th>
+                      <th>PRN</th>
+                      <th>Entry Category</th>
+                      <th>Entry Sem</th>
+                      <th>Sem 1</th>
+                      <th>Sem 2</th>
+                      <th>Sem 3</th>
+                      <th>Sem 4</th>
+                      <th>Sem 5</th>
+                      <th>Sem 6</th>
+                      <th>Sem 7</th>
+                      <th>Sem 8</th>
+                      <th>Final Status</th>
+                      <th>Zero KT?</th>
+                      <th>Avg SGPI</th>
+                    </tr>
+                  </thead>
+                  <tbody id="batchSuccessRosterBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 2: Semester-Wise Result Analysis -->
+          <div id="tabBatchSemester" class="batch-tab-content hidden">
+            <div class="eda-charts-grid" style="margin-bottom: 1.5rem;">
+              <div class="chart-box">
+                <div class="chart-header">
+                  <h4>📈 Semester Pass Rate (%) Progression</h4>
+                  <span class="chart-tag">Sem 1 to Sem 8</span>
+                </div>
+                <div class="chart-canvas-container" style="height: 260px;">
+                  <canvas id="chartBatchSemPassTrend"></canvas>
+                </div>
+              </div>
+              <div class="chart-box">
+                <div class="chart-header">
+                  <h4>🎯 Average SGPI Trajectory Trend</h4>
+                  <span class="chart-tag">Academic Scoring Mean</span>
+                </div>
+                <div class="chart-canvas-container" style="height: 260px;">
+                  <canvas id="chartBatchSemSgpiTrend"></canvas>
+                </div>
+              </div>
+            </div>
+
             <div class="batch-table-container">
-              <table id="batchGradeDistTable">
+              <table id="batchSemesterTable">
                 <thead>
                   <tr>
-                    <th>Grade Classification</th>
-                    <th>SGPI Range</th>
-                    <th>Student Count</th>
-                    <th>Cohort Share (%)</th>
+                    <th>Semester</th>
+                    <th>Format</th>
+                    <th>Total Enrolled</th>
+                    <th>Regular (N1)</th>
+                    <th>Lateral (N3)</th>
+                    <th>Passed</th>
+                    <th>Failed / KT</th>
+                    <th>Pass Rate (%)</th>
+                    <th>Fail Rate (%)</th>
+                    <th>Average SGPI</th>
+                    <th>Highest SGPI</th>
+                    <th>Lowest SGPI</th>
+                    <th>Distinction (≥7.5)</th>
+                    <th>First Class</th>
+                    <th>Second Class</th>
+                    <th>Pass Class</th>
+                    <th>KT Students</th>
+                    <th>Total KT Subjects</th>
                   </tr>
                 </thead>
-                <tbody id="batchGradeDistBody"></tbody>
+                <tbody id="batchSemesterBody"></tbody>
               </table>
             </div>
           </div>
 
-          <!-- Visual Charts Row: Grade Distribution & Cohort Clearance Split -->
-          <div class="eda-charts-grid" style="margin-top: 1.5rem; margin-bottom: 1.5rem;">
-            <div class="chart-box">
+          <!-- TAB 3: Overall Summary -->
+          <div id="tabBatchSummary" class="batch-tab-content hidden">
+            <div class="eda-kpi-grid">
+              <div class="eda-kpi-card">
+                <span class="eda-kpi-label">TOTAL STUDENTS</span>
+                <strong class="eda-kpi-value" id="kpiBatchTotalStudents">0</strong>
+                <span class="eda-kpi-sub">Distinct Enrolled Candidates</span>
+              </div>
+              <div class="eda-kpi-card kpi-success">
+                <span class="eda-kpi-label">CLEARED ALL AVAILABLE</span>
+                <strong class="eda-kpi-value text-success" id="kpiBatchClearedAll">0</strong>
+                <span class="eda-kpi-sub" id="kpiBatchClearedPct">0% Zero Backlogs</span>
+              </div>
+              <div class="eda-kpi-card kpi-danger">
+                <span class="eda-kpi-label">STUDENTS WITH KT</span>
+                <strong class="eda-kpi-value text-danger" id="kpiBatchAnyKt">0</strong>
+                <span class="eda-kpi-sub" id="kpiBatchKtPct">0% Backlog Burden</span>
+              </div>
+              <div class="eda-kpi-card kpi-accent">
+                <span class="eda-kpi-label">BATCH AVERAGE SGPI</span>
+                <strong class="eda-kpi-value text-accent" id="kpiBatchAvgSgpi">0.00</strong>
+                <span class="eda-kpi-sub">Mean Cumulative Performance</span>
+              </div>
+              <div class="eda-kpi-card">
+                <span class="eda-kpi-label">TOPPER SGPI</span>
+                <strong class="eda-kpi-value text-warning" id="kpiBatchMaxSgpi">0.00</strong>
+                <span class="eda-kpi-sub">Highest Scored Across Sems</span>
+              </div>
+              <div class="eda-kpi-card kpi-success">
+                <span class="eda-kpi-label">GRADUATION ELIGIBLE</span>
+                <strong class="eda-kpi-value text-success" id="kpiBatchGraduated">0</strong>
+                <span class="eda-kpi-sub">Cleared Sem 8 Requirements</span>
+              </div>
+            </div>
+
+            <div style="margin-top: 1.5rem;">
+              <h4 style="margin-bottom: 0.8rem;">🎓 Cohort Grade &amp; Performance Distribution</h4>
+              <div class="batch-table-container">
+                <table id="batchGradeDistTable">
+                  <thead>
+                    <tr>
+                      <th>Grade Classification</th>
+                      <th>SGPI Range</th>
+                      <th>Student Count</th>
+                      <th>Cohort Share (%)</th>
+                    </tr>
+                  </thead>
+                  <tbody id="batchGradeDistBody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="eda-charts-grid" style="margin-top: 1.5rem; margin-bottom: 1.5rem;">
+              <div class="chart-box">
+                <div class="chart-header">
+                  <h4>🎓 Cohort Grade Classification Distribution</h4>
+                  <span class="chart-tag">Distinction to Pass Class</span>
+                </div>
+                <div class="chart-canvas-container" style="height: 270px;">
+                  <canvas id="chartBatchGradeDist"></canvas>
+                </div>
+              </div>
+              <div class="chart-box">
+                <div class="chart-header">
+                  <h4>⚖️ Cohort Clearance &amp; Backlog Distribution</h4>
+                  <span class="chart-tag">Zero KT vs ATKT Encountered</span>
+                </div>
+                <div class="chart-canvas-container" style="height: 270px;">
+                  <canvas id="chartBatchCompletionRatio"></canvas>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 4: Student Progression -->
+          <div id="tabBatchProgression" class="batch-tab-content hidden">
+            <input type="text" id="batchProgressionSearch" class="batch-search-input" placeholder="🔍 Search students by name, seat number, or ID...">
+            <div class="batch-table-container">
+              <table id="batchProgressionTable">
+                <thead>
+                  <tr id="batchProgressionHeadRow"></tr>
+                </thead>
+                <tbody id="batchProgressionBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- TAB 5: KT Analysis -->
+          <div id="tabBatchKt" class="batch-tab-content hidden">
+            <div class="chart-box" style="margin-bottom: 1.5rem;">
               <div class="chart-header">
-                <h4>🎓 Cohort Grade Classification Distribution</h4>
-                <span class="chart-tag">Distinction to Pass Class</span>
+                <h4>⚠️ Semester Backlog Burden (Students with KT &amp; Subjects)</h4>
+                <span class="chart-tag">Remedial Tracking</span>
               </div>
               <div class="chart-canvas-container" style="height: 270px;">
-                <canvas id="chartBatchGradeDist"></canvas>
+                <canvas id="chartBatchKtBurden"></canvas>
               </div>
             </div>
-            <div class="chart-box">
+
+            <h4 style="margin-bottom: 0.8rem;">⚠️ Semester-Wise Backlog Burden</h4>
+            <div class="batch-table-container" style="margin-bottom: 1.5rem;">
+              <table id="batchKtTable">
+                <thead>
+                  <tr>
+                    <th>Semester</th>
+                    <th>Appeared Students</th>
+                    <th>Students with KT</th>
+                    <th>KT Rate (%)</th>
+                    <th>Total KT Subjects</th>
+                    <th>Avg KT per Failed Student</th>
+                  </tr>
+                </thead>
+                <tbody id="batchKtBody"></tbody>
+              </table>
+            </div>
+
+            <h4 style="margin-bottom: 0.8rem;">🔄 Repeated KT Occurrences (Students with KT in ≥ 2 Semesters)</h4>
+            <div class="batch-table-container">
+              <table id="batchRepeatKtTable">
+                <thead>
+                  <tr>
+                    <th>Student ID</th>
+                    <th>Student Name</th>
+                    <th>KT Semesters Count</th>
+                    <th>Semesters with Backlogs</th>
+                    <th>Latest Available Status</th>
+                  </tr>
+                </thead>
+                <tbody id="batchRepeatKtBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- TAB 6: Topper Analysis -->
+          <div id="tabBatchTopper" class="batch-tab-content hidden">
+            <h4 style="margin-bottom: 0.8rem;">🌟 Multi-Semester Consistent Honor Roll (Top 10 in ≥ 2 Semesters)</h4>
+            <div class="batch-table-container" style="margin-bottom: 1.5rem;">
+              <table id="batchMultiTopperTable">
+                <thead>
+                  <tr>
+                    <th>Rank</th>
+                    <th>Candidate Name</th>
+                    <th>Identifier</th>
+                    <th>Times in Top 10</th>
+                    <th>Semesters Ranked in Top 10</th>
+                    <th>Cumulative Average SGPI</th>
+                  </tr>
+                </thead>
+                <tbody id="batchMultiTopperBody"></tbody>
+              </table>
+            </div>
+
+            <h4 style="margin-bottom: 0.8rem;">🏆 Semester-Wise Merit Rankings</h4>
+            <div class="batch-table-container">
+              <table id="batchSemTopperTable">
+                <thead>
+                  <tr>
+                    <th>Semester</th>
+                    <th>Merit Rank</th>
+                    <th>Student Name</th>
+                    <th>Seat / Identifier</th>
+                    <th>SGPI Scored</th>
+                  </tr>
+                </thead>
+                <tbody id="batchSemTopperBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- TAB 7: Retention & Progression -->
+          <div id="tabBatchRetention" class="batch-tab-content hidden">
+            <div class="chart-box" style="margin-bottom: 1.5rem;">
               <div class="chart-header">
-                <h4>⚖️ Cohort Clearance &amp; Backlog Distribution</h4>
-                <span class="chart-tag">Zero KT vs ATKT Encountered</span>
+                <h4>👥 Semester Retention &amp; Lateral Entry Transition Flow</h4>
+                <span class="chart-tag">Cohort Persistence</span>
               </div>
               <div class="chart-canvas-container" style="height: 270px;">
-                <canvas id="chartBatchCompletionRatio"></canvas>
+                <canvas id="chartBatchRetentionFlow"></canvas>
               </div>
             </div>
-          </div>
-        </div>
 
-        <!-- TAB 3: Student Progression -->
-        <div id="tabBatchProgression" class="batch-tab-content hidden">
-          <input type="text" id="batchProgressionSearch" class="batch-search-input" placeholder="🔍 Search students by name, seat number, or ID...">
-          <div class="batch-table-container">
-            <table id="batchProgressionTable">
-              <thead>
-                <tr id="batchProgressionHeadRow"></tr>
-              </thead>
-              <tbody id="batchProgressionBody"></tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- TAB 4: KT Analysis -->
-        <div id="tabBatchKt" class="batch-tab-content hidden">
-          <!-- Visual Chart: Semester KT Burden -->
-          <div class="chart-box" style="margin-bottom: 1.5rem;">
-            <div class="chart-header">
-              <h4>⚠️ Semester Backlog Burden (Students with KT &amp; Subjects)</h4>
-              <span class="chart-tag">Remedial Tracking</span>
+            <h4 style="margin-bottom: 0.8rem;">👥 Semester Transition &amp; Progression Flow</h4>
+            <div class="batch-table-container" style="margin-bottom: 1.5rem;">
+              <table id="batchRetentionTable">
+                <thead>
+                  <tr>
+                    <th>Semester Transition</th>
+                    <th>From Semester</th>
+                    <th>To Semester</th>
+                    <th>Initial Count</th>
+                    <th>Next Count</th>
+                    <th>Continuing Students</th>
+                    <th>Lateral / New Entry</th>
+                    <th>Continuance Rate (%)</th>
+                  </tr>
+                </thead>
+                <tbody id="batchRetentionBody"></tbody>
+              </table>
             </div>
-            <div class="chart-canvas-container" style="height: 270px;">
-              <canvas id="chartBatchKtBurden"></canvas>
+            <div class="auto-learn-notice">
+              <span>ℹ️ <strong>Mandatory Academic Rule:</strong> Do not assume that a student missing from a semester dropped out. Students may take gap years, transfer, or appear in unrecorded ATKT-specific examination ledgers.</span>
             </div>
           </div>
 
-          <h4 style="margin-bottom: 0.8rem;">⚠️ Semester-Wise Backlog Burden</h4>
-          <div class="batch-table-container" style="margin-bottom: 1.5rem;">
-            <table id="batchKtTable">
-              <thead>
-                <tr>
-                  <th>Semester</th>
-                  <th>Appeared Students</th>
-                  <th>Students with KT</th>
-                  <th>KT Rate (%)</th>
-                  <th>Total KT Subjects</th>
-                  <th>Avg KT per Failed Student</th>
-                </tr>
-              </thead>
-              <tbody id="batchKtBody"></tbody>
-            </table>
+          <!-- TAB 8: Student Performance -->
+          <div id="tabBatchPerformance" class="batch-tab-content hidden">
+            <div id="batchPerformanceCategories"></div>
           </div>
 
-          <h4 style="margin-bottom: 0.8rem;">🔄 Repeated KT Occurrences (Students with KT in ≥ 2 Semesters)</h4>
-          <div class="batch-table-container">
-            <table id="batchRepeatKtTable">
-              <thead>
-                <tr>
-                  <th>Student ID</th>
-                  <th>Student Name</th>
-                  <th>KT Semesters Count</th>
-                  <th>Semesters with Backlogs</th>
-                  <th>Latest Available Status</th>
-                </tr>
-              </thead>
-              <tbody id="batchRepeatKtBody"></tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- TAB 5: Topper Analysis -->
-        <div id="tabBatchTopper" class="batch-tab-content hidden">
-          <h4 style="margin-bottom: 0.8rem;">🌟 Multi-Semester Consistent Honor Roll (Top 10 in ≥ 2 Semesters)</h4>
-          <div class="batch-table-container" style="margin-bottom: 1.5rem;">
-            <table id="batchMultiTopperTable">
-              <thead>
-                <tr>
-                  <th>Rank</th>
-                  <th>Candidate Name</th>
-                  <th>Identifier</th>
-                  <th>Times in Top 10</th>
-                  <th>Semesters Ranked in Top 10</th>
-                  <th>Cumulative Average SGPI</th>
-                </tr>
-              </thead>
-              <tbody id="batchMultiTopperBody"></tbody>
-            </table>
-          </div>
-
-          <h4 style="margin-bottom: 0.8rem;">🏆 Semester-Wise Merit Rankings</h4>
-          <div class="batch-table-container">
-            <table id="batchSemTopperTable">
-              <thead>
-                <tr>
-                  <th>Semester</th>
-                  <th>Merit Rank</th>
-                  <th>Student Name</th>
-                  <th>Seat / Identifier</th>
-                  <th>SGPI Scored</th>
-                </tr>
-              </thead>
-              <tbody id="batchSemTopperBody"></tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- TAB 6: Retention & Progression -->
-        <div id="tabBatchRetention" class="batch-tab-content hidden">
-          <!-- Visual Chart: Retention & Intake Transitions -->
-          <div class="chart-box" style="margin-bottom: 1.5rem;">
-            <div class="chart-header">
-              <h4>👥 Semester Retention &amp; Lateral Entry Transition Flow</h4>
-              <span class="chart-tag">Cohort Persistence</span>
-            </div>
-            <div class="chart-canvas-container" style="height: 270px;">
-              <canvas id="chartBatchRetentionFlow"></canvas>
+          <!-- TAB 9: Data Quality Log -->
+          <div id="tabBatchQuality" class="batch-tab-content hidden">
+            <h4 style="margin-bottom: 0.8rem;">🛡️ Non-Destructive Data Quality Audit Log</h4>
+            <div class="batch-table-container">
+              <table id="batchQualityTable">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Issue Category</th>
+                    <th>Semester</th>
+                    <th>Student Identifier</th>
+                    <th>Student Name</th>
+                    <th>Anomaly Description</th>
+                    <th>Severity</th>
+                    <th>Action Protocol</th>
+                  </tr>
+                </thead>
+                <tbody id="batchQualityBody"></tbody>
+              </table>
             </div>
           </div>
 
-          <h4 style="margin-bottom: 0.8rem;">👥 Semester Transition &amp; Progression Flow</h4>
-          <div class="batch-table-container" style="margin-bottom: 1.5rem;">
-            <table id="batchRetentionTable">
-              <thead>
-                <tr>
-                  <th>Semester Transition</th>
-                  <th>From Semester</th>
-                  <th>To Semester</th>
-                  <th>Initial Count</th>
-                  <th>Next Count</th>
-                  <th>Continuing Students</th>
-                  <th>Lateral / New Entry</th>
-                  <th>Continuance Rate (%)</th>
-                </tr>
-              </thead>
-              <tbody id="batchRetentionBody"></tbody>
-            </table>
+          <!-- TAB 10: Semester Data Trace -->
+          <div id="tabBatchData" class="batch-tab-content hidden">
+            <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+              <label for="batchRawSemSelect" style="font-weight: 700; font-size: 0.88rem;">Select Semester to Inspect:</label>
+              <select id="batchRawSemSelect" class="form-select form-select-sm" style="max-width: 200px;"></select>
+            </div>
+            <div class="batch-table-container">
+              <table id="batchRawDataTable">
+                <thead>
+                  <tr>
+                    <th>Sr No</th>
+                    <th>Seat No</th>
+                    <th>Student Name</th>
+                    <th>PRN / Reg No</th>
+                    <th>Result Status</th>
+                    <th>SGPI</th>
+                    <th>KT Count</th>
+                    <th>Total Marks</th>
+                    <th>Source File Trace</th>
+                  </tr>
+                </thead>
+                <tbody id="batchRawDataBody"></tbody>
+              </table>
+            </div>
           </div>
-          <div class="auto-learn-notice">
-            <span>ℹ️ <strong>Mandatory Academic Rule:</strong> Do not assume that a student missing from a semester dropped out. Students may take gap years, transfer, or appear in unrecorded ATKT-specific examination ledgers.</span>
-          </div>
-        </div>
-
-        <!-- TAB 7: Student Performance -->
-        <div id="tabBatchPerformance" class="batch-tab-content hidden">
-          <div id="batchPerformanceCategories"></div>
-        </div>
-
-        <!-- TAB 8: Data Quality Log -->
-        <div id="tabBatchQuality" class="batch-tab-content hidden">
-          <h4 style="margin-bottom: 0.8rem;">🛡️ Non-Destructive Data Quality Audit Log</h4>
-          <div class="batch-table-container">
-            <table id="batchQualityTable">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Issue Category</th>
-                  <th>Semester</th>
-                  <th>Student Identifier</th>
-                  <th>Student Name</th>
-                  <th>Anomaly Description</th>
-                  <th>Severity</th>
-                  <th>Action Protocol</th>
-                </tr>
-              </thead>
-              <tbody id="batchQualityBody"></tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- TAB 9: Semester Data Trace -->
-        <div id="tabBatchData" class="batch-tab-content hidden">
-          <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
-            <label for="batchRawSemSelect" style="font-weight: 700; font-size: 0.88rem;">Select Semester to Inspect:</label>
-            <select id="batchRawSemSelect" class="form-select form-select-sm" style="max-width: 200px;"></select>
-          </div>
-          <div class="batch-table-container">
-            <table id="batchRawDataTable">
-              <thead>
-                <tr>
-                  <th>Sr No</th>
-                  <th>Seat No</th>
-                  <th>Student Name</th>
-                  <th>PRN / Reg No</th>
-                  <th>Result Status</th>
-                  <th>SGPI</th>
-                  <th>KT Count</th>
-                  <th>Total Marks</th>
-                  <th>Source File Trace</th>
-                </tr>
-              </thead>
-              <tbody id="batchRawDataBody"></tbody>
-            </table>
-          </div>
-        </div>
-      </section>
+        </section>
+      </div>
     </div>
   </section> <!-- End viewAnalysis -->
-
-  <!-- VIEW 4: Subject-wise Analysis (/analysis/subject) -->

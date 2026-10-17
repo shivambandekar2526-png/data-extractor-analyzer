@@ -384,3 +384,79 @@ def download_batch_json(job_id):
     return send_from_directory(folder_path, json_file, as_attachment=True)
 
 
+@batch_bp.route("/api/batch-analysis/export-docx", methods=["POST"])
+def export_batch_analysis_docx():
+    """
+    Generates and downloads publication-grade, 1-page Microsoft Word (.docx)
+    batch academic performance report.
+    """
+    import importlib
+    import core.batch_docx_exporter
+    importlib.reload(core.batch_docx_exporter)
+    generate_batch_analysis_docx = core.batch_docx_exporter.generate_batch_analysis_docx
+
+    data = request.get_json(silent=True) or {}
+    analysis_data = data.get("analysis_data") or data.get("analytics")
+    job_id = data.get("job_id", "").strip()
+    department = data.get("department", "").strip() or data.get("branch", "").strip()
+    batch = data.get("batch", "").strip() or data.get("academic_year", "").strip()
+    semester_range = data.get("semester_range", "").strip()
+
+    # If analysis_data is not provided, try to find it by job_id
+    if not analysis_data and job_id:
+        with batch_jobs_lock:
+            job = batch_jobs.get(job_id)
+        if job and job.get("result"):
+            analysis_data = job.get("result")
+        else:
+            # Try to read json file from disk
+            clean_id = secure_filename(job_id)
+            if os.path.isdir(OUTPUT_DIR):
+                for entry in os.listdir(OUTPUT_DIR):
+                    if entry == clean_id or entry.endswith(clean_id[:8]) or clean_id in entry:
+                        cand_dir = os.path.join(OUTPUT_DIR, entry)
+                        if os.path.isdir(cand_dir):
+                            for f in os.listdir(cand_dir):
+                                if f.endswith(".json") and "analysis" in f:
+                                    try:
+                                        import json
+                                        with open(os.path.join(cand_dir, f), "r", encoding="utf-8") as jf:
+                                            analysis_data = json.load(jf)
+                                    except Exception as je:
+                                        logger.warning(f"Failed to read json: {je}")
+                                    break
+                        if analysis_data:
+                            break
+
+    if not analysis_data:
+        return jsonify({
+            "success": False,
+            "error": "No batch analysis data provided or found for docx export."
+        }), 400
+
+    try:
+        buf = generate_batch_analysis_docx(
+            analysis_data=analysis_data,
+            department_name=department,
+            batch_name=batch,
+            semester_range=semester_range
+        )
+
+        safe_dept = re.sub(r"[^\w\-]", "_", str(department or "Batch")).strip("_") or "Batch"
+        safe_batch = re.sub(r"[^\w\-]", "_", str(batch or "Cohort")).strip("_") or "Cohort"
+        filename = f"Terna_Batch_Analysis_{safe_dept}_{safe_batch}.docx"
+
+        return send_file(
+            buf,
+            mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            as_attachment=True,
+            download_name=filename
+        )
+    except Exception as e:
+        logger.error(f"Batch Docx export failed: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": f"Docx generation failed: {str(e)}"
+        }), 500
+
+
