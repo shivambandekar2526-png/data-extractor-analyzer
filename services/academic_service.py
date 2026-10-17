@@ -6,6 +6,7 @@ records across folders/SQLite/Excel, and building department hierarchies.
 """
 
 import os
+import io
 import re
 import json
 import logging
@@ -77,10 +78,20 @@ def get_dept_excel_base_dir() -> str:
 
 def get_departments_data_excel_hierarchy() -> List[Dict[str, Any]]:
     """
-    Scans department_data/excel (or departments_data/excel) and returns
-    the structured 3-tier hierarchy:
-    Department Folder -> Batch Folder -> Semester Excel File (.xlsx).
+    Returns the structured 3-tier hierarchy:
+    Department -> Batch -> Semester Excel File.
+    Prioritizes Supabase Cloud Storage/Database, falling back to local disk.
     """
+    try:
+        from services.supabase_service import get_supabase_service
+        supabase_svc = get_supabase_service()
+        if supabase_svc.is_configured:
+            cloud_hier = supabase_svc.get_cloud_departments_hierarchy()
+            if cloud_hier:
+                return cloud_hier
+    except Exception as e:
+        logger.warning(f"Could not load cloud hierarchy from Supabase: {e}")
+
     base_dir = get_dept_excel_base_dir()
     departments = []
     if not os.path.isdir(base_dir):
@@ -205,6 +216,56 @@ def resolve_subject_dataset(dataset_id: str) -> Tuple[List[Dict[str, Any]], Opti
     catalog: Optional[Dict[str, Any]] = None
     meta: Dict[str, Any] = {}
 
+    # Case 0: Supabase Cloud Excel dataset (supabase_excel_<rel_path>)
+    if clean_id.startswith("supabase_excel_"):
+        rel_path = clean_id[15:].strip()
+        storage_path = f"excel/{rel_path}" if not rel_path.startswith("excel/") else rel_path
+        try:
+            from services.supabase_service import get_supabase_service
+            svc = get_supabase_service()
+            file_bytes = svc.download_file_bytes(storage_path)
+            if file_bytes:
+                bio = io.BytesIO(file_bytes)
+                xl = pd.ExcelFile(bio)
+                sheet_to_use = (
+                    "Extracted Data" if "Extracted Data" in xl.sheet_names
+                    else ("Student Results" if "Student Results" in xl.sheet_names else xl.sheet_names[0])
+                )
+                df = xl.parse(sheet_to_use)
+                records = df.to_dict(orient="records")
+
+                if "Course Catalog" in xl.sheet_names:
+                    cat_df = xl.parse("Course Catalog")
+                    courses = []
+                    for _, r in cat_df.iterrows():
+                        c_code = str(r.get("Course Code") or "").strip()
+                        c_name = str(r.get("Official Course Name") or "").strip()
+                        if c_code:
+                            courses.append({
+                                "code": c_code,
+                                "name": c_name,
+                                "official_course_name": c_name
+                            })
+                    catalog = {"courses": courses}
+
+                parts = rel_path.split("/")
+                dept = parts[0].replace("_", " ") if len(parts) > 1 else "Engineering"
+                batch = parts[1] if len(parts) > 1 else "21-22"
+                sem_name = os.path.splitext(os.path.basename(rel_path))[0]
+
+                meta = {
+                    "dataset_id": clean_id,
+                    "dataset_name": f"{dept} ({batch} {sem_name.replace('_', ' ')})",
+                    "department": parts[0] if len(parts) > 1 else dept,
+                    "branch": dept,
+                    "academic_year": _standardize_academic_year(batch),
+                    "semester": _standardize_semester_label(sem_name),
+                    "storage_path": storage_path
+                }
+                return records, catalog, meta
+        except Exception as e:
+            logger.error(f"Error reading Supabase Excel dataset {clean_id}: {e}")
+
     # Case 1: Database dataset (db_<dept>_<batch>_<sem>)
     if clean_id.startswith("db_"):
         try:
@@ -286,6 +347,12 @@ def resolve_subject_dataset(dataset_id: str) -> Tuple[List[Dict[str, Any]], Opti
         excel_full_path = os.path.join(DEPARTMENTS_DATA_DIR, "excel", rel_path.replace("/", os.sep).replace("\\", os.sep))
     if not os.path.isfile(excel_full_path) and os.path.isfile(clean_id):
         excel_full_path = clean_id
+
+    if not os.path.isfile(excel_full_path):
+        clean_rel = rel_path.replace("\\", "/").strip("/")
+        if clean_rel.startswith("excel/"):
+            clean_rel = clean_rel[6:]
+        return resolve_subject_dataset(f"supabase_excel_{clean_rel}")
 
     if os.path.isfile(excel_full_path):
         try:

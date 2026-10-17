@@ -1,4 +1,5 @@
 import os
+import io
 import re
 import csv
 import json
@@ -140,6 +141,43 @@ def list_history():
     except Exception as e:
         logger.warning(f"Error querying SQLite datasets for history: {e}")
 
+    # 3. Incorporate datasets from Supabase Cloud
+    try:
+        from services.supabase_service import get_supabase_service
+        supabase_svc = get_supabase_service()
+        if supabase_svc.is_configured:
+            cloud_hier = supabase_svc.get_cloud_departments_hierarchy()
+            for dept_item in cloud_hier:
+                d_dept = dept_item["id"]
+                for b_item in dept_item.get("batches", []):
+                    d_batch = b_item["id"]
+                    for s_item in b_item.get("semesters", []):
+                        d_sem = s_item.get("semester_name") or os.path.splitext(s_item.get("file_name", ""))[0]
+                        ds_key = f"{d_dept}_{d_batch}_{d_sem}".lower()
+                        if ds_key in seen_keys:
+                            continue
+                        seen_keys.add(ds_key)
+                        synth_id = f"db_{d_dept}_{d_batch}_{d_sem}"
+                        history_entries.append({
+                            "id": synth_id,
+                            "folder_name": synth_id,
+                            "display_name": f"{dept_item.get('name', d_dept)} - {d_batch} ({d_sem})",
+                            "department": d_dept,
+                            "batch": d_batch,
+                            "semester": d_sem,
+                            "total_students": s_item.get("total_students", 0),
+                            "archetype": "tabulation",
+                            "source_type": "Supabase Cloud",
+                            "status": "Verified",
+                            "created_at": s_item.get("created_at") or time.strftime("%Y-%m-%d %H:%M:%S"),
+                            "timestamp": s_item.get("created_at") or time.strftime("%Y-%m-%d %H:%M:%S"),
+                            "pdf_path": s_item.get("pdf_storage_path"),
+                            "excel_path": s_item.get("storage_path"),
+                            "_mtime": 0.0
+                        })
+    except Exception as sup_e:
+        logger.warning(f"Error querying Supabase datasets for history: {sup_e}")
+
     # Sort most recent extractions first
     history_entries.sort(key=lambda x: x.get("_mtime", 0), reverse=True)
     for e in history_entries:
@@ -208,6 +246,61 @@ def load_history_entry(folder_name):
                     })
         except Exception as e:
             logger.warning(f"Failed loading DB dataset for history item {clean_folder}: {e}")
+
+        # Try loading directly via resolve_subject_dataset from Supabase!
+        try:
+            from services.academic_service import resolve_subject_dataset
+            # Match plain path: e.g. db_Artificial_Intelligence_and_Data_Science_21-22_Semester_1
+            # Replace prefix and map to supabase_excel_<dept>/<batch>/<sem>.xlsx
+            from services.supabase_service import get_supabase_service
+            supabase_svc = get_supabase_service()
+            if supabase_svc.is_configured:
+                cloud_hier = supabase_svc.get_cloud_departments_hierarchy()
+                plain = clean_folder.replace("supabase_", "").replace("db_", "")
+                target_rel = None
+                for d in cloud_hier:
+                    for b in d.get("batches", []):
+                        for s in b.get("semesters", []):
+                            s_name = s.get("semester_name") or os.path.splitext(s.get("file_name", ""))[0]
+                            k = f"{d['id']}_{b['id']}_{s_name}".lower()
+                            if k == plain.lower():
+                                target_rel = s.get("rel_path")
+                                break
+                        if target_rel:
+                            break
+                    if target_rel:
+                        break
+
+                if target_rel:
+                    records, catalog, meta = resolve_subject_dataset(f"supabase_excel_{target_rel}")
+                    if records:
+                        ds_meta = {
+                            "department": meta.get("department"),
+                            "batch": meta.get("batch"),
+                            "semester": meta.get("semester"),
+                            "excel_path": meta.get("storage_path"),
+                            "pdf_path": meta.get("pdf_storage_path")
+                        }
+                        return jsonify({
+                            "success": True,
+                            "folder_name": clean_folder,
+                            "csv_file": f"{clean_folder}_extracted_data.csv",
+                            "excel_file": f"{clean_folder}_extracted_data.xlsx",
+                            "json_file": f"{clean_folder}_catalog.json",
+                            "academic_report_file": f"{clean_folder}_Academic_Report.xlsx",
+                            "total_students": len(records),
+                            "students": records,
+                            "dataset_meta": ds_meta,
+                            "meta": {
+                                "exam_title": meta.get("dataset_name"),
+                                "semester": meta.get("semester"),
+                                "college_name": meta.get("department"),
+                                "archetype": "tabulation",
+                                "dataset_meta": ds_meta
+                            }
+                        })
+        except Exception as sup_load_err:
+            logger.warning(f"Failed loading Supabase dataset for history item {clean_folder}: {sup_load_err}")
 
     # 2. Otherwise load from output/<folder_name>
     folder_path = os.path.join(OUTPUT_DIR, clean_folder)
@@ -348,13 +441,61 @@ def delete_history_entry(folder_name):
 
 @history_bp.route("/api/download/<folder>/<filename>", methods=["GET"])
 def download_extracted_file(folder, filename):
-    """Download exported CSV, Excel, or JSON."""
+    """Download exported CSV, Excel, or JSON, with streaming from Supabase Storage."""
     clean_folder = safe_folder_name(folder)
     clean_filename = safe_folder_name(filename)
     folder_path = os.path.join(OUTPUT_DIR, clean_folder)
-    if not os.path.isdir(folder_path):
-        return jsonify({"success": False, "error": "Directory not found."}), 404
-    return send_from_directory(folder_path, clean_filename, as_attachment=True)
+    if os.path.isdir(folder_path):
+        fpath = os.path.join(folder_path, clean_filename)
+        if os.path.isfile(fpath):
+            return send_from_directory(folder_path, clean_filename, as_attachment=True)
+
+    # Check Supabase Storage if folder is db_ or supabase_ or file not found locally
+    try:
+        from services.supabase_service import get_supabase_service
+        supabase_svc = get_supabase_service()
+        if supabase_svc.is_configured:
+            cloud_hier = supabase_svc.get_cloud_departments_hierarchy()
+            target_storage_path = None
+            is_pdf = clean_filename.lower().endswith(".pdf")
+
+            # Try matching department, batch, semester from folder name
+            plain = clean_folder.replace("supabase_", "").replace("db_", "")
+            for d in cloud_hier:
+                d_id = d["id"]
+                for b in d.get("batches", []):
+                    b_id = b["id"]
+                    for s in b.get("semesters", []):
+                        s_name = s.get("semester_name") or os.path.splitext(s.get("file_name", ""))[0]
+                        candidate_keys = [
+                            f"{d_id}_{b_id}_{s_name}".lower(),
+                            f"{d_id}_{b_id}_{s.get('file_name', '')}".lower(),
+                            f"{b_id}_{s_name}".lower()
+                        ]
+                        if any(k in plain.lower() or plain.lower() in k for k in candidate_keys):
+                            target_storage_path = s.get("pdf_storage_path") if is_pdf else s.get("storage_path")
+                            break
+                    if target_storage_path:
+                        break
+                if target_storage_path:
+                    break
+
+            if not target_storage_path:
+                # Direct folder search in Supabase
+                prefix = "pdf" if is_pdf else "excel"
+                ext = ".pdf" if is_pdf else ".xlsx"
+                # Check if filename already contains path
+                target_storage_path = f"{prefix}/{clean_folder}/{clean_filename}"
+
+            if target_storage_path:
+                file_bytes = supabase_svc.download_file_bytes(target_storage_path)
+                if file_bytes:
+                    mime = "application/pdf" if is_pdf else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    return send_file(io.BytesIO(file_bytes), download_name=clean_filename, as_attachment=True, mimetype=mime)
+    except Exception as e:
+        logger.warning(f"Error streaming download from Supabase: {e}")
+
+    return jsonify({"success": False, "error": f"File '{clean_filename}' not found."}), 404
 
 
 @history_bp.route("/api/export/academic-analysis/<folder>", methods=["GET"])

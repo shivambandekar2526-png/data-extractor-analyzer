@@ -200,7 +200,12 @@ class BatchAcademicAnalyzer:
         else:
             self.root_batch_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "Batch Data"))
 
-        os.makedirs(self.app_batch_dir, exist_ok=True)
+        try:
+            from services.supabase_service import get_supabase_service
+            if not get_supabase_service().is_configured:
+                os.makedirs(self.app_batch_dir, exist_ok=True)
+        except Exception:
+            pass
         self.tabular_ingester = TabularIngester(output_dir)
 
     def save_clean_semester_excel(
@@ -408,6 +413,40 @@ class BatchAcademicAnalyzer:
                     **detected[s]
                 })
 
+        if not sorted_sems:
+            try:
+                from services.supabase_service import get_supabase_service
+                svc = get_supabase_service()
+                if svc.is_configured:
+                    cloud_hier = svc.get_cloud_departments_hierarchy()
+                    for d in cloud_hier:
+                        for b in d.get("batches", []):
+                            match_cand = [b["id"].lower(), f"{d['id']}/{b['id']}".lower(), f"{d['name']}/{b['id']}".lower()]
+                            if any(c in batch_folder_clean.lower() or batch_folder_clean.lower() in c for c in match_cand):
+                                for s in b.get("semesters", []):
+                                    fname = s.get("file_name", "")
+                                    s_match = re.search(r"\d+", fname)
+                                    s_num = int(s_match.group(0)) if s_match else 1
+                                    sorted_sems.append({
+                                        "semester": s_num,
+                                        "filename": fname,
+                                        "full_path": s.get("storage_path"),
+                                        "file_type": "excel",
+                                        "is_app_store": True,
+                                        "prompt_excel_ai": True,
+                                        "detected_sem": s_num,
+                                        "ext": ".xlsx"
+                                    })
+                                sorted_sems = sorted(sorted_sems, key=lambda x: x["semester"])
+                                excel_count = len(sorted_sems)
+                                all_excel = True
+                                has_excel = True
+                                break
+                        if sorted_sems:
+                            break
+            except Exception as e:
+                logger.warning(f"Error checking Supabase in detect_batch_files: {e}")
+
         parts = batch_folder_clean.split("/")
         branch_name = parts[0] if len(parts) > 1 else target_branch
         year_name = parts[-1] if len(parts) > 1 else os.path.basename(batch_folder)
@@ -440,17 +479,63 @@ class BatchAcademicAnalyzer:
         """
         branches_dict: Dict[str, Dict[str, Any]] = {}
 
+        # Check Supabase Cloud hierarchy first
+        try:
+            from services.supabase_service import get_supabase_service
+            svc = get_supabase_service()
+            if svc.is_configured:
+                cloud_hier = svc.get_cloud_departments_hierarchy()
+                if cloud_hier:
+                    for d in cloud_hier:
+                        b_id = d["id"]
+                        if b_id not in branches_dict:
+                            branches_dict[b_id] = {
+                                "id": b_id,
+                                "name": b_id,
+                                "display_name": format_branch_label(b_id),
+                                "years": []
+                            }
+                        for b in d.get("batches", []):
+                            y_id = b["id"]
+                            sems = []
+                            for s in b.get("semesters", []):
+                                s_name = s.get("file_name", "")
+                                s_match = re.search(r"\d+", s_name)
+                                s_num = int(s_match.group(0)) if s_match else 1
+                                sems.append({
+                                    "semester": s_num,
+                                    "name": f"Sem_{s_num}",
+                                    "display_name": f"Semester {s_num}",
+                                    "has_excel": True,
+                                    "has_pdf": bool(s.get("pdf_storage_path")),
+                                    "excel_file": s.get("storage_path"),
+                                    "pdf_file": s.get("pdf_storage_path"),
+                                    "source_dir": s.get("storage_path"),
+                                    "prompt_excel_ai": True
+                                })
+                            branches_dict[b_id]["years"].append({
+                                "year": y_id,
+                                "name": y_id,
+                                "display_name": format_academic_year_label(y_id),
+                                "semesters": sorted(sems, key=lambda x: x["semester"])
+                            })
+                    return {"branches": list(branches_dict.values())}
+        except Exception:
+            pass
+
         # Scan roots: check if app_batch_dir is organized with excel/ and pdf/ subtrees
         scan_roots = []
         for sub_store in ["excel", "pdf"]:
             sub_p = os.path.join(self.app_batch_dir, sub_store)
             if os.path.isdir(sub_p):
                 scan_roots.append(sub_p)
-        if not scan_roots:
+        if not scan_roots and os.path.isdir(self.app_batch_dir):
             scan_roots.append(self.app_batch_dir)
 
         # Pass 1: Discover hierarchical Branch/Year folders across all scan roots
         for s_root in scan_roots:
+            if not os.path.isdir(s_root):
+                continue
             all_entries = sorted(os.listdir(s_root))
             for entry in all_entries:
                 if entry.lower().endswith(".xlsx") or entry.lower().endswith(".csv") or entry.lower() in ("pdf", "excel"):
@@ -575,11 +660,29 @@ class BatchAcademicAnalyzer:
         use_ai_fix: bool = False,
         progress_cb: Optional[Callable[[float, str], None]] = None
     ) -> List[Dict[str, Any]]:
-        """
-        Extract student records from an Excel semester file.
-        Uses smart multi-tier header fusion and branch sheet matching.
-        """
-        wb = openpyxl.load_workbook(file_path, data_only=True)
+        if not os.path.isfile(file_path):
+            try:
+                from services.supabase_service import get_supabase_service
+                svc = get_supabase_service()
+                if svc.is_configured:
+                    clean_rel = file_path.replace("\\", "/").lstrip("/")
+                    # If clean_rel contains excel/, use as is, else prepend excel/
+                    if "/excel/" in clean_rel:
+                        clean_rel = clean_rel[clean_rel.index("excel/"):]
+                    elif not clean_rel.startswith("excel/"):
+                        clean_rel = f"excel/{clean_rel}"
+                    b = svc.download_file_bytes(clean_rel)
+                    if b:
+                        import io
+                        wb = openpyxl.load_workbook(io.BytesIO(b), data_only=True)
+                    else:
+                        wb = openpyxl.load_workbook(file_path, data_only=True)
+                else:
+                    wb = openpyxl.load_workbook(file_path, data_only=True)
+            except Exception:
+                wb = openpyxl.load_workbook(file_path, data_only=True)
+        else:
+            wb = openpyxl.load_workbook(file_path, data_only=True)
         sheet_name = None
 
         # 1. Match branch sheet (e.g. AIDS, AI&DS, or branch specific)

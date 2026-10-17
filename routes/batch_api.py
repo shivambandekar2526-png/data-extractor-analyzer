@@ -26,7 +26,17 @@ batch_bp = Blueprint("batch_api", __name__)
 
 @batch_bp.route("/api/batches", methods=["GET"])
 def list_batches():
-    """List batch datasets from departments_data/ including PDF, Excel, and CSV with structured hierarchy and backward-compatible batches."""
+    """List batch datasets with structured hierarchy and backward-compatible batches."""
+    try:
+        from services.supabase_service import get_supabase_service
+        supabase_svc = get_supabase_service()
+        if supabase_svc.is_configured:
+            cloud_map = supabase_svc.get_cloud_batches_map()
+            if cloud_map and (cloud_map.get("batches") or cloud_map.get("structured")):
+                return jsonify(cloud_map)
+    except Exception as e:
+        logger.warning(f"Could not load batches from Supabase: {e}")
+
     batches = {}
     structured = {
         "pdf": {},

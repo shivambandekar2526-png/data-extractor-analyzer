@@ -150,6 +150,22 @@ def start_extraction():
                     target_pdf_path = cand
                     break
 
+            if not target_pdf_path:
+                try:
+                    from services.supabase_service import get_supabase_service
+                    svc = get_supabase_service()
+                    if svc.is_configured:
+                        remote_pdf_cand = f"pdf/{clean_rel}" if not clean_rel.startswith("pdf/") else clean_rel
+                        pdf_bytes = svc.download_file_bytes(remote_pdf_cand)
+                        if pdf_bytes:
+                            import tempfile
+                            tmp_pdf = os.path.join(tempfile.gettempdir(), os.path.basename(clean_rel))
+                            with open(tmp_pdf, "wb") as pf:
+                                pf.write(pdf_bytes)
+                            target_pdf_path = tmp_pdf
+                except Exception as e:
+                    logger.warning(f"Error fetching PDF from Supabase in extract_api: {e}")
+
     if not target_pdf_path or not os.path.isfile(target_pdf_path):
         return jsonify({"success": False, "error": "No valid PDF document or tabular file provided or found."}), 400
 

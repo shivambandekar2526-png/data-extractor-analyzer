@@ -32,9 +32,18 @@ ai_cc_jobs_lock = threading.Lock()
 job_controllers: Dict[str, ExtractionController] = {}
 job_controllers_lock = threading.Lock()
 
-# Database initialization
-DB_PATH = get_default_db_path(DEPARTMENTS_DATA_DIR)
-init_db(DB_PATH)
+# Database initialization (only initialize local SQLite if Supabase is not configured)
+from services.supabase_service import get_supabase_service
+supabase_svc = get_supabase_service()
+
+if not supabase_svc.is_configured:
+    try:
+        DB_PATH = get_default_db_path(DEPARTMENTS_DATA_DIR)
+        init_db(DB_PATH)
+    except Exception:
+        DB_PATH = ""
+else:
+    DB_PATH = ""
 
 # Ingesters and analyzers
 tabular_ingester = TabularIngester(OUTPUT_DIR)
@@ -44,7 +53,12 @@ batch_analyzer = BatchAcademicAnalyzer(
     root_batch_dir=DEPARTMENTS_DATA_DIR
 )
 
-# Folder watcher paths
-folder_watcher.add_watch_path("departments_excel", os.path.join(DEPARTMENTS_DATA_DIR, "excel"))
-folder_watcher.add_watch_path("departments_pdf", os.path.join(DEPARTMENTS_DATA_DIR, "pdf"))
-folder_watcher.add_watch_path("output", OUTPUT_DIR)
+# Folder watcher paths (only watch directories that exist)
+excel_dept_p = os.path.join(DEPARTMENTS_DATA_DIR, "excel")
+pdf_dept_p = os.path.join(DEPARTMENTS_DATA_DIR, "pdf")
+if os.path.isdir(excel_dept_p):
+    folder_watcher.add_watch_path("departments_excel", excel_dept_p)
+if os.path.isdir(pdf_dept_p):
+    folder_watcher.add_watch_path("departments_pdf", pdf_dept_p)
+if os.path.isdir(OUTPUT_DIR):
+    folder_watcher.add_watch_path("output", OUTPUT_DIR)

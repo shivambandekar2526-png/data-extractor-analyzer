@@ -114,10 +114,14 @@ def auto_sort_into_app_batch_store(
                 cand_batch = excel_path
             batch_slug = normalize_batch(cand_batch, sem_num=sem_num)
 
-        # Target directory: app's departments_data
-        dest_dirs = [
-            os.path.join(DEPARTMENTS_DATA_DIR, "excel", dept_name, batch_slug)
-        ]
+        # Target directory: only write locally if Supabase is NOT configured
+        from services.supabase_service import get_supabase_service
+        supabase_svc = get_supabase_service()
+
+        dest_dirs = []
+        if not supabase_svc.is_configured:
+            dest_dirs.append(os.path.join(DEPARTMENTS_DATA_DIR, "excel", dept_name, batch_slug))
+
         legacy_dirs = []
         if app_batch_dir and app_batch_dir not in (APP_DEPARTMENTS_DATA_DIR, DEPARTMENTS_DATA_DIR):
             dest_dirs.append(os.path.join(app_batch_dir, "excel", dept_name, batch_slug))
@@ -127,7 +131,7 @@ def auto_sort_into_app_batch_store(
                 legacy_dirs.append(os.path.join(app_batch_dir, s))
                 legacy_dirs.append(os.path.join(app_batch_dir, dept_name, s))
 
-        canonical_excel = None
+        canonical_excel = excel_path if (excel_path and os.path.isfile(excel_path)) else None
         for d_dir in dest_dirs:
             os.makedirs(d_dir, exist_ok=True)
             target_f = os.path.join(d_dir, f"{sem_canonical}.xlsx")
@@ -149,7 +153,7 @@ def auto_sort_into_app_batch_store(
                 analyzer = BatchAcademicAnalyzer(output_dir=OUTPUT_DIR, app_batch_dir=APP_DEPARTMENTS_DATA_DIR, root_batch_dir=DEPARTMENTS_DATA_DIR)
                 analyzer.save_clean_semester_excel(students, normalize_batch_slug(batch_slug), sem_num, target_dir=l_dir)
 
-        # Save to SQLite database
+        # Save to SQLite database (optional local cache)
         try:
             pdf_path = os.path.join(DEPARTMENTS_DATA_DIR, "pdf", dept_name, batch_slug, f"{sem_canonical}.pdf")
             if not os.path.isfile(pdf_path):
@@ -167,6 +171,42 @@ def auto_sort_into_app_batch_store(
             )
         except Exception as db_err:
             logger.warning(f"Failed to persist dataset to SQLite: {db_err}")
+
+        # Supabase Cloud Sync (Primary Cloud Storage & Catalog)
+        try:
+            from services.supabase_service import get_supabase_service
+            supabase_svc = get_supabase_service()
+            if supabase_svc.is_configured:
+                supabase_rel_excel = f"excel/{dept_name}/{batch_slug}/{sem_canonical}.xlsx"
+                src_to_upload = canonical_excel if (canonical_excel and os.path.isfile(canonical_excel)) else excel_path
+                if src_to_upload and os.path.isfile(src_to_upload):
+                    supabase_svc.upload_local_file(src_to_upload, supabase_rel_excel)
+
+                supabase_rel_pdf = f"pdf/{dept_name}/{batch_slug}/{sem_canonical}.pdf"
+                cand_pdfs = [
+                    os.path.join(DEPARTMENTS_DATA_DIR, "pdf", dept_name, batch_slug, f"{sem_canonical}.pdf"),
+                    source_path if (source_path and str(source_path).lower().endswith(".pdf") and os.path.isfile(source_path)) else None,
+                    os.path.join(INPUT_DIR, f"{source_path}.pdf") if source_path else None
+                ]
+                pdf_uploaded = None
+                for cp in cand_pdfs:
+                    if cp and os.path.isfile(cp):
+                        supabase_svc.upload_local_file(cp, supabase_rel_pdf)
+                        pdf_uploaded = supabase_rel_pdf
+                        break
+
+                cat_payload = catalog if isinstance(catalog, dict) else (catalog.to_dict() if hasattr(catalog, "to_dict") else {})
+                supabase_svc.upsert_dataset_record(
+                    department=dept_name,
+                    batch=batch_slug,
+                    semester=sem_canonical,
+                    excel_path=supabase_rel_excel,
+                    pdf_path=pdf_uploaded,
+                    total_students=len(students) if students else 0,
+                    meta_json={"courses": (cat_payload or {}).get("courses", [])} if isinstance(cat_payload, dict) else {}
+                )
+        except Exception as sup_err:
+            logger.warning(f"Failed to sync dataset to Supabase: {sup_err}")
 
         return canonical_excel
     except Exception as e:

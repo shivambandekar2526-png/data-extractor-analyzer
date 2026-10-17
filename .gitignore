@@ -3,6 +3,7 @@ __pycache__/
 *$py.class
 output/
 input/
+departments_data/
 config/
-!output/.gitkeep
-!input/.gitkeep
+.env
+departments_data_migrated_backup/

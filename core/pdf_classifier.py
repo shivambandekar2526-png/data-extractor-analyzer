@@ -401,6 +401,25 @@ def check_duplicate_dataset(department: str, batch: str, semester: str, departme
     pdf_exists = os.path.isfile(pdf_full)
     excel_exists = os.path.isfile(excel_full)
 
+    # Check Supabase Cloud Storage
+    try:
+        from services.supabase_service import get_supabase_service
+        svc = get_supabase_service()
+        if svc.is_configured:
+            cloud_hier = svc.get_cloud_departments_hierarchy()
+            for d in cloud_hier:
+                if d["id"].lower() == department.lower() or d["name"].lower() == department.lower():
+                    for b in d.get("batches", []):
+                        if b["id"].lower() == batch.lower():
+                            for s in b.get("semesters", []):
+                                s_name = s.get("semester_name") or os.path.splitext(s.get("file_name", ""))[0]
+                                if s_name.lower() == semester.lower() or s.get("file_name", "").lower() == f"{semester}.xlsx".lower():
+                                    excel_exists = True
+                                    if s.get("pdf_storage_path"):
+                                        pdf_exists = True
+    except Exception:
+        pass
+
     return {
         "duplicate": (pdf_exists or excel_exists),
         "pdf_exists": pdf_exists,
@@ -426,6 +445,18 @@ def store_classified_pdf(
       departments_data/pdf/<Department>/<Batch>/<Semester>.pdf
     and renames/stores the uploaded PDF as <Semester>.pdf.
     """
+    # Upload directly to Supabase Storage if configured
+    try:
+        from services.supabase_service import get_supabase_service
+        svc = get_supabase_service()
+        if svc.is_configured:
+            remote_pdf = f"pdf/{department}/{batch}/{semester}.pdf"
+            svc.upload_local_file(source_pdf_path, remote_pdf)
+            return remote_pdf
+    except Exception as e:
+        logger.warning(f"Failed to upload classified PDF to Supabase: {e}")
+
+    # Fallback only when Supabase is not configured
     dest_folder = os.path.join(departments_dir, "pdf", department, batch)
     os.makedirs(dest_folder, exist_ok=True)
     dest_pdf_path = os.path.join(dest_folder, f"{semester}.pdf")
@@ -435,7 +466,6 @@ def store_classified_pdf(
             f"Dataset PDF already exists at '{dest_pdf_path}'. Overwrite confirmation required."
         )
 
-    # If source and destination are the exact same path, do not copy
     if os.path.abspath(source_pdf_path) != os.path.abspath(dest_pdf_path):
         shutil.copy2(source_pdf_path, dest_pdf_path)
 
@@ -444,14 +474,28 @@ def store_classified_pdf(
 
 def get_canonical_excel_path(department: str, batch: str, semester: str, departments_dir: str) -> str:
     """Returns deterministic canonical path for Excel dataset."""
+    try:
+        from services.supabase_service import get_supabase_service
+        if get_supabase_service().is_configured:
+            return f"excel/{department}/{batch}/{semester}.xlsx"
+    except Exception:
+        pass
     dest_folder = os.path.join(departments_dir, "excel", department, batch)
-    os.makedirs(dest_folder, exist_ok=True)
+    if os.path.isdir(departments_dir):
+        os.makedirs(dest_folder, exist_ok=True)
     return os.path.join(dest_folder, f"{semester}.xlsx")
 
 
 def get_canonical_pdf_path(department: str, batch: str, semester: str, departments_dir: str) -> str:
     """Returns deterministic canonical path for PDF dataset."""
+    try:
+        from services.supabase_service import get_supabase_service
+        if get_supabase_service().is_configured:
+            return f"pdf/{department}/{batch}/{semester}.pdf"
+    except Exception:
+        pass
     dest_folder = os.path.join(departments_dir, "pdf", department, batch)
-    os.makedirs(dest_folder, exist_ok=True)
+    if os.path.isdir(departments_dir):
+        os.makedirs(dest_folder, exist_ok=True)
     return os.path.join(dest_folder, f"{semester}.pdf")
 
