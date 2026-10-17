@@ -2332,7 +2332,7 @@ function openSemesterPrintPreview() {
   const topTbody = document.getElementById("prnTblSemToppersBody");
   if (topTbody) {
     topTbody.innerHTML = "";
-    toppers.slice(0, 5).forEach((st, idx) => {
+    toppers.slice(0, 10).forEach((st, idx) => {
       const tr = document.createElement("tr");
       let medal = "";
       if (st.rank === 1) medal = "🥇 ";
@@ -9450,12 +9450,14 @@ function initBatchSuite() {
       const targetEl = document.getElementById(targetId);
       if (targetEl) targetEl.classList.remove("hidden");
       setTimeout(() => {
-        if (typeof batchChartInstances !== "undefined") {
-          Object.values(batchChartInstances).forEach(ch => {
-            if (ch && typeof ch.resize === "function") ch.resize();
-          });
+        if (targetId === "secBatchPerformanceAnalysis") {
+          if (activeBatchAnalytics) renderBatchPerformanceCharts(activeBatchAnalytics);
+        } else if (targetId === "secBatchAuditExcelSuite") {
+          const activeTabBtn = document.querySelector(".batch-tab-btn.active");
+          const activeTabId = activeTabBtn ? activeTabBtn.getAttribute("data-batch-tab") : "tabBatchSuccessRate";
+          refreshBatchTabCharts(activeTabId);
         }
-      }, 50);
+      }, 40);
     });
   });
 
@@ -9480,12 +9482,8 @@ function initBatchSuite() {
       const targetEl = document.getElementById(targetId);
       if (targetEl) targetEl.classList.remove("hidden");
       setTimeout(() => {
-        if (typeof batchChartInstances !== "undefined") {
-          Object.values(batchChartInstances).forEach(ch => {
-            if (ch && typeof ch.resize === "function") ch.resize();
-          });
-        }
-      }, 50);
+        refreshBatchTabCharts(targetId);
+      }, 40);
     });
   });
 
@@ -10258,7 +10256,7 @@ function renderBatchDashboard(analytics, jobId) {
     const topBySem = analytics.topper_by_semester || {};
     Object.keys(topBySem).sort((a,b)=>a-b).forEach(sem => {
       const topList = topBySem[sem] || [];
-      topList.slice(0, 5).forEach(item => {
+      topList.forEach(item => {
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td><strong>Semester ${sem}</strong></td>
@@ -10311,7 +10309,7 @@ function renderBatchDashboard(analytics, jobId) {
       box.style.marginBottom = "1.5rem";
       box.innerHTML = `
         <h4 style="margin-bottom: 0.6rem;">${cd.title} (${list.length} Students)</h4>
-        <div class="batch-table-container">
+        <div class="batch-table-container" style="max-height: 420px; overflow-y: auto;">
           <table>
             <thead>
               <tr>
@@ -10323,7 +10321,7 @@ function renderBatchDashboard(analytics, jobId) {
               </tr>
             </thead>
             <tbody>
-              ${list.length > 0 ? list.slice(0, 15).map(it => `
+              ${list.length > 0 ? list.map(it => `
                 <tr>
                   <td><strong>${it.student_id}</strong></td>
                   <td>${it.canonical_name}</td>
@@ -10346,7 +10344,7 @@ function renderBatchDashboard(analytics, jobId) {
     qBody.innerHTML = "";
     const issues = analytics.data_quality_issues || [];
     if (issues.length > 0) {
-      issues.slice(0, 50).forEach((iss, idx) => {
+      issues.forEach((iss, idx) => {
         const tr = document.createElement("tr");
         let sevClass = "badge-severity-info";
         if (iss.severity === "High") sevClass = "badge-severity-high";
@@ -10433,272 +10431,322 @@ function destroyBatchCharts() {
   });
 }
 
+function renderBatchChartIntakeGrad(sr) {
+  const ctx = document.getElementById("chartBatchIntakeGrad");
+  if (!ctx || !ctx.offsetParent) return;
+  if (batchChartInstances.intakeGrad) {
+    try { batchChartInstances.intakeGrad.destroy(); } catch (e) {}
+  }
+  const bd = sr.breakdown || [];
+  const labels = bd.length > 0 ? bd.map(b => b.category) : ["Regular Intake (Sem 1)", "Lateral Entry (DSE)"];
+  const admitted = bd.length > 0 ? bd.map(b => b.admitted) : [sr.regular_intake_n1 || 0, sr.lateral_entry_n3 || 0];
+  const passed = bd.length > 0 ? bd.map(b => b.passed_final) : [sr.P_final_regular || 0, sr.P_final_lateral || 0];
+  const noKt = bd.length > 0 ? bd.map(b => b.passed_no_kt) : [sr.P_no_kt_regular || 0, sr.P_no_kt_lateral || 0];
+
+  batchChartInstances.intakeGrad = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: labels,
+      datasets: [
+        { label: "Admitted Intake", data: admitted, backgroundColor: "#1F4E78", borderRadius: 4 },
+        { label: "Passed Final Sem", data: passed, backgroundColor: "#10b981", borderRadius: 4 },
+        { label: "Cleared Zero KT", data: noKt, backgroundColor: "#3b82f6", borderRadius: 4 }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: "top", labels: { boxWidth: 12, font: { size: 11 } } },
+        tooltip: { mode: "index", intersect: false }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+        y: { beginAtZero: true, grid: { color: "rgba(0,0,0,0.05)" } }
+      }
+    }
+  });
+}
+
+function renderBatchChartBacklogSplit(sr) {
+  const ctx = document.getElementById("chartBatchBacklogSplit");
+  if (!ctx || !ctx.offsetParent) return;
+  if (batchChartInstances.backlogSplit) {
+    try { batchChartInstances.backlogSplit.destroy(); } catch (e) {}
+  }
+  const pNoKt = sr.passed_without_backlogs || sr.P_no_kt_passed || 0;
+  const pWithKt = sr.passed_with_backlogs || sr.P_with_kt_passed || 0;
+  const totAdm = sr.total_admitted_n1_n3 || sr.total_cohort_intake || 0;
+  const pFinal = sr.passed_final_sem || sr.P_final_passed || 0;
+  const pending = Math.max(0, totAdm - pFinal);
+
+  batchChartInstances.backlogSplit = new Chart(ctx, {
+    type: "doughnut",
+    data: {
+      labels: ["Cleared Zero KT", "Cleared With Backlogs", "Pending / Incomplete"],
+      datasets: [{
+        data: [pNoKt, pWithKt, pending],
+        backgroundColor: ["#10b981", "#f59e0b", "#94a3b8"],
+        borderWidth: 2,
+        borderColor: "#ffffff"
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: "right", labels: { boxWidth: 12, font: { size: 11 } } }
+      },
+      cutout: "60%"
+    }
+  });
+}
+
+function renderBatchChartSemPassTrend(semList) {
+  const ctx = document.getElementById("chartBatchSemPassTrend");
+  if (!ctx || !ctx.offsetParent || semList.length === 0) return;
+  if (batchChartInstances.semPass) {
+    try { batchChartInstances.semPass.destroy(); } catch (e) {}
+  }
+  batchChartInstances.semPass = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: semList.map(s => s.semester_name),
+      datasets: [{
+        label: "Pass Rate (%)",
+        data: semList.map(s => s.pass_percentage || 0),
+        backgroundColor: semList.map(s => (s.pass_percentage >= 75 ? "#10b981" : (s.pass_percentage >= 50 ? "#3b82f6" : "#ef4444"))),
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (ctx) => `${ctx.raw}% Passed` } }
+      },
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true, max: 100, ticks: { callback: v => v + "%" } }
+      }
+    }
+  });
+}
+
+function renderBatchChartSemSgpiTrend(semList) {
+  const ctx = document.getElementById("chartBatchSemSgpiTrend");
+  if (!ctx || !ctx.offsetParent || semList.length === 0) return;
+  if (batchChartInstances.semSgpi) {
+    try { batchChartInstances.semSgpi.destroy(); } catch (e) {}
+  }
+  batchChartInstances.semSgpi = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: semList.map(s => s.semester_name),
+      datasets: [
+        {
+          label: "Average SGPI",
+          data: semList.map(s => s.average_sgpi || null),
+          borderColor: "#3b82f6",
+          backgroundColor: "rgba(59, 130, 246, 0.12)",
+          tension: 0.35,
+          fill: true,
+          pointRadius: 4,
+          pointBackgroundColor: "#3b82f6"
+        },
+        {
+          label: "Highest SGPI",
+          data: semList.map(s => s.highest_sgpi || null),
+          borderColor: "#f59e0b",
+          borderDash: [5, 4],
+          tension: 0.2,
+          pointRadius: 3,
+          fill: false
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: "top", labels: { boxWidth: 12 } }
+      },
+      scales: {
+        x: { grid: { display: false } },
+        y: { min: 4, max: 10 }
+      }
+    }
+  });
+}
+
+function renderBatchChartGradeDist(overall) {
+  const ctx = document.getElementById("chartBatchGradeDist");
+  if (!ctx || !ctx.offsetParent) return;
+  if (batchChartInstances.gradeDist) {
+    try { batchChartInstances.gradeDist.destroy(); } catch (e) {}
+  }
+  const g = overall.grade_distribution || {};
+  batchChartInstances.gradeDist = new Chart(ctx, {
+    type: "doughnut",
+    data: {
+      labels: ["Distinction (≥7.5)", "First Class (6.75-7.5)", "Second Class (6.0-6.75)", "Pass Class (<6.0)"],
+      datasets: [{
+        data: [g.distinction || 0, g.first_class || 0, g.second_class || 0, g.pass_class || 0],
+        backgroundColor: ["#10b981", "#3b82f6", "#f59e0b", "#94a3b8"],
+        borderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { position: "right", labels: { boxWidth: 12 } } },
+      cutout: "60%"
+    }
+  });
+}
+
+function renderBatchChartCompletionRatio(overall) {
+  const ctx = document.getElementById("chartBatchCompletionRatio");
+  if (!ctx || !ctx.offsetParent) return;
+  if (batchChartInstances.completionRatio) {
+    try { batchChartInstances.completionRatio.destroy(); } catch (e) {}
+  }
+  batchChartInstances.completionRatio = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: ["Cleared All (Zero KT)", "Encountered KT", "Graduated (Sem 8)"],
+      datasets: [{
+        label: "Students",
+        data: [
+          overall.cleared_all_available_semesters || 0,
+          overall.students_with_any_kt || 0,
+          overall.graduated_eligible || 0
+        ],
+        backgroundColor: ["#10b981", "#ef4444", "#3b82f6"],
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true }
+      }
+    }
+  });
+}
+
+function renderBatchChartKtBurden(ktList) {
+  const ctx = document.getElementById("chartBatchKtBurden");
+  if (!ctx || !ctx.offsetParent || ktList.length === 0) return;
+  if (batchChartInstances.ktBurden) {
+    try { batchChartInstances.ktBurden.destroy(); } catch (e) {}
+  }
+  batchChartInstances.ktBurden = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: ktList.map(k => k.semester_name),
+      datasets: [
+        {
+          label: "KT Students",
+          data: ktList.map(k => k.kt_students || 0),
+          backgroundColor: "#ef4444",
+          borderRadius: 4
+        },
+        {
+          label: "KT Subjects Count",
+          data: ktList.map(k => (typeof k.total_kt_subjects === "number" ? k.total_kt_subjects : 0)),
+          backgroundColor: "#f97316",
+          borderRadius: 4
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { position: "top", labels: { boxWidth: 12 } } },
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true }
+      }
+    }
+  });
+}
+
+function renderBatchChartRetentionFlow(retList) {
+  const ctx = document.getElementById("chartBatchRetentionFlow");
+  if (!ctx || !ctx.offsetParent || retList.length === 0) return;
+  if (batchChartInstances.retentionFlow) {
+    try { batchChartInstances.retentionFlow.destroy(); } catch (e) {}
+  }
+  batchChartInstances.retentionFlow = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: retList.map(r => r.transition),
+      datasets: [
+        {
+          label: "Continuing Students",
+          data: retList.map(r => r.continuing_students || 0),
+          backgroundColor: "#3b82f6",
+          borderRadius: 4
+        },
+        {
+          label: "Lateral / New Entry",
+          data: retList.map(r => r.lateral_new_students || 0),
+          backgroundColor: "#10b981",
+          borderRadius: 4
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { position: "top", labels: { boxWidth: 12 } } },
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true }
+      }
+    }
+  });
+}
+
+function refreshBatchTabCharts(tabId) {
+  if (!activeBatchAnalytics || typeof Chart === "undefined") return;
+
+  const sr = activeBatchAnalytics.success_rate_analysis || {};
+  const overall = activeBatchAnalytics.overall_summary || {};
+  const semList = activeBatchAnalytics.semester_wise_analysis || activeBatchAnalytics.semester_analysis || [];
+  const ktList = activeBatchAnalytics.kt_analysis || [];
+  const retList = activeBatchAnalytics.retention_flow || [];
+
+  requestAnimationFrame(() => {
+    if (tabId === "tabBatchSuccessRate" || !tabId) {
+      renderBatchChartIntakeGrad(sr);
+      renderBatchChartBacklogSplit(sr);
+    } else if (tabId === "tabBatchSemester") {
+      renderBatchChartSemPassTrend(semList);
+      renderBatchChartSemSgpiTrend(semList);
+    } else if (tabId === "tabBatchSummary") {
+      renderBatchChartGradeDist(overall);
+      renderBatchChartCompletionRatio(overall);
+    } else if (tabId === "tabBatchKt") {
+      renderBatchChartKtBurden(ktList);
+    } else if (tabId === "tabBatchRetention") {
+      renderBatchChartRetentionFlow(retList);
+    }
+  });
+}
+
 function renderAllBatchCharts(analytics) {
-  if (typeof Chart === "undefined") return;
-  destroyBatchCharts();
-
-  const sr = analytics.success_rate_analysis || {};
-  const overall = analytics.overall_summary || {};
-  const semList = analytics.semester_wise_analysis || analytics.semester_analysis || [];
-  const ktList = analytics.kt_analysis || [];
-  const retList = analytics.retention_flow || [];
-
-  // 1. Chart: Admission Intake vs Final Graduation by Category
-  const ctxIntake = document.getElementById("chartBatchIntakeGrad");
-  if (ctxIntake) {
-    const bd = sr.breakdown || [];
-    const labels = bd.length > 0 ? bd.map(b => b.category) : ["Regular Intake (Sem 1)", "Lateral Entry (DSE)"];
-    const admitted = bd.length > 0 ? bd.map(b => b.admitted) : [sr.regular_intake_n1 || 0, sr.lateral_entry_n3 || 0];
-    const passed = bd.length > 0 ? bd.map(b => b.passed_final) : [sr.P_final_regular || 0, sr.P_final_lateral || 0];
-    const noKt = bd.length > 0 ? bd.map(b => b.passed_no_kt) : [sr.P_no_kt_regular || 0, sr.P_no_kt_lateral || 0];
-
-    batchChartInstances.intakeGrad = new Chart(ctxIntake, {
-      type: "bar",
-      data: {
-        labels: labels,
-        datasets: [
-          { label: "Admitted Intake", data: admitted, backgroundColor: "#1F4E78", borderRadius: 4 },
-          { label: "Passed Final Sem", data: passed, backgroundColor: "#10b981", borderRadius: 4 },
-          { label: "Cleared Zero KT", data: noKt, backgroundColor: "#3b82f6", borderRadius: 4 }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { position: "top", labels: { boxWidth: 12, font: { size: 11 } } },
-          tooltip: { mode: "index", intersect: false }
-        },
-        scales: {
-          x: { grid: { display: false }, ticks: { font: { size: 10 } } },
-          y: { beginAtZero: true, grid: { color: "rgba(0,0,0,0.05)" } }
-        }
-      }
-    });
-  }
-
-  // 2. Chart: Final Graduation & Backlog Status Split
-  const ctxDonut = document.getElementById("chartBatchBacklogSplit");
-  if (ctxDonut) {
-    const pNoKt = sr.passed_without_backlogs || sr.P_no_kt_passed || 0;
-    const pWithKt = sr.passed_with_backlogs || sr.P_with_kt_passed || 0;
-    const totAdm = sr.total_admitted_n1_n3 || sr.total_cohort_intake || 0;
-    const pFinal = sr.passed_final_sem || sr.P_final_passed || 0;
-    const pending = Math.max(0, totAdm - pFinal);
-
-    batchChartInstances.backlogSplit = new Chart(ctxDonut, {
-      type: "doughnut",
-      data: {
-        labels: ["Cleared Zero KT", "Cleared With Backlogs", "Pending / Incomplete"],
-        datasets: [{
-          data: [pNoKt, pWithKt, pending],
-          backgroundColor: ["#10b981", "#f59e0b", "#94a3b8"],
-          borderWidth: 2,
-          borderColor: "#ffffff"
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { position: "right", labels: { boxWidth: 12, font: { size: 11 } } }
-        },
-        cutout: "60%"
-      }
-    });
-  }
-
-  // 3. Chart: Semester Pass Rate (%) Progression Trend
-  const ctxSemPass = document.getElementById("chartBatchSemPassTrend");
-  if (ctxSemPass && semList.length > 0) {
-    batchChartInstances.semPass = new Chart(ctxSemPass, {
-      type: "bar",
-      data: {
-        labels: semList.map(s => s.semester_name),
-        datasets: [{
-          label: "Pass Rate (%)",
-          data: semList.map(s => s.pass_percentage || 0),
-          backgroundColor: semList.map(s => (s.pass_percentage >= 75 ? "#10b981" : (s.pass_percentage >= 50 ? "#3b82f6" : "#ef4444"))),
-          borderRadius: 4
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: { callbacks: { label: (ctx) => `${ctx.raw}% Passed` } }
-        },
-        scales: {
-          x: { grid: { display: false } },
-          y: { beginAtZero: true, max: 100, ticks: { callback: v => v + "%" } }
-        }
-      }
-    });
-  }
-
-  // 4. Chart: Average SGPI Trajectory Trend
-  const ctxSemSgpi = document.getElementById("chartBatchSemSgpiTrend");
-  if (ctxSemSgpi && semList.length > 0) {
-    batchChartInstances.semSgpi = new Chart(ctxSemSgpi, {
-      type: "line",
-      data: {
-        labels: semList.map(s => s.semester_name),
-        datasets: [
-          {
-            label: "Average SGPI",
-            data: semList.map(s => s.average_sgpi || null),
-            borderColor: "#3b82f6",
-            backgroundColor: "rgba(59, 130, 246, 0.12)",
-            tension: 0.35,
-            fill: true,
-            pointRadius: 4,
-            pointBackgroundColor: "#3b82f6"
-          },
-          {
-            label: "Highest SGPI",
-            data: semList.map(s => s.highest_sgpi || null),
-            borderColor: "#f59e0b",
-            borderDash: [5, 4],
-            tension: 0.2,
-            pointRadius: 3,
-            fill: false
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { position: "top", labels: { boxWidth: 12 } }
-        },
-        scales: {
-          x: { grid: { display: false } },
-          y: { min: 4, max: 10 }
-        }
-      }
-    });
-  }
-
-  // 5. Chart: Cohort Grade Classification Distribution
-  const ctxGrade = document.getElementById("chartBatchGradeDist");
-  if (ctxGrade) {
-    const g = overall.grade_distribution || {};
-    batchChartInstances.gradeDist = new Chart(ctxGrade, {
-      type: "doughnut",
-      data: {
-        labels: ["Distinction (≥7.5)", "First Class (6.75-7.5)", "Second Class (6.0-6.75)", "Pass Class (<6.0)"],
-        datasets: [{
-          data: [g.distinction || 0, g.first_class || 0, g.second_class || 0, g.pass_class || 0],
-          backgroundColor: ["#10b981", "#3b82f6", "#f59e0b", "#94a3b8"],
-          borderWidth: 2
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { position: "right", labels: { boxWidth: 12 } } },
-        cutout: "60%"
-      }
-    });
-  }
-
-  // 6. Chart: Cohort Clearance & Backlog Distribution
-  const ctxComp = document.getElementById("chartBatchCompletionRatio");
-  if (ctxComp) {
-    batchChartInstances.completionRatio = new Chart(ctxComp, {
-      type: "bar",
-      data: {
-        labels: ["Cleared All (Zero KT)", "Encountered KT", "Graduated (Sem 8)"],
-        datasets: [{
-          label: "Students",
-          data: [
-            overall.cleared_all_available_semesters || 0,
-            overall.students_with_any_kt || 0,
-            overall.graduated_eligible || 0
-          ],
-          backgroundColor: ["#10b981", "#ef4444", "#3b82f6"],
-          borderRadius: 4
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { grid: { display: false } },
-          y: { beginAtZero: true }
-        }
-      }
-    });
-  }
-
-  // 7. Chart: Semester Backlog Burden
-  const ctxKt = document.getElementById("chartBatchKtBurden");
-  if (ctxKt && ktList.length > 0) {
-    batchChartInstances.ktBurden = new Chart(ctxKt, {
-      type: "bar",
-      data: {
-        labels: ktList.map(k => k.semester_name),
-        datasets: [
-          {
-            label: "KT Students",
-            data: ktList.map(k => k.kt_students || 0),
-            backgroundColor: "#ef4444",
-            borderRadius: 4
-          },
-          {
-            label: "KT Subjects Count",
-            data: ktList.map(k => (typeof k.total_kt_subjects === "number" ? k.total_kt_subjects : 0)),
-            backgroundColor: "#f97316",
-            borderRadius: 4
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { position: "top", labels: { boxWidth: 12 } } },
-        scales: {
-          x: { grid: { display: false } },
-          y: { beginAtZero: true }
-        }
-      }
-    });
-  }
-
-  // 8. Chart: Retention & Progression Flow
-  const ctxRet = document.getElementById("chartBatchRetentionFlow");
-  if (ctxRet && retList.length > 0) {
-    batchChartInstances.retentionFlow = new Chart(ctxRet, {
-      type: "bar",
-      data: {
-        labels: retList.map(r => r.transition),
-        datasets: [
-          {
-            label: "Continuing Students",
-            data: retList.map(r => r.continuing_students || 0),
-            backgroundColor: "#3b82f6",
-            borderRadius: 4
-          },
-          {
-            label: "Lateral / New Entry",
-            data: retList.map(r => r.lateral_new_students || 0),
-            backgroundColor: "#10b981",
-            borderRadius: 4
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { position: "top", labels: { boxWidth: 12 } } },
-        scales: {
-          x: { grid: { display: false } },
-          y: { beginAtZero: true }
-        }
-      }
-    });
+  if (typeof Chart === "undefined" || !analytics) return;
+  const secSuite = document.getElementById("secBatchAuditExcelSuite");
+  if (secSuite && !secSuite.classList.contains("hidden")) {
+    const activeTab = document.querySelector(".batch-tab-btn.active");
+    const activeTabId = activeTab ? activeTab.getAttribute("data-batch-tab") : "tabBatchSuccessRate";
+    refreshBatchTabCharts(activeTabId);
   }
 }
 
@@ -10857,7 +10905,7 @@ function renderBatchPerformanceSection(analytics, jobId) {
     if (toppers.length === 0) {
       topBody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">No multi-semester toppers identified.</td></tr>`;
     } else {
-      toppers.slice(0, 5).forEach((st, idx) => {
+      toppers.slice(0, 10).forEach((st, idx) => {
         const tr = document.createElement("tr");
         let medal = "";
         let badgeClass = "rank-badge-def";
@@ -11568,7 +11616,7 @@ function openBatchPrintPreview() {
   if (topTbody) {
     topTbody.innerHTML = "";
     const toppers = data.multi_sem_toppers || [];
-    toppers.slice(0, 5).forEach((st, idx) => {
+    toppers.slice(0, 10).forEach((st, idx) => {
       const tr = document.createElement("tr");
       let medal = "";
       if (st.rank === 1) medal = "🥇 ";

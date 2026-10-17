@@ -427,12 +427,11 @@
               <p id="batchResultMeta" class="results-meta-text">Batch Analysis Complete • Official Academic Spreadsheets Ready</p>
             </div>
             <div class="batch-actions-row">
-              <a id="btnDownloadBatchExcel" class="btn btn-primary" download title="Download official 10-sheet Academic Excel workbook" style="font-weight: 600;">
-                Export 10-Sheet Batch Excel (.xlsx)
+              <a id="btnDownloadBatchExcel" class="btn btn-primary" download title="Download official 10-sheet Academic Excel workbook" style="font-weight: 600; display: inline-flex; align-items: center; gap: 8px;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+                <span>Export 10-Sheet Batch Excel (.xlsx)</span>
               </a>
-              <a id="btnDownloadBatchJson" class="btn btn-outline" download title="Download full analytical metrics JSON" style="font-weight: 600;">
-                📑 Export Analysis JSON
-              </a>
+              <a id="btnDownloadBatchJson" class="hidden" style="display: none;"></a>
             </div>
           </div>
 
@@ -536,24 +535,23 @@
                 <span class="eda-kpi-sub" id="kpiBatchNoKtSub">0 Cleared Zero KT</span>
               </div>
               <div class="eda-kpi-card">
-                <span class="eda-kpi-label">WITH BACKLOG (P_with_kt)</span>
+                <span class="eda-kpi-label">CLEARED VIA REMEDIAL</span>
                 <strong class="eda-kpi-value text-warning" id="kpiBatchSuccessRateWithKt">0%</strong>
                 <span class="eda-kpi-sub" id="kpiBatchWithKtSub">0 Cleared Backlogs</span>
               </div>
-              <div class="eda-kpi-card">
-                <span class="eda-kpi-label">DIPLOMA INTAKE (DSE)</span>
-                <strong class="eda-kpi-value text-accent" id="kpiBatchDiploma">0</strong>
-                <span class="eda-kpi-sub">Admitted Lateral Entry</span>
+              <div class="eda-kpi-card hidden" style="display: none;">
+                <span class="eda-kpi-label">DIPLOMA INTAKE</span>
+                <strong class="eda-kpi-value" id="kpiBatchDiploma">0</strong>
               </div>
               <div class="eda-kpi-card">
                 <span class="eda-kpi-label">REGULAR SUCCESS RATE</span>
                 <strong class="eda-kpi-value text-primary" id="kpiBatchRegularRate">0%</strong>
-                <span class="eda-kpi-sub" id="kpiBatchRegularRateSub">P_reg / N1</span>
+                <span class="eda-kpi-sub" id="kpiBatchRegularRateSub">Regular Intake Completion</span>
               </div>
               <div class="eda-kpi-card">
                 <span class="eda-kpi-label">LATERAL SUCCESS RATE</span>
                 <strong class="eda-kpi-value text-accent" id="kpiBatchLateralRate">0%</strong>
-                <span class="eda-kpi-sub" id="kpiBatchLateralRateSub">P_lat / N3</span>
+                <span class="eda-kpi-sub" id="kpiBatchLateralRateSub">Direct 2nd Year Completion</span>
               </div>
             </div>
 
@@ -570,7 +568,7 @@
               </div>
               <div class="chart-box">
                 <div class="chart-header">
-                  <h4>🍩 Final Graduation &amp; Backlog Status Breakdown</h4>
+                  <h4>Graduation Clearance &amp; Backlog Status Breakdown</h4>
                   <span class="chart-tag">P_no_kt vs. P_with_kt</span>
                 </div>
                 <div class="chart-canvas-container" style="height: 270px;">
@@ -629,7 +627,7 @@
               <!-- Cohort Retention & Entry Audit -->
               <div class="eda-subtable-card">
                 <div class="subtable-header">
-                  <h4>🏛️ Cohort Intake &amp; Retention Audit</h4>
+                  <h4>Cohort Intake &amp; Retention Audit</h4>
                   <span class="subtable-badge text-primary" id="badgeBatchIntakeAudit">Verified</span>
                 </div>
                 <div class="table-responsive-mini">
@@ -698,7 +696,7 @@
               </div>
               <div class="chart-box">
                 <div class="chart-header">
-                  <h4>🎯 Average SGPI Trajectory Trend</h4>
+                  <h4>Average SGPI Trajectory Trend</h4>
                   <span class="chart-tag">Academic Scoring Mean</span>
                 </div>
                 <div class="chart-canvas-container" style="height: 260px;">
@@ -791,7 +789,7 @@
             <div class="eda-charts-grid" style="margin-top: 1.5rem; margin-bottom: 1.5rem;">
               <div class="chart-box">
                 <div class="chart-header">
-                  <h4>🎓 Cohort Grade Classification Distribution</h4>
+                  <h4>Cohort Grade Classification Distribution</h4>
                   <span class="chart-tag">Distinction to Pass Class</span>
                 </div>
                 <div class="chart-canvas-container" style="height: 270px;">
@@ -800,7 +798,7 @@
               </div>
               <div class="chart-box">
                 <div class="chart-header">
-                  <h4>⚖️ Cohort Clearance &amp; Backlog Distribution</h4>
+                  <h4>Cohort Clearance &amp; Backlog Distribution</h4>
                   <span class="chart-tag">Zero KT vs ATKT Encountered</span>
                 </div>
                 <div class="chart-canvas-container" style="height: 270px;">
@@ -909,7 +907,7 @@
           <div id="tabBatchRetention" class="batch-tab-content hidden">
             <div class="chart-box" style="margin-bottom: 1.5rem;">
               <div class="chart-header">
-                <h4>👥 Semester Retention &amp; Lateral Entry Transition Flow</h4>
+                <h4>Semester Retention &amp; Lateral Entry Transition Flow</h4>
                 <span class="chart-tag">Cohort Persistence</span>
               </div>
               <div class="chart-canvas-container" style="height: 270px;">
@@ -935,8 +933,9 @@
                 <tbody id="batchRetentionBody"></tbody>
               </table>
             </div>
-            <div class="auto-learn-notice">
-              <span>ℹ️ <strong>Mandatory Academic Rule:</strong> Do not assume that a student missing from a semester dropped out. Students may take gap years, transfer, or appear in unrecorded ATKT-specific examination ledgers.</span>
+            <div style="margin-top: 1rem; font-size: 0.82rem; display: flex; align-items: center; gap: 0.6rem; background: var(--bg-hover); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 0.75rem 1rem; color: var(--text-muted);">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; color:var(--primary);"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+              <span><strong>Academic Policy Note:</strong> Students not appearing in a semester ledger may have taken an approved gap, lateral transfer, or separate ATKT examination sitting.</span>
             </div>
           </div>
 
