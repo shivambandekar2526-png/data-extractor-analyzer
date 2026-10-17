@@ -2659,12 +2659,75 @@ function initLiveFolderActionListener() {
   }
 }
 
+// Refresh Settings View Cloud AI Status Card
+async function refreshSettingsCloudStatus() {
+  try {
+    const res = await fetch("/api/cloud/config");
+    const data = await res.json();
+    if (!data) return;
+
+    const dot = document.getElementById("settingsCloudDot");
+    const title = document.getElementById("settingsCloudTitle");
+    const sub = document.getElementById("settingsCloudSubtitle");
+    const badge = document.getElementById("settingsCloudBadge");
+    const masked = data.masked_keys || {};
+    const configuredCount = Object.values(masked).filter(v => v && v.trim()).length;
+
+    if (data.is_configured && configuredCount > 0) {
+      if (dot) dot.className = "status-dot green";
+      const activeName = (data.locked_model ? data.locked_model.provider : data.provider).toUpperCase();
+      const activeMod = (data.locked_model ? data.locked_model.model : data.model);
+      if (title) title.textContent = `Active Engine: ${activeName} (${activeMod})`;
+      const activeKeyPreview = data.keys_summary && data.keys_summary[data.provider.toLowerCase()] ? data.keys_summary[data.provider.toLowerCase()].preview : "";
+      if (sub) sub.textContent = `Key Active (${activeKeyPreview || "Stored"}) • ${configuredCount} of 6 Providers Ready`;
+      if (badge) {
+        badge.className = "tag tag-accent";
+        badge.textContent = `${configuredCount} Active`;
+      }
+    } else {
+      if (dot) dot.className = "status-dot gray";
+      if (title) title.textContent = "Cloud AI: No Keys Configured";
+      if (sub) sub.textContent = "Add at least one API key to enable multi-provider cloud cross-checking.";
+      if (badge) {
+        badge.className = "tag";
+        badge.textContent = "Offline";
+      }
+    }
+
+    // Update mini provider pills on Settings page
+    const provList = [
+      { id: "gemini", label: "Gemini", el: document.getElementById("pillProvGemini") },
+      { id: "groq", label: "Groq", el: document.getElementById("pillProvGroq") },
+      { id: "anthropic", label: "Claude", el: document.getElementById("pillProvAnthropic") },
+      { id: "openai", label: "OpenAI", el: document.getElementById("pillProvOpenai") },
+      { id: "deepseek", label: "DeepSeek", el: document.getElementById("pillProvDeepseek") },
+      { id: "openrouter", label: "OpenRouter", el: document.getElementById("pillProvOpenrouter") }
+    ];
+
+    provList.forEach(p => {
+      if (!p.el) return;
+      const mask = masked[p.id];
+      if (mask && mask.trim()) {
+        p.el.className = "prov-pill active";
+        p.el.innerHTML = `${p.label}: <strong>● Stored (${escapeHtml(mask)})</strong>`;
+      } else {
+        p.el.className = "prov-pill empty";
+        p.el.innerHTML = `${p.label}: <span>○ No Key</span>`;
+      }
+    });
+  } catch (err) {
+    console.error("Error refreshing settings cloud status:", err);
+  }
+}
+
 // Settings View Controller
 function initSettingsView() {
   const modelSelect = document.getElementById("settingsModelSelect");
   const topModelSelector = document.getElementById("modelSelector");
   const btnCloudModal = document.getElementById("btnOpenCloudModalFromSettings");
   const btnThemeToggle = document.getElementById("btnThemeToggleSettings");
+  const btnQuickTest = document.getElementById("btnQuickTestCloudSettings");
+  const quickAlert = document.getElementById("settingsCloudQuickAlert");
 
   if (modelSelect && !modelSelect.dataset.bound) {
     modelSelect.dataset.bound = "true";
@@ -2700,8 +2763,49 @@ function initSettingsView() {
   if (btnCloudModal && !btnCloudModal.dataset.bound) {
     btnCloudModal.dataset.bound = "true";
     btnCloudModal.addEventListener("click", () => {
-      const modal = document.getElementById("cloudModalOverlay");
-      if (modal) modal.classList.remove("hidden");
+      if (typeof openCloudModal === "function") {
+        openCloudModal();
+      } else {
+        const modal = document.getElementById("cloudModalOverlay");
+        if (modal) modal.classList.remove("hidden");
+        if (typeof loadCloudConfig === "function") loadCloudConfig();
+      }
+    });
+  }
+
+  if (btnQuickTest && !btnQuickTest.dataset.bound) {
+    btnQuickTest.dataset.bound = "true";
+    btnQuickTest.addEventListener("click", async () => {
+      btnQuickTest.disabled = true;
+      const origHtml = btnQuickTest.innerHTML;
+      btnQuickTest.innerHTML = "<span>⏳ Testing...</span>";
+      if (quickAlert) {
+        quickAlert.className = "settings-inline-alert info";
+        quickAlert.textContent = "Testing active Cloud AI connection...";
+        quickAlert.classList.remove("hidden");
+      }
+      try {
+        const res = await fetch("/api/cloud/test", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider: "active" })
+        });
+        const d = await res.json();
+        if (quickAlert) {
+          quickAlert.className = d.success ? "settings-inline-alert success" : "settings-inline-alert error";
+          quickAlert.textContent = d.message;
+        }
+      } catch (e) {
+        if (quickAlert) {
+          quickAlert.className = "settings-inline-alert error";
+          quickAlert.textContent = `Network error: ${e.message}`;
+        }
+      } finally {
+        btnQuickTest.disabled = false;
+        btnQuickTest.innerHTML = origHtml;
+        refreshSettingsCloudStatus();
+        initStatus();
+      }
     });
   }
 
@@ -2712,6 +2816,8 @@ function initSettingsView() {
       if (themeBtn) themeBtn.click();
     });
   }
+
+  refreshSettingsCloudStatus();
 }
 
 // 1. Status Polling & Model Switcher
@@ -7331,6 +7437,21 @@ function appendChatMessage(sender, htmlContent, isTemp = false) {
 }
 
 // 10. Cloud AI & Hybrid Routing Setup Modal
+let globalLoadCloudConfig = null;
+
+function openCloudModal() {
+  const modalOverlay = document.getElementById("cloudModalOverlay");
+  const testAlert = document.getElementById("cloudTestAlert");
+  if (testAlert) {
+    testAlert.className = "alert-box hidden";
+    testAlert.textContent = "";
+  }
+  if (typeof globalLoadCloudConfig === "function") {
+    globalLoadCloudConfig();
+  }
+  if (modalOverlay) modalOverlay.classList.remove("hidden");
+}
+
 async function initCloudModal() {
   const modalOverlay = document.getElementById("cloudModalOverlay");
   const openBtn = document.getElementById("btnOpenCloudModal");
@@ -7370,12 +7491,13 @@ async function initCloudModal() {
   const lockedModelSubtitle = document.getElementById("lockedModelSubtitle");
   const lockedModelBadge = document.getElementById("lockedModelBadge");
 
+  const clearedKeys = new Set();
+
   const providerModels = {
     groq: [
       { id: "openai/gpt-oss-120b", label: "openai/gpt-oss-120b (Recommended - 120B Flagship)" },
       { id: "qwen/qwen3.8-27b", label: "qwen/qwen3.8-27b (Fast 27B Reasoning)" },
-      { id: "openai/gpt-oss-20b", label: "openai/gpt-oss-20b (Lightweight 20B)" },
-      { id: "allam-2-7b", label: "allam-2-7b (7B Multilingual)" }
+      { id: "openai/gpt-oss-20b", label: "openai/gpt-oss-20b (Lightweight 20B)" }
     ],
     gemini: [
       { id: "gemini-flash-latest", label: "gemini-flash-latest (Recommended - Fast & High Quota)" },
@@ -7450,7 +7572,7 @@ async function initCloudModal() {
       const input = document.getElementById(targetId);
       if (!input) return;
       input.type = input.type === "password" ? "text" : "password";
-      btn.textContent = input.type === "password" ? "👁️" : "🔒";
+      btn.classList.toggle("active", input.type === "text");
     });
   });
 
@@ -7491,27 +7613,49 @@ async function initCloudModal() {
     }
   }
 
-  function updateKeyBadges(maskedKeys = {}) {
+  function updateKeyPresenceIndicators(maskedKeys = {}) {
     const list = [
-      { id: "groq", badge: groqKeyBadge },
-      { id: "gemini", badge: geminiKeyBadge },
-      { id: "openrouter", badge: openrouterKeyBadge },
-      { id: "openai", badge: openaiKeyBadge },
-      { id: "anthropic", badge: anthropicKeyBadge },
-      { id: "deepseek", badge: deepseekKeyBadge }
+      { id: "gemini", badge: geminiKeyBadge, input: geminiKeyInput, hint: document.getElementById("hintGemini"), card: document.getElementById("cardProvGemini") },
+      { id: "groq", badge: groqKeyBadge, input: groqKeyInput, hint: document.getElementById("hintGroq"), card: document.getElementById("cardProvGroq") },
+      { id: "anthropic", badge: anthropicKeyBadge, input: anthropicKeyInput, hint: document.getElementById("hintAnthropic"), card: document.getElementById("cardProvAnthropic") },
+      { id: "openai", badge: openaiKeyBadge, input: openaiKeyInput, hint: document.getElementById("hintOpenai"), card: document.getElementById("cardProvOpenai") },
+      { id: "deepseek", badge: deepseekKeyBadge, input: deepseekKeyInput, hint: document.getElementById("hintDeepseek"), card: document.getElementById("cardProvDeepseek") },
+      { id: "openrouter", badge: openrouterKeyBadge, input: openrouterKeyInput, hint: document.getElementById("hintOpenrouter"), card: document.getElementById("cardProvOpenrouter") }
     ];
 
     let configuredCount = 0;
     list.forEach(item => {
-      if (!item.badge) return;
       const mask = maskedKeys[item.id];
+      const clearBtn = item.card ? item.card.querySelector(".btn-clear-key-inline") : null;
       if (mask && mask.trim()) {
         configuredCount++;
-        item.badge.className = "key-status-badge configured";
-        item.badge.textContent = `🟢 Saved (${mask})`;
+        if (item.badge) {
+          item.badge.className = "key-status-badge configured";
+          item.badge.innerHTML = `● Key Stored &amp; Active (<strong>${escapeHtml(mask)}</strong>)`;
+        }
+        if (item.input) {
+          item.input.placeholder = "Key securely stored. Enter new key only to replace or add to pool.";
+          item.input.classList.add("has-stored-key");
+        }
+        if (item.hint) {
+          item.hint.className = "key-hint-text success";
+          item.hint.textContent = "✓ Key securely stored in configuration. Verified for autonomous failover.";
+        }
+        if (clearBtn) clearBtn.disabled = false;
       } else {
-        item.badge.className = "key-status-badge missing";
-        item.badge.textContent = "⚪ Not set";
+        if (item.badge) {
+          item.badge.className = "key-status-badge missing";
+          item.badge.innerHTML = "○ No Key Stored";
+        }
+        if (item.input) {
+          item.input.placeholder = "Enter API key (or paste comma-separated key pool)";
+          item.input.classList.remove("has-stored-key");
+        }
+        if (item.hint) {
+          item.hint.className = "key-hint-text";
+          item.hint.textContent = "No key entered yet.";
+        }
+        if (clearBtn) clearBtn.disabled = true;
       }
     });
 
@@ -7567,7 +7711,7 @@ async function initCloudModal() {
     toggleCustomModelBtn.addEventListener("click", () => {
       const isHidden = customModelWrapper.style.display === "none";
       customModelWrapper.style.display = isHidden ? "block" : "none";
-      toggleCustomModelBtn.textContent = isHidden ? "📋 Use Preset Dropdown" : "✏️ Custom Model ID";
+      toggleCustomModelBtn.textContent = isHidden ? "Use Preset Dropdown" : "Custom Model ID";
       if (isHidden && modelInput) modelInput.focus();
     });
   }
@@ -7581,6 +7725,7 @@ async function initCloudModal() {
   // Load current cloud config from server
   async function loadCloudConfig() {
     try {
+      clearedKeys.clear();
       const res = await fetch("/api/cloud/config");
       const data = await res.json();
       if (!data) return;
@@ -7603,22 +7748,17 @@ async function initCloudModal() {
       }
 
       updateLockedBanner(data);
-      updateKeyBadges(data.masked_keys || {});
-      await updateProviderUI(providerSelect ? providerSelect.value : "groq", data.model);
+      updateKeyPresenceIndicators(data.masked_keys || {});
+      await updateProviderUI(providerSelect ? providerSelect.value : (data.provider || "gemini"), data.model);
     } catch (e) {
       console.error("Failed to fetch cloud config:", e);
     }
   }
 
+  globalLoadCloudConfig = loadCloudConfig;
+
   if (openBtn) {
-    openBtn.addEventListener("click", () => {
-      if (testAlert) {
-        testAlert.classList.add("hidden");
-        testAlert.textContent = "";
-      }
-      loadCloudConfig();
-      modalOverlay.classList.remove("hidden");
-    });
+    openBtn.addEventListener("click", openCloudModal);
   }
 
   function closeModal() {
@@ -7645,38 +7785,72 @@ async function initCloudModal() {
     return "default";
   }
 
-  // Inline Key Test Buttons (⚡ Test Key per provider without saving)
+  // Provider Maps
   const providerInputMap = {
-    groq: groqKeyInput,
     gemini: geminiKeyInput,
-    openai: openaiKeyInput,
+    groq: groqKeyInput,
     anthropic: anthropicKeyInput,
+    openai: openaiKeyInput,
     deepseek: deepseekKeyInput,
     openrouter: openrouterKeyInput
   };
 
   const providerBadgeMap = {
-    groq: groqKeyBadge,
     gemini: geminiKeyBadge,
-    openai: openaiKeyBadge,
+    groq: groqKeyBadge,
     anthropic: anthropicKeyBadge,
+    openai: openaiKeyBadge,
     deepseek: deepseekKeyBadge,
     openrouter: openrouterKeyBadge
   };
 
+  // Typing in key inputs -> Mark badge as pending unsaved
+  Object.entries(providerInputMap).forEach(([prov, inputEl]) => {
+    if (!inputEl) return;
+    inputEl.addEventListener("input", () => {
+      const badge = providerBadgeMap[prov];
+      const val = inputEl.value.trim();
+      if (val) {
+        clearedKeys.delete(prov);
+        if (badge) {
+          badge.className = "key-status-badge pending";
+          badge.innerHTML = "🟡 Unsaved Key (Click Save to store)";
+        }
+      }
+    });
+  });
+
+  // Clear Key buttons
+  document.querySelectorAll(".btn-clear-key-inline").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const prov = btn.getAttribute("data-provider");
+      const inputEl = providerInputMap[prov];
+      const badge = providerBadgeMap[prov];
+      const hint = document.getElementById(`hint${prov.charAt(0).toUpperCase() + prov.slice(1)}`);
+
+      if (inputEl) {
+        inputEl.value = "";
+        inputEl.placeholder = "Key marked for deletion. Click Save to confirm.";
+        inputEl.classList.remove("has-stored-key");
+      }
+      clearedKeys.add(prov);
+      if (badge) {
+        badge.className = "key-status-badge cleared";
+        badge.innerHTML = "○ Key Removed (Click Save to wipe)";
+      }
+      if (hint) {
+        hint.className = "key-hint-text warning";
+        hint.textContent = "Key marked for removal. Click 'Save Keys & Settings' to wipe from disk.";
+      }
+      btn.disabled = true;
+    });
+  });
+
+  // Inline Key Test Buttons (Tests live key if entered, or saved key on server)
   const inlineTestBtns = document.querySelectorAll(".btn-test-key-inline");
   inlineTestBtns.forEach(btn => {
     const prov = btn.getAttribute("data-provider");
     const inputEl = providerInputMap[prov];
-
-    // Reset button state when user edits key
-    if (inputEl) {
-      inputEl.addEventListener("input", () => {
-        btn.className = "btn-test-key-inline";
-        btn.disabled = false;
-        btn.innerHTML = "<span>⚡ Test Key</span>";
-      });
-    }
 
     btn.addEventListener("click", async () => {
       const liveKey = inputEl ? inputEl.value.trim() : "";
@@ -7688,7 +7862,7 @@ async function initCloudModal() {
 
       if (testAlert) {
         testAlert.className = "alert-box info";
-        testAlert.textContent = `Testing ${prov.toUpperCase()} connection with live key...`;
+        testAlert.textContent = `Testing ${prov.toUpperCase()} connection...`;
         testAlert.classList.remove("hidden");
       }
 
@@ -7708,8 +7882,8 @@ async function initCloudModal() {
           btn.className = "btn-test-key-inline success";
           btn.innerHTML = "<span>✓ Valid</span>";
           if (badge) {
-            badge.className = "key-status-badge success";
-            badge.textContent = "✓ Verified";
+            badge.className = "key-status-badge configured";
+            badge.innerHTML = `● Key Verified Active`;
           }
           if (testAlert) {
             testAlert.className = "alert-box success";
@@ -7719,10 +7893,6 @@ async function initCloudModal() {
         } else {
           btn.className = "btn-test-key-inline error";
           btn.innerHTML = "<span>✗ Failed</span>";
-          if (badge) {
-            badge.className = "key-status-badge error";
-            badge.textContent = "✗ Failed";
-          }
           if (testAlert) {
             testAlert.className = "alert-box error";
             testAlert.textContent = `✗ ${result.message}`;
@@ -7740,11 +7910,9 @@ async function initCloudModal() {
       } finally {
         btn.disabled = false;
         setTimeout(() => {
-          if (btn.classList.contains("success") || btn.classList.contains("error")) {
-            btn.className = "btn-test-key-inline";
-            btn.innerHTML = "<span>⚡ Test Key</span>";
-          }
-        }, 5000);
+          btn.className = "btn-test-key-inline";
+          btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> <span>Test Key</span>`;
+        }, 4000);
       }
     });
   });
@@ -7781,35 +7949,6 @@ async function initCloudModal() {
 
         if (data.success && data.report) {
           const rep = data.report;
-          const updateBadgeHelper = (badge, repProv, provName) => {
-            if (!badge || !repProv) return;
-            const inlineBtn = document.querySelector(`.btn-test-key-inline[data-provider="${provName}"]`);
-            if (repProv.success) {
-              badge.className = "key-status-badge success";
-              badge.textContent = repProv.key_count > 1
-                ? `✓ Active (${repProv.latency_ms}ms, ${repProv.key_count} keys)`
-                : `✓ Active (${repProv.latency_ms}ms)`;
-              if (inlineBtn) {
-                inlineBtn.className = "btn-test-key-inline success";
-                inlineBtn.innerHTML = "<span>✓ Valid</span>";
-              }
-            } else if (repProv.configured) {
-              badge.className = "key-status-badge error";
-              badge.textContent = `✗ ${repProv.message.slice(0, 24)}`;
-              if (inlineBtn) {
-                inlineBtn.className = "btn-test-key-inline error";
-                inlineBtn.innerHTML = "<span>✗ Failed</span>";
-              }
-            } else {
-              badge.className = "key-status-badge missing";
-              badge.textContent = "⚪ No key";
-              if (inlineBtn) {
-                inlineBtn.className = "btn-test-key-inline";
-                inlineBtn.innerHTML = "<span>⚡ Test Key</span>";
-              }
-            }
-          };
-
           const updateDiagCard = (cardId, statusId, latencyId, repProv) => {
             const card = document.getElementById(cardId);
             const statusEl = document.getElementById(statusId);
@@ -7829,18 +7968,11 @@ async function initCloudModal() {
               latEl.style.color = "#34D399";
             } else {
               card.className = "diag-card error";
-              statusEl.textContent = "Failed";
+              statusEl.textContent = "Rate Limited / Failed";
               latEl.textContent = "Error";
               latEl.style.color = "#F87171";
             }
           };
-
-          updateBadgeHelper(groqKeyBadge, rep.groq, "groq");
-          updateBadgeHelper(geminiKeyBadge, rep.gemini, "gemini");
-          updateBadgeHelper(openrouterKeyBadge, rep.openrouter, "openrouter");
-          updateBadgeHelper(openaiKeyBadge, rep.openai, "openai");
-          updateBadgeHelper(anthropicKeyBadge, rep.anthropic, "anthropic");
-          updateBadgeHelper(deepseekKeyBadge, rep.deepseek, "deepseek");
 
           updateDiagCard("diagGroqCard", "diagGroqStatus", "diagGroqLatency", rep.groq);
           updateDiagCard("diagGeminiCard", "diagGeminiStatus", "diagGeminiLatency", rep.gemini);
@@ -7859,22 +7991,8 @@ async function initCloudModal() {
               testAlert.textContent = `✓ Multi-Provider Probe Complete! Locked onto fastest working model: ${rep.best_locked_model.provider.toUpperCase()} (${rep.best_locked_model.model})`;
             } else {
               testAlert.className = "alert-box warning";
-              testAlert.textContent = "Probe finished, but no candidate models passed validation. Please verify your keys.";
+              testAlert.textContent = "Probe finished. Please verify your keys.";
             }
-          }
-
-          setTimeout(() => {
-            document.querySelectorAll(".btn-test-key-inline").forEach(b => {
-              if (b.classList.contains("success") || b.classList.contains("error")) {
-                b.className = "btn-test-key-inline";
-                b.innerHTML = "<span>⚡ Test Key</span>";
-              }
-            });
-          }, 6000);
-        } else {
-          if (testAlert) {
-            testAlert.className = "alert-box error";
-            testAlert.textContent = `Probe failed: ${data.error || "Unknown server response"}`;
           }
         }
       } catch (err) {
@@ -7897,18 +8015,16 @@ async function initCloudModal() {
         testAlert.textContent = "";
       }
       testBtn.disabled = true;
-      testBtn.textContent = "⚡ Testing...";
+      testBtn.innerHTML = "<span>⏳ Testing Active Engine...</span>";
 
       try {
         const effectiveModel = getEffectiveModel();
-        const curProv = providerSelect ? providerSelect.value : "groq";
+        const isAuto = autoOrchestrateCheck ? autoOrchestrateCheck.checked : true;
+        const curProv = isAuto ? "active" : (providerSelect ? providerSelect.value : "active");
         let testKey = "";
-        if (curProv === "groq" && groqKeyInput) testKey = groqKeyInput.value.trim();
-        else if (curProv === "gemini" && geminiKeyInput) testKey = geminiKeyInput.value.trim();
-        else if (curProv === "openrouter" && openrouterKeyInput) testKey = openrouterKeyInput.value.trim();
-        else if (curProv === "openai" && openaiKeyInput) testKey = openaiKeyInput.value.trim();
-        else if (curProv === "anthropic" && anthropicKeyInput) testKey = anthropicKeyInput.value.trim();
-        else if (curProv === "deepseek" && deepseekKeyInput) testKey = deepseekKeyInput.value.trim();
+        if (curProv !== "active" && providerInputMap[curProv]) {
+          testKey = providerInputMap[curProv].value.trim();
+        }
 
         const payload = {
           provider: curProv,
@@ -7941,7 +8057,7 @@ async function initCloudModal() {
         }
       } finally {
         testBtn.disabled = false;
-        testBtn.textContent = "⚡ Test Active AI";
+        testBtn.innerHTML = `<span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg></span> <span>Test Active AI</span>`;
       }
     });
   }
@@ -7957,31 +8073,20 @@ async function initCloudModal() {
         const effectiveModel = getEffectiveModel();
         const payload = {
           auto_orchestrate: autoOrchestrateCheck ? autoOrchestrateCheck.checked : true,
-          provider: providerSelect ? providerSelect.value : "groq",
+          provider: providerSelect ? providerSelect.value : "gemini",
           model: effectiveModel,
           routing_mode: routingSelect ? routingSelect.value : "auto_hybrid",
           custom_base_url: customUrlInput ? customUrlInput.value.trim() : "",
+          clear_keys: Array.from(clearedKeys),
           api_keys: {}
         };
 
-        if (groqKeyInput && groqKeyInput.value.trim()) {
-          payload.api_keys.groq = groqKeyInput.value.trim();
-        }
-        if (geminiKeyInput && geminiKeyInput.value.trim()) {
-          payload.api_keys.gemini = geminiKeyInput.value.trim();
-        }
-        if (openrouterKeyInput && openrouterKeyInput.value.trim()) {
-          payload.api_keys.openrouter = openrouterKeyInput.value.trim();
-        }
-        if (openaiKeyInput && openaiKeyInput.value.trim()) {
-          payload.api_keys.openai = openaiKeyInput.value.trim();
-        }
-        if (anthropicKeyInput && anthropicKeyInput.value.trim()) {
-          payload.api_keys.anthropic = anthropicKeyInput.value.trim();
-        }
-        if (deepseekKeyInput && deepseekKeyInput.value.trim()) {
-          payload.api_keys.deepseek = deepseekKeyInput.value.trim();
-        }
+        if (geminiKeyInput && geminiKeyInput.value.trim()) payload.api_keys.gemini = geminiKeyInput.value.trim();
+        if (groqKeyInput && groqKeyInput.value.trim()) payload.api_keys.groq = groqKeyInput.value.trim();
+        if (openrouterKeyInput && openrouterKeyInput.value.trim()) payload.api_keys.openrouter = openrouterKeyInput.value.trim();
+        if (openaiKeyInput && openaiKeyInput.value.trim()) payload.api_keys.openai = openaiKeyInput.value.trim();
+        if (anthropicKeyInput && anthropicKeyInput.value.trim()) payload.api_keys.anthropic = anthropicKeyInput.value.trim();
+        if (deepseekKeyInput && deepseekKeyInput.value.trim()) payload.api_keys.deepseek = deepseekKeyInput.value.trim();
 
         const res = await fetch("/api/cloud/config", {
           method: "POST",
@@ -7991,6 +8096,7 @@ async function initCloudModal() {
         const data = await res.json();
 
         if (data.success) {
+          clearedKeys.clear();
           if (groqKeyInput) groqKeyInput.value = "";
           if (geminiKeyInput) geminiKeyInput.value = "";
           if (openrouterKeyInput) openrouterKeyInput.value = "";
@@ -7999,7 +8105,8 @@ async function initCloudModal() {
           if (deepseekKeyInput) deepseekKeyInput.value = "";
 
           closeModal();
-          initStatus(); // refresh header status badge
+          initStatus(); // refresh top bar status
+          refreshSettingsCloudStatus(); // refresh settings card
 
           const activeInfo = data.config && data.config.locked_model
             ? `${data.config.locked_model.provider.toUpperCase()} (${data.config.locked_model.model})`

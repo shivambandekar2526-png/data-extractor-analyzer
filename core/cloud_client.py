@@ -227,16 +227,30 @@ class CloudClient:
         """Save updated multi-provider configuration to disk."""
         os.makedirs(CONFIG_DIR, exist_ok=True)
 
+        # Clear specified keys
+        if "clear_keys" in new_cfg and isinstance(new_cfg["clear_keys"], list):
+            for p in new_cfg["clear_keys"]:
+                self.config["api_keys"].pop(str(p).lower(), None)
+
         if "api_keys" in new_cfg and isinstance(new_cfg["api_keys"], dict):
             for p, k in new_cfg["api_keys"].items():
-                if isinstance(k, str) and k.strip():
-                    self.config["api_keys"][p.lower()] = k.strip()
+                p_key = p.lower()
+                if k == "__CLEAR__" or (isinstance(k, str) and k == ""):
+                    # Explicit clear
+                    if p_key in new_cfg.get("clear_keys", []):
+                        self.config["api_keys"].pop(p_key, None)
+                elif isinstance(k, str) and k.strip():
+                    self.config["api_keys"][p_key] = k.strip()
                 elif isinstance(k, list):
-                    self.config["api_keys"][p.lower()] = [str(item).strip() for item in k if str(item).strip()]
+                    cleaned = [str(item).strip() for item in k if str(item).strip()]
+                    if cleaned:
+                        self.config["api_keys"][p_key] = cleaned
+                    elif p_key in new_cfg.get("clear_keys", []):
+                        self.config["api_keys"].pop(p_key, None)
 
         # Support single api_key update
         if "api_key" in new_cfg and isinstance(new_cfg["api_key"], str):
-            prov = new_cfg.get("provider", self.config.get("provider", "groq")).lower()
+            prov = new_cfg.get("provider", self.config.get("provider", "gemini")).lower()
             if new_cfg["api_key"].strip():
                 self.config["api_keys"][prov] = new_cfg["api_key"].strip()
 
@@ -245,14 +259,14 @@ class CloudClient:
                 self.config[k] = new_cfg[k]
 
         # Sync primary api_key field for backward compatibility
-        cur_prov = self.config.get("provider", "groq").lower()
+        cur_prov = self.config.get("provider", "gemini").lower()
         self.config["api_key"] = self.get_api_key(cur_prov)
 
         # If user explicitly changed provider/model, update the locked model
         if "provider" in new_cfg or "model" in new_cfg:
             CloudClient._locked_model = {
-                "provider": self.config.get("provider", "groq"),
-                "model": self.config.get("model", "openai/gpt-oss-120b")
+                "provider": self.config.get("provider", "gemini"),
+                "model": self.config.get("model", "gemini-flash-latest")
             }
 
         try:
@@ -711,14 +725,35 @@ class CloudClient:
         model: Optional[str] = None
     ) -> Tuple[bool, str]:
         """Test API key validity and remote connectivity for a given or currently active model."""
-        prov = (provider or self.config.get("provider", "groq")).lower()
-        key = (api_key or self.get_api_key(prov)).strip()
-        if model:
-            mod = model
-        elif prov == self.config.get("provider", "").lower() and self.config.get("model"):
-            mod = self.config.get("model")
+        # Auto-resolve active provider if None or 'active'
+        if not provider or provider == "active":
+            if CloudClient._locked_model and self.get_api_key(CloudClient._locked_model.get("provider")):
+                prov = CloudClient._locked_model["provider"].lower()
+                mod = model or CloudClient._locked_model.get("model")
+            elif self.is_configured():
+                best = self.get_best_working_model()
+                prov = best.get("provider", self.config.get("provider", "gemini")).lower()
+                mod = model or best.get("model")
+            else:
+                prov = self.config.get("provider", "gemini").lower()
+                mod = model or self.config.get("model")
         else:
-            mod = DEFAULT_PROVIDERS.get(prov, {}).get("default_model", "")
+            prov = provider.lower()
+            if model:
+                mod = model
+            elif prov == self.config.get("provider", "").lower() and self.config.get("model"):
+                mod = self.config.get("model")
+            else:
+                mod = DEFAULT_PROVIDERS.get(prov, {}).get("default_model", "")
+
+        key = (api_key or self.get_api_key(prov)).strip()
+        if not key and prov != "custom":
+            # If specified provider has no key, check if any configured provider exists
+            if (not provider or provider == "active") and self.is_configured():
+                best = self.get_best_working_model()
+                prov = best.get("provider", "gemini").lower()
+                mod = best.get("model")
+                key = self.get_api_key(prov).strip()
 
         if not key and prov != "custom":
             return False, f"No API key provided for {prov.upper()}."

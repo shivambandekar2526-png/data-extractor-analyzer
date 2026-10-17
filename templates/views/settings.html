@@ -36,19 +36,52 @@
       <section class="card settings-card">
         <div class="card-header">
           <h2>Cloud AI &amp; Hybrid Orchestrator</h2>
-          <span class="tag">Multi-Provider</span>
+          <span class="tag" id="settingsCloudBadge">Multi-Provider</span>
         </div>
-        <p class="settings-card-desc">Configure multi-provider failover pools across Groq, Gemini, Claude, DeepSeek, OpenAI, and OpenRouter.</p>
-        <div class="settings-control-row" style="margin-top: 1rem;">
-          <button type="button" id="btnOpenCloudModalFromSettings" class="btn btn-primary btn-sm" style="width: 100%;">
+        <p class="settings-card-desc">Configure multi-provider failover pools across Google Gemini, Groq, Claude, DeepSeek, OpenAI, and OpenRouter.</p>
+        
+        <!-- Live Status & Key Presence Banner -->
+        <div class="settings-cloud-status-banner" id="settingsCloudStatusBanner">
+          <div class="cloud-status-indicator-row">
+            <span class="status-dot gray" id="settingsCloudDot"></span>
+            <div class="cloud-status-text-wrap">
+              <strong id="settingsCloudTitle">Checking Cloud AI Status...</strong>
+              <span class="cloud-status-sub" id="settingsCloudSubtitle">Detecting configured API keys &amp; active engines</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Provider Key Presence Badges -->
+        <div class="settings-provider-pills-row" id="settingsProviderPillsRow">
+          <span class="prov-pill" id="pillProvGemini" data-prov="gemini">Gemini: <em>Checking...</em></span>
+          <span class="prov-pill" id="pillProvGroq" data-prov="groq">Groq: <em>Checking...</em></span>
+          <span class="prov-pill" id="pillProvAnthropic" data-prov="anthropic">Claude: <em>Checking...</em></span>
+          <span class="prov-pill" id="pillProvOpenai" data-prov="openai">OpenAI: <em>Checking...</em></span>
+          <span class="prov-pill" id="pillProvDeepseek" data-prov="deepseek">DeepSeek: <em>Checking...</em></span>
+          <span class="prov-pill" id="pillProvOpenrouter" data-prov="openrouter">OpenRouter: <em>Checking...</em></span>
+        </div>
+
+        <!-- Action Row -->
+        <div class="settings-control-row settings-actions-dual" style="margin-top: 1rem;">
+          <button type="button" id="btnOpenCloudModalFromSettings" class="btn btn-primary btn-sm flex-1">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
             </svg>
-            <span>Configure Cloud Keys &amp; Routing Rules</span>
+            <span>Configure Keys &amp; Routing</span>
+          </button>
+          <button type="button" id="btnQuickTestCloudSettings" class="btn btn-secondary btn-sm" title="Quickly test active Cloud AI connection">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+            <span>Test Connection</span>
           </button>
         </div>
-        <div class="settings-info-box" style="margin-top: 1rem;">
-          <span>6 Providers Supported • Auto-Rotation on HTTP 429 • Session Stickiness</span>
+
+        <!-- Quick Test Feedback Alert -->
+        <div id="settingsCloudQuickAlert" class="settings-inline-alert hidden"></div>
+
+        <div class="settings-info-box" style="margin-top: 0.85rem;">
+          <span id="settingsCloudFooterInfo">6 Providers Supported • Auto-Rotation on HTTP 429 • Session Stickiness</span>
         </div>
       </section>
 

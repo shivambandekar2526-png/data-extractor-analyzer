@@ -1,14 +1,19 @@
+    <!-- Cloud AI & Multi-Engine Hybrid Orchestrator Setup Modal -->
     <div id="cloudModalOverlay" class="modal-overlay hidden">
       <div class="modal-card cloud-modal-card">
         <div class="modal-header cloud-modal-header">
           <div class="modal-header-left">
-            <div class="modal-header-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg></div>
+            <div class="modal-header-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
+              </svg>
+            </div>
             <div class="modal-title-group">
               <div class="modal-title-row">
-                <h3 class="modal-title">Cloud AI &amp; Multi-Engine Orchestrator</h3>
-                <span class="badge-modal-tag">Enterprise</span>
+                <h3 class="modal-title">Cloud AI &amp; Hybrid Orchestrator</h3>
+                <span class="badge-modal-tag" id="cloudModalHeaderBadge">Zero-Downtime</span>
               </div>
-              <p class="modal-subtitle">Configure multi-provider keys, 429 zero-downtime rotation pools, and auto-stickiness routing.</p>
+              <p class="modal-subtitle">Configure multi-provider API keys, auto-rotation on HTTP 429, and intelligent task routing.</p>
             </div>
           </div>
           <button type="button" id="btnCloseCloudModal" class="modal-close-btn" title="Close (Esc)">&times;</button>
@@ -29,7 +34,10 @@
             </div>
             <div class="orchestrator-banner-right">
               <button type="button" id="btnProbeAllKeys" class="btn-sm btn-outline-glow" title="Probe all keys with live pings across providers">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> <span>Probe All Keys</span>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                </svg>
+                <span>Probe All Keys</span>
               </button>
               <span class="orchestrator-badge" id="lockedModelBadge">READY</span>
             </div>
@@ -38,16 +46,32 @@
           <!-- Segmented Tab Navigation Bar -->
           <div class="cloud-tabs-nav" role="tablist">
             <button type="button" class="cloud-tab-btn active" data-target-panel="cloudTabPanelKeys" role="tab">
-              <span class="tab-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-1.5 1.5L14 9l-1.5-1.5L11 9l-1.5-1.5L8 9l-1.5-1.5L5 9l-1.5-1.5L2 9l6 6 1.5-1.5L11 15l1.5-1.5L14 15l1.5-1.5L17 15l4-4-2-2"></path><circle cx="7.5" cy="16.5" r="3.5"></circle></svg></span>
+              <span class="tab-icon">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 2l-2 2m-1.5 1.5L14 9l-1.5-1.5L11 9l-1.5-1.5L8 9l-1.5-1.5L5 9l-1.5-1.5L2 9l6 6 1.5-1.5L11 15l1.5-1.5L14 15l1.5-1.5L17 15l4-4-2-2"></path>
+                  <circle cx="7.5" cy="16.5" r="3.5"></circle>
+                </svg>
+              </span>
               <span class="tab-label">Provider Keys &amp; Pools</span>
-              <span class="tab-count-pill">5 Providers</span>
+              <span class="tab-count-pill" id="tabPillKeysCount">6 Providers</span>
             </button>
             <button type="button" class="cloud-tab-btn" data-target-panel="cloudTabPanelRouting" role="tab">
-              <span class="tab-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></span>
+              <span class="tab-icon">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="3"></circle>
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+              </span>
               <span class="tab-label">Routing &amp; Model Selection</span>
             </button>
             <button type="button" class="cloud-tab-btn" data-target-panel="cloudTabPanelDiagnostics" role="tab">
-              <span class="tab-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg></span>
+              <span class="tab-icon">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="18" y1="20" x2="18" y2="10"></line>
+                  <line x1="12" y1="20" x2="12" y2="4"></line>
+                  <line x1="6" y1="20" x2="6" y2="14"></line>
+                </svg>
+              </span>
               <span class="tab-label">Live Diagnostics</span>
             </button>
           </div>
@@ -56,46 +80,32 @@
           <div id="cloudTabPanelKeys" class="cloud-tab-panel active">
             <!-- Multi-Key Rotation Pool Callout -->
             <div class="pool-guide-card">
-              <div class="pool-guide-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg></div>
+              <div class="pool-guide-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="16 3 21 3 21 8"></polyline>
+                  <line x1="4" y1="20" x2="21" y2="3"></line>
+                  <polyline points="21 16 21 21 16 21"></polyline>
+                  <line x1="15" y1="15" x2="21" y2="21"></line>
+                  <line x1="4" y1="4" x2="9" y2="9"></line>
+                </svg>
+              </div>
               <div class="pool-guide-content">
-                <strong>Multi-Key Rotation Pool Supported:</strong>
-                <span>Paste multiple keys separated by commas, semicolons, or newlines (e.g. <code>key1, key2, key3</code>). On HTTP 429 rate limits, the engine rotates instantly to the next un-cooled key with zero downtime.</span>
+                <strong>Automatic Zero-Downtime Failover &amp; Key Pools:</strong>
+                <span>Paste multiple keys separated by commas (e.g. <code>key1, key2</code>). When HTTP 429 rate limits occur, the system rotates instantly to the next uncooled key without breaking active extraction jobs.</span>
               </div>
             </div>
 
             <!-- Provider Cards Container -->
             <div class="api-keys-grid">
-              <!-- Groq Key Card -->
-              <div class="provider-key-card prov-groq">
-                <div class="provider-key-header">
-                  <div class="provider-meta">
-                    <span class="prov-brand-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg></span>
-                    <div>
-                      <div class="prov-name-wrap">
-                        <span class="prov-name">Groq Cloud</span>
-                        <span class="prov-badge">Ultra-Fast 120B / 27B</span>
-                      </div>
-                      <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" class="provider-key-link">Get API Key ↗</a>
-                    </div>
-                  </div>
-                  <span id="groqKeyBadge" class="key-status-badge missing">⚪ Not set</span>
-                </div>
-                <div class="key-input-row">
-                  <div class="password-input-wrapper">
-                    <input type="password" id="cloudApiKeyGroq" class="form-input prov-key-input" placeholder="gsk_... (or paste comma-separated key pool)" autocomplete="off">
-                    <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyGroq" title="Show / Hide">👁️</button>
-                  </div>
-                  <button type="button" class="btn-test-key-inline" data-provider="groq" title="Test Groq Key">
-                    <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> Test Key</span>
-                  </button>
-                </div>
-              </div>
-
               <!-- Google Gemini Key Card -->
-              <div class="provider-key-card prov-gemini">
+              <div class="provider-key-card prov-gemini" id="cardProvGemini">
                 <div class="provider-key-header">
                   <div class="provider-meta">
-                    <span class="prov-brand-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg></span>
+                    <span class="prov-brand-icon">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 2L15 9L22 12L15 15L12 22L9 15L2 12L9 9Z"></path>
+                      </svg>
+                    </span>
                     <div>
                       <div class="prov-name-wrap">
                         <span class="prov-name">Google Gemini</span>
@@ -104,24 +114,92 @@
                       <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" class="provider-key-link">Get API Key ↗</a>
                     </div>
                   </div>
-                  <span id="geminiKeyBadge" class="key-status-badge missing">⚪ Not set</span>
+                  <span id="geminiKeyBadge" class="key-status-badge missing">⚪ No Key Stored</span>
                 </div>
                 <div class="key-input-row">
                   <div class="password-input-wrapper">
                     <input type="password" id="cloudApiKeyGemini" class="form-input prov-key-input" placeholder="AIzaSy... (or paste comma-separated key pool)" autocomplete="off">
-                    <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyGemini" title="Show / Hide">👁️</button>
+                    <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyGemini" title="Show / Hide Password">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                        <circle cx="12" cy="12" r="3"></circle>
+                      </svg>
+                    </button>
                   </div>
-                  <button type="button" class="btn-test-key-inline" data-provider="gemini" title="Test Gemini Key">
-                    <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> Test Key</span>
-                  </button>
+                  <div class="key-card-action-btns">
+                    <button type="button" class="btn-test-key-inline" data-provider="gemini" title="Test Gemini Key">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                      <span>Test Key</span>
+                    </button>
+                    <button type="button" class="btn-clear-key-inline" data-provider="gemini" title="Remove stored Gemini key">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                      <span>Clear</span>
+                    </button>
+                  </div>
                 </div>
+                <div class="key-hint-text" id="hintGemini">No key entered yet.</div>
+              </div>
+
+              <!-- Groq Key Card -->
+              <div class="provider-key-card prov-groq" id="cardProvGroq">
+                <div class="provider-key-header">
+                  <div class="provider-meta">
+                    <span class="prov-brand-icon">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                      </svg>
+                    </span>
+                    <div>
+                      <div class="prov-name-wrap">
+                        <span class="prov-name">Groq Cloud</span>
+                        <span class="prov-badge">Ultra-Fast 120B / 27B</span>
+                      </div>
+                      <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" class="provider-key-link">Get API Key ↗</a>
+                    </div>
+                  </div>
+                  <span id="groqKeyBadge" class="key-status-badge missing">⚪ No Key Stored</span>
+                </div>
+                <div class="key-input-row">
+                  <div class="password-input-wrapper">
+                    <input type="password" id="cloudApiKeyGroq" class="form-input prov-key-input" placeholder="gsk_... (or paste comma-separated key pool)" autocomplete="off">
+                    <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyGroq" title="Show / Hide Password">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                        <circle cx="12" cy="12" r="3"></circle>
+                      </svg>
+                    </button>
+                  </div>
+                  <div class="key-card-action-btns">
+                    <button type="button" class="btn-test-key-inline" data-provider="groq" title="Test Groq Key">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                      <span>Test Key</span>
+                    </button>
+                    <button type="button" class="btn-clear-key-inline" data-provider="groq" title="Remove stored Groq key">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                      <span>Clear</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="key-hint-text" id="hintGroq">No key entered yet.</div>
               </div>
 
               <!-- Anthropic Claude Key Card -->
-              <div class="provider-key-card prov-anthropic">
+              <div class="provider-key-card prov-anthropic" id="cardProvAnthropic">
                 <div class="provider-key-header">
                   <div class="provider-meta">
-                    <span class="prov-brand-icon">🧠</span>
+                    <span class="prov-brand-icon">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="4"></circle>
+                        <line x1="12" y1="2" x2="12" y2="4"></line>
+                        <line x1="12" y1="20" x2="12" y2="22"></line>
+                        <line x1="4.93" y1="4.93" x2="6.34" y2="6.34"></line>
+                        <line x1="17.66" y1="17.66" x2="19.07" y2="19.07"></line>
+                        <line x1="2" y1="12" x2="4" y2="12"></line>
+                        <line x1="20" y1="12" x2="22" y2="12"></line>
+                        <line x1="4.93" y1="19.07" x2="6.34" y2="17.66"></line>
+                        <line x1="17.66" y1="6.34" x2="19.07" y2="4.93"></line>
+                      </svg>
+                    </span>
                     <div>
                       <div class="prov-name-wrap">
                         <span class="prov-name">Anthropic Claude</span>
@@ -130,50 +208,42 @@
                       <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" class="provider-key-link">Get API Key ↗</a>
                     </div>
                   </div>
-                  <span id="anthropicKeyBadge" class="key-status-badge missing">⚪ Not set</span>
+                  <span id="anthropicKeyBadge" class="key-status-badge missing">⚪ No Key Stored</span>
                 </div>
                 <div class="key-input-row">
                   <div class="password-input-wrapper">
                     <input type="password" id="cloudApiKeyAnthropic" class="form-input prov-key-input" placeholder="sk-ant-... (or paste comma-separated key pool)" autocomplete="off">
-                    <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyAnthropic" title="Show / Hide">👁️</button>
+                    <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyAnthropic" title="Show / Hide Password">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                        <circle cx="12" cy="12" r="3"></circle>
+                      </svg>
+                    </button>
                   </div>
-                  <button type="button" class="btn-test-key-inline" data-provider="anthropic" title="Test Anthropic Key">
-                    <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> Test Key</span>
-                  </button>
-                </div>
-              </div>
-
-              <!-- DeepSeek Key Card -->
-              <div class="provider-key-card prov-deepseek">
-                <div class="provider-key-header">
-                  <div class="provider-meta">
-                    <span class="prov-brand-icon">🐋</span>
-                    <div>
-                      <div class="prov-name-wrap">
-                        <span class="prov-name">DeepSeek AI</span>
-                        <span class="prov-badge">V3 Flagship &amp; R1 Reasoner</span>
-                      </div>
-                      <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener noreferrer" class="provider-key-link">Get API Key ↗</a>
-                    </div>
+                  <div class="key-card-action-btns">
+                    <button type="button" class="btn-test-key-inline" data-provider="anthropic" title="Test Anthropic Key">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                      <span>Test Key</span>
+                    </button>
+                    <button type="button" class="btn-clear-key-inline" data-provider="anthropic" title="Remove stored Anthropic key">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                      <span>Clear</span>
+                    </button>
                   </div>
-                  <span id="deepseekKeyBadge" class="key-status-badge missing">⚪ Not set</span>
                 </div>
-                <div class="key-input-row">
-                  <div class="password-input-wrapper">
-                    <input type="password" id="cloudApiKeyDeepseek" class="form-input prov-key-input" placeholder="sk-... (or paste comma-separated key pool)" autocomplete="off">
-                    <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyDeepseek" title="Show / Hide">👁️</button>
-                  </div>
-                  <button type="button" class="btn-test-key-inline" data-provider="deepseek" title="Test DeepSeek Key">
-                    <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> Test Key</span>
-                  </button>
-                </div>
+                <div class="key-hint-text" id="hintAnthropic">No key entered yet.</div>
               </div>
 
               <!-- OpenAI Key Card -->
-              <div class="provider-key-card prov-openai">
+              <div class="provider-key-card prov-openai" id="cardProvOpenai">
                 <div class="provider-key-header">
                   <div class="provider-meta">
-                    <span class="prov-brand-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"></rect><circle cx="12" cy="5" r="2"></circle><path d="M12 7v4"></path><line x1="8" y1="16" x2="8" y2="16"></line><line x1="16" y1="16" x2="16" y2="16"></line></svg></span>
+                    <span class="prov-brand-icon">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                        <circle cx="12" cy="12" r="4"></circle>
+                      </svg>
+                    </span>
                     <div>
                       <div class="prov-name-wrap">
                         <span class="prov-name">OpenAI</span>
@@ -182,24 +252,86 @@
                       <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" class="provider-key-link">Get API Key ↗</a>
                     </div>
                   </div>
-                  <span id="openaiKeyBadge" class="key-status-badge missing">⚪ Not set</span>
+                  <span id="openaiKeyBadge" class="key-status-badge missing">⚪ No Key Stored</span>
                 </div>
                 <div class="key-input-row">
                   <div class="password-input-wrapper">
                     <input type="password" id="cloudApiKeyOpenAI" class="form-input prov-key-input" placeholder="sk-... (or paste comma-separated key pool)" autocomplete="off">
-                    <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyOpenAI" title="Show / Hide">👁️</button>
+                    <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyOpenAI" title="Show / Hide Password">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                        <circle cx="12" cy="12" r="3"></circle>
+                      </svg>
+                    </button>
                   </div>
-                  <button type="button" class="btn-test-key-inline" data-provider="openai" title="Test OpenAI Key">
-                    <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> Test Key</span>
-                  </button>
+                  <div class="key-card-action-btns">
+                    <button type="button" class="btn-test-key-inline" data-provider="openai" title="Test OpenAI Key">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                      <span>Test Key</span>
+                    </button>
+                    <button type="button" class="btn-clear-key-inline" data-provider="openai" title="Remove stored OpenAI key">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                      <span>Clear</span>
+                    </button>
+                  </div>
                 </div>
+                <div class="key-hint-text" id="hintOpenai">No key entered yet.</div>
+              </div>
+
+              <!-- DeepSeek Key Card -->
+              <div class="provider-key-card prov-deepseek" id="cardProvDeepseek">
+                <div class="provider-key-header">
+                  <div class="provider-meta">
+                    <span class="prov-brand-icon">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l6 4.5-6 4.5z"></path>
+                      </svg>
+                    </span>
+                    <div>
+                      <div class="prov-name-wrap">
+                        <span class="prov-name">DeepSeek AI</span>
+                        <span class="prov-badge">V3 Flagship &amp; R1 Reasoner</span>
+                      </div>
+                      <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener noreferrer" class="provider-key-link">Get API Key ↗</a>
+                    </div>
+                  </div>
+                  <span id="deepseekKeyBadge" class="key-status-badge missing">⚪ No Key Stored</span>
+                </div>
+                <div class="key-input-row">
+                  <div class="password-input-wrapper">
+                    <input type="password" id="cloudApiKeyDeepseek" class="form-input prov-key-input" placeholder="sk-... (or paste comma-separated key pool)" autocomplete="off">
+                    <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyDeepseek" title="Show / Hide Password">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                        <circle cx="12" cy="12" r="3"></circle>
+                      </svg>
+                    </button>
+                  </div>
+                  <div class="key-card-action-btns">
+                    <button type="button" class="btn-test-key-inline" data-provider="deepseek" title="Test DeepSeek Key">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                      <span>Test Key</span>
+                    </button>
+                    <button type="button" class="btn-clear-key-inline" data-provider="deepseek" title="Remove stored DeepSeek key">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                      <span>Clear</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="key-hint-text" id="hintDeepseek">No key entered yet.</div>
               </div>
 
               <!-- OpenRouter Key Card -->
-              <div class="provider-key-card prov-openrouter">
+              <div class="provider-key-card prov-openrouter" id="cardProvOpenrouter">
                 <div class="provider-key-header">
                   <div class="provider-meta">
-                    <span class="prov-brand-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg></span>
+                    <span class="prov-brand-icon">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="2" y1="12" x2="22" y2="12"></line>
+                        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                      </svg>
+                    </span>
                     <div>
                       <div class="prov-name-wrap">
                         <span class="prov-name">OpenRouter</span>
@@ -208,17 +340,30 @@
                       <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" class="provider-key-link">Get API Key ↗</a>
                     </div>
                   </div>
-                  <span id="openrouterKeyBadge" class="key-status-badge missing">⚪ Not set</span>
+                  <span id="openrouterKeyBadge" class="key-status-badge missing">⚪ No Key Stored</span>
                 </div>
                 <div class="key-input-row">
                   <div class="password-input-wrapper">
                     <input type="password" id="cloudApiKeyOpenrouter" class="form-input prov-key-input" placeholder="sk-or-v1-... (or paste comma-separated key pool)" autocomplete="off">
-                    <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyOpenrouter" title="Show / Hide">👁️</button>
+                    <button type="button" class="btn-toggle-eye" data-target="cloudApiKeyOpenrouter" title="Show / Hide Password">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                        <circle cx="12" cy="12" r="3"></circle>
+                      </svg>
+                    </button>
                   </div>
-                  <button type="button" class="btn-test-key-inline" data-provider="openrouter" title="Test OpenRouter Key">
-                    <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> Test Key</span>
-                  </button>
+                  <div class="key-card-action-btns">
+                    <button type="button" class="btn-test-key-inline" data-provider="openrouter" title="Test OpenRouter Key">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                      <span>Test Key</span>
+                    </button>
+                    <button type="button" class="btn-clear-key-inline" data-provider="openrouter" title="Remove stored OpenRouter key">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                      <span>Clear</span>
+                    </button>
+                  </div>
                 </div>
+                <div class="key-hint-text" id="hintOpenrouter">No key entered yet.</div>
               </div>
             </div>
           </div>
@@ -244,9 +389,9 @@
                 <small class="text-muted">Controls how queries are partitioned between local GPU and Cloud AI</small>
               </label>
               <select id="cloudRoutingMode" class="form-select modern-select">
-                <option value="auto_hybrid"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> Auto-Hybrid (Recommended: Deterministic Math ➔ Local Engine, Complex ➔ Cloud AI)</option>
-                <option value="prefer_cloud">🌐 Prefer Cloud AI (Direct all analytical and cross-check tasks to Cloud Flagship)</option>
-                <option value="prefer_ollama">💻 Prefer Local Ollama (Always use local GPU unless offline or failed)</option>
+                <option value="auto_hybrid">Auto-Hybrid (Recommended: Deterministic Math ➔ Local Engine, Complex ➔ Cloud AI)</option>
+                <option value="prefer_cloud">Prefer Cloud AI (Direct all analytical and cross-check tasks to Cloud Flagship)</option>
+                <option value="prefer_ollama">Prefer Local Ollama (Always use local GPU unless offline or failed)</option>
               </select>
             </div>
 
@@ -254,18 +399,18 @@
             <div class="form-group form-group-card" id="manualOverrideGroup" style="display: none;">
               <div class="label-with-hint">
                 <label for="cloudProviderSelect" class="form-group-title">Manual Provider &amp; Model Lock</label>
-                <button type="button" id="btnToggleCustomModel" class="btn-link-text">✏️ Custom Model ID</button>
+                <button type="button" id="btnToggleCustomModel" class="btn-link-text">Custom Model ID</button>
               </div>
               <div class="grid-two-cols">
                 <div>
                   <label class="sublabel" for="cloudProviderSelect">Active Provider</label>
                   <select id="cloudProviderSelect" class="form-select modern-select">
-                    <option value="groq">Groq Cloud</option>
                     <option value="gemini">Google Gemini</option>
-                    <option value="openrouter">OpenRouter (Free Vision)</option>
+                    <option value="groq">Groq Cloud</option>
                     <option value="anthropic">Anthropic Claude</option>
-                    <option value="deepseek">DeepSeek AI</option>
                     <option value="openai">OpenAI</option>
+                    <option value="deepseek">DeepSeek AI</option>
+                    <option value="openrouter">OpenRouter (Free Vision)</option>
                     <option value="custom">Custom Endpoint</option>
                   </select>
                 </div>
@@ -288,7 +433,13 @@
 
             <!-- Agentic Token-Saving Callout -->
             <div class="token-saving-callout">
-              <div class="callout-icon">💡</div>
+              <div class="callout-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="16" x2="12" y2="12"></line>
+                  <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+              </div>
               <div class="callout-text">
                 <strong>Autonomous Query Planner Active:</strong>
                 Local Ollama infers analytical intent and slices minimal DataFrame matrices (~150 tokens) before dispatching to Cloud AI, cutting token consumption by ~95% and eliminating rate limit bottlenecks.
@@ -307,47 +458,47 @@
 
             <!-- Provider Latency Grid -->
             <div class="diag-grid">
-              <div class="diag-card" id="diagGroqCard">
-                <div class="diag-card-top">
-                  <span class="diag-prov-name"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> Groq</span>
-                  <span class="diag-status" id="diagGroqStatus">—</span>
-                </div>
-                <div class="diag-latency" id="diagGroqLatency">Standby</div>
-              </div>
               <div class="diag-card" id="diagGeminiCard">
                 <div class="diag-card-top">
-                  <span class="diag-prov-name">🌐 Gemini</span>
+                  <span class="diag-prov-name">Gemini</span>
                   <span class="diag-status" id="diagGeminiStatus">—</span>
                 </div>
                 <div class="diag-latency" id="diagGeminiLatency">Standby</div>
               </div>
-              <div class="diag-card" id="diagOpenrouterCard">
+              <div class="diag-card" id="diagGroqCard">
                 <div class="diag-card-top">
-                  <span class="diag-prov-name">🌐 OpenRouter</span>
-                  <span class="diag-status" id="diagOpenrouterStatus">—</span>
+                  <span class="diag-prov-name">Groq</span>
+                  <span class="diag-status" id="diagGroqStatus">—</span>
                 </div>
-                <div class="diag-latency" id="diagOpenrouterLatency">Standby</div>
+                <div class="diag-latency" id="diagGroqLatency">Standby</div>
               </div>
               <div class="diag-card" id="diagAnthropicCard">
                 <div class="diag-card-top">
-                  <span class="diag-prov-name">🧠 Anthropic</span>
+                  <span class="diag-prov-name">Anthropic</span>
                   <span class="diag-status" id="diagAnthropicStatus">—</span>
                 </div>
                 <div class="diag-latency" id="diagAnthropicLatency">Standby</div>
               </div>
+              <div class="diag-card" id="diagOpenaiCard">
+                <div class="diag-card-top">
+                  <span class="diag-prov-name">OpenAI</span>
+                  <span class="diag-status" id="diagOpenaiStatus">—</span>
+                </div>
+                <div class="diag-latency" id="diagOpenaiLatency">Standby</div>
+              </div>
               <div class="diag-card" id="diagDeepseekCard">
                 <div class="diag-card-top">
-                  <span class="diag-prov-name">🐋 DeepSeek</span>
+                  <span class="diag-prov-name">DeepSeek</span>
                   <span class="diag-status" id="diagDeepseekStatus">—</span>
                 </div>
                 <div class="diag-latency" id="diagDeepseekLatency">Standby</div>
               </div>
-              <div class="diag-card" id="diagOpenaiCard">
+              <div class="diag-card" id="diagOpenrouterCard">
                 <div class="diag-card-top">
-                  <span class="diag-prov-name">🤖 OpenAI</span>
-                  <span class="diag-status" id="diagOpenaiStatus">—</span>
+                  <span class="diag-prov-name">OpenRouter</span>
+                  <span class="diag-status" id="diagOpenrouterStatus">—</span>
                 </div>
-                <div class="diag-latency" id="diagOpenaiLatency">Standby</div>
+                <div class="diag-latency" id="diagOpenrouterLatency">Standby</div>
               </div>
             </div>
           </div>
@@ -358,17 +509,27 @@
           <!-- Modal Footer Actions -->
           <div class="modal-footer cloud-modal-footer">
             <button type="button" id="btnTestCloudConn" class="btn btn-outline btn-test-active">
-              <span class="btn-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg></span> Test Active AI
+              <span class="btn-icon">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                </svg>
+              </span>
+              <span>Test Active AI</span>
             </button>
             <div class="modal-footer-right">
               <button type="button" id="btnCancelCloudModal" class="btn btn-outline">Cancel</button>
               <button type="submit" id="btnSaveCloudConfig" class="btn btn-primary btn-save-cloud">
-                <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg> Save Keys &amp; Settings</span>
+                <span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                    <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                    <polyline points="7 3 7 8 15 8"></polyline>
+                  </svg>
+                  Save Keys &amp; Settings
+                </span>
               </button>
             </div>
           </div>
         </form>
       </div>
     </div>
-
-    <!-- AI Cross-Check & Self-Healing Review Modal -->
