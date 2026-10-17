@@ -4070,6 +4070,8 @@ function pollJob(jobId) {
         const liveStatusBadge = document.getElementById("liveStatusBadge");
         if (liveStatusBadge) liveStatusBadge.classList.add("hidden");
 
+        window.openedFromHistory = false;
+        window.historySourceFolderName = null;
         renderResults(job.result);
         initHistory();
 
@@ -5170,6 +5172,12 @@ async function saveDatasetToServer() {
     return;
   }
 
+  // Prevent duplicate saving if opened from Historical Data and no edits were made
+  if (window.openedFromHistory && unsavedEditsCount === 0) {
+    alert("No changes detected. This dataset is already identical to the historical record.");
+    return;
+  }
+
   const saveBtn = document.getElementById("btnExcelSave");
   const saveDbBtn = document.getElementById("btnSaveToDatabase");
   const origText = saveBtn ? saveBtn.innerHTML : "";
@@ -5208,6 +5216,8 @@ async function saveDatasetToServer() {
       window.currentDatasetMeta = metaToPersist;
     }
 
+    const isDirty = unsavedEditsCount > 0 || !window.openedFromHistory;
+
     const res = await fetch("/api/dataset/sync", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -5216,7 +5226,8 @@ async function saveDatasetToServer() {
         students: currentRecords,
         columns: activeColumns,
         catalog: currentCatalog,
-        dataset_meta: metaToPersist
+        dataset_meta: metaToPersist,
+        is_dirty: isDirty
       })
     });
     const data = await res.json();
@@ -6365,7 +6376,7 @@ async function initHistory() {
   const btnResetFilters = document.getElementById("btnResetHistoryFilters");
 
   try {
-    const res = await fetch("/api/history");
+    const res = await fetch(`/api/history?_t=${Date.now()}`, { cache: "no-store" });
     const data = await res.json();
     cachedHistoryItems = data.history || [];
     applyHistoryFilters();
@@ -6373,14 +6384,65 @@ async function initHistory() {
     console.error("Failed to fetch history:", e);
   }
 
+  // Wire History Delete Modal Actions (one-time setup)
+  const delModal = document.getElementById("historyDeleteModal");
+  const btnCancelDel = document.getElementById("btnCancelHistoryDelete");
+  const btnConfirmDel = document.getElementById("btnConfirmHistoryDelete");
+
+  if (btnCancelDel && !btnCancelDel.dataset.bound) {
+    btnCancelDel.dataset.bound = "true";
+    btnCancelDel.addEventListener("click", closeHistoryDeleteModal);
+  }
+
+  if (btnConfirmDel && !btnConfirmDel.dataset.bound) {
+    btnConfirmDel.dataset.bound = "true";
+    btnConfirmDel.addEventListener("click", executeHistoryDelete);
+  }
+
+  if (delModal && !delModal.dataset.bound) {
+    delModal.dataset.bound = "true";
+    delModal.addEventListener("click", (e) => {
+      if (e.target === delModal) {
+        closeHistoryDeleteModal();
+      }
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !delModal.classList.contains("hidden")) {
+        closeHistoryDeleteModal();
+      }
+    });
+  }
+
   if (refreshBtn && !refreshBtn.dataset.bound) {
     refreshBtn.dataset.bound = "true";
     refreshBtn.addEventListener("click", initHistory);
   }
 
+  const btnClearSearch = document.getElementById("btnClearHistorySearch");
+  if (btnClearSearch && !btnClearSearch.dataset.bound) {
+    btnClearSearch.dataset.bound = "true";
+    btnClearSearch.addEventListener("click", () => {
+      if (searchInput) {
+        searchInput.value = "";
+        searchInput.focus();
+      }
+      btnClearSearch.classList.add("hidden");
+      applyHistoryFilters();
+    });
+  }
+
   if (searchInput && !searchInput.dataset.bound) {
     searchInput.dataset.bound = "true";
-    searchInput.addEventListener("input", () => applyHistoryFilters());
+    searchInput.addEventListener("input", () => {
+      if (btnClearSearch) {
+        if (searchInput.value.trim().length > 0) {
+          btnClearSearch.classList.remove("hidden");
+        } else {
+          btnClearSearch.classList.add("hidden");
+        }
+      }
+      applyHistoryFilters();
+    });
   }
 
   [filterDept, filterBatch, filterSem, filterSource].forEach(el => {
@@ -6394,6 +6456,7 @@ async function initHistory() {
     btnResetFilters.dataset.bound = "true";
     btnResetFilters.addEventListener("click", () => {
       if (searchInput) searchInput.value = "";
+      if (btnClearSearch) btnClearSearch.classList.add("hidden");
       if (filterDept) filterDept.value = "";
       if (filterBatch) filterBatch.value = "";
       if (filterSem) filterSem.value = "";
@@ -6409,12 +6472,29 @@ function applyHistoryFilters() {
   const filterBatch = document.getElementById("historyFilterBatch");
   const filterSem = document.getElementById("historyFilterSem");
   const filterSource = document.getElementById("historyFilterSource");
+  const filterBadge = document.getElementById("historyActiveFilterBadge");
 
   const q = (searchInput?.value || "").toLowerCase().trim();
   const selDept = filterDept?.value || "";
   const selBatch = filterBatch?.value || "";
   const selSem = filterSem?.value || "";
   const selSource = filterSource?.value || "";
+
+  let activeFiltersCount = 0;
+  if (q) activeFiltersCount++;
+  if (selDept) activeFiltersCount++;
+  if (selBatch) activeFiltersCount++;
+  if (selSem) activeFiltersCount++;
+  if (selSource) activeFiltersCount++;
+
+  if (filterBadge) {
+    if (activeFiltersCount > 0) {
+      filterBadge.textContent = `${activeFiltersCount} filter${activeFiltersCount > 1 ? 's' : ''} active`;
+      filterBadge.classList.remove("hidden");
+    } else {
+      filterBadge.classList.add("hidden");
+    }
+  }
 
   let filtered = cachedHistoryItems.filter(item => {
     if (selDept && item.department !== selDept) return false;
@@ -6429,7 +6509,6 @@ function applyHistoryFilters() {
         item.department,
         item.batch,
         item.semester,
-        item.archetype,
         item.source_type,
         String(item.total_students)
       ].join(" ").toLowerCase();
@@ -6448,89 +6527,148 @@ function renderHistoryList(items) {
 
   if (badge) {
     const total = cachedHistoryItems.length;
-    badge.textContent = `Showing ${items.length} of ${total} extraction${total === 1 ? '' : 's'}`;
+    badge.textContent = `Showing ${items.length} of ${total} dataset${total === 1 ? '' : 's'}`;
   }
 
   if (!items || items.length === 0) {
     list.innerHTML = `
       <div class="history-empty-state">
-        <div class="empty-icon">📂</div>
-        <h3>No extraction history found.</h3>
-        <p>No extractions matched your search or filters.</p>
+        <div class="empty-icon">
+          <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+          </svg>
+        </div>
+        <h3>No historical datasets found</h3>
+        <p>No extractions matched your search or filter criteria.</p>
         <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('btnResetHistoryFilters')?.click()">Reset Filters</button>
       </div>
     `;
     return;
   }
 
+  const deptMap = {
+    "artificial_intelligence_and_data_science": "AIDS",
+    "computer_engineering": "COMPS",
+    "information_technology": "IT",
+    "electronics_and_telecommunication": "EXTC",
+    "mechanical_engineering": "MECH",
+    "civil_engineering": "CIVIL",
+    "electrical_engineering": "ELEC",
+    "instrumentation_engineering": "INST"
+  };
+
   list.innerHTML = "";
   items.forEach(item => {
     const card = document.createElement("div");
     card.className = "history-card-item";
 
-    const deptPretty = (item.department || "Artificial_Intelligence_and_Data_Science").replace(/_/g, " ");
+    const rawDept = item.department || "Artificial_Intelligence_and_Data_Science";
+    const deptPretty = rawDept.replace(/_/g, " ");
+    const deptKey = rawDept.toLowerCase();
+    const deptCode = deptMap[deptKey] || deptPretty.split(" ").map(w => w[0]).join("").toUpperCase();
+
     const semPretty = (item.semester || "Semester 1").replace(/_/g, " ");
-    const batchPretty = item.batch || "21-22";
+    const batchPretty = item.batch ? `Batch ${item.batch}` : "Batch --";
     const studentsCount = item.total_students != null ? item.total_students : "--";
-    const archPretty = (item.archetype || "Gazette Spool").replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
-    const sourcePretty = item.source_type || "PDF";
-    const datePretty = item.created_at || item.timestamp || "Recently";
+    const sourcePretty = item.source_type || "PDF Gazette";
+
+    let datePretty = item.created_at || item.timestamp || "Recently";
+    try {
+      const d = new Date(datePretty.replace(" ", "T"));
+      if (!isNaN(d.getTime())) {
+        datePretty = d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+      }
+    } catch(e) {}
 
     card.innerHTML = `
-      <div>
+      <div class="history-card-body">
         <div class="history-card-header">
-          <div class="history-card-title">${deptPretty} — ${semPretty}</div>
+          <div class="history-title-group">
+            <div class="history-card-title">${deptPretty}</div>
+            <div class="history-subtitle-row">
+              <span class="badge-dept-code">${deptCode}</span>
+              <span class="history-sem-tag">${semPretty}</span>
+            </div>
+          </div>
           <div class="history-badge-row">
-            <span class="history-pill pill-verified">✓ Verified</span>
+            <span class="history-pill pill-verified">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              Verified
+            </span>
             <span class="history-pill pill-source">${sourcePretty}</span>
           </div>
         </div>
 
-        <div class="history-card-meta-grid" style="margin-top: 0.65rem;">
-          <div class="history-meta-field">
-            <span class="history-meta-label">Academic Year / Batch</span>
-            <span class="history-meta-value">${batchPretty}</span>
-          </div>
-          <div class="history-meta-field">
-            <span class="history-meta-label">Students Recorded</span>
-            <span class="history-meta-value">${studentsCount}</span>
-          </div>
-          <div class="history-meta-field">
-            <span class="history-meta-label">Gazette Archetype</span>
-            <span class="history-meta-value">${archPretty}</span>
-          </div>
-          <div class="history-meta-field">
-            <span class="history-meta-label">Semester</span>
-            <span class="history-meta-value">${semPretty}</span>
-          </div>
-        </div>
-
-        <div class="history-card-date-row" style="margin-top: 0.55rem;">
-          <span>🕒 Extracted:</span>
-          <strong>${datePretty}</strong>
+        <div class="history-chips-strip">
+          <span class="history-metric-chip" title="Total Students Recorded">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+            <strong>${studentsCount}</strong> Students
+          </span>
+          <span class="history-metric-chip" title="Academic Year / Batch">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+            ${batchPretty}
+          </span>
+          <span class="history-metric-chip" title="Extraction Date">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            ${datePretty}
+          </span>
         </div>
       </div>
 
       <div class="history-card-actions">
-        <button type="button" class="history-action-btn history-btn-open" data-action="open" title="Open and inspect extracted records in the Data Table">
-          📂 Open
-        </button>
-        <button type="button" class="history-action-btn history-btn-analyze" data-action="analyze" title="Select this extraction for academic analysis">
-          📊 Use for Analysis
-        </button>
-        <div class="export-dropdown-wrapper">
-          <button type="button" class="history-action-btn history-btn-export" data-action="export-toggle" title="Export this extraction">
-            📥 Export ▾
+        <div class="history-actions-left">
+          <button type="button" class="btn btn-sm btn-primary history-btn-open" data-action="open" title="Open and inspect extracted records in Data Table">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+            <span>Open</span>
           </button>
-          <div class="export-dropdown-menu hidden" style="bottom: 100%; top: auto; margin-bottom: 4px;">
-            <a class="export-menu-item" href="/api/download/${encodeURIComponent(item.folder_name)}/${encodeURIComponent(item.folder_name)}_extracted_data.xlsx" download>📊 Excel Workbook (.xlsx)</a>
-            <a class="export-menu-item" href="/api/download/${encodeURIComponent(item.folder_name)}/${encodeURIComponent(item.folder_name)}_extracted_data.csv" download>📑 CSV Spreadsheet (.csv)</a>
-            <a class="export-menu-item" href="/api/download/${encodeURIComponent(item.folder_name)}/${encodeURIComponent(item.folder_name)}_catalog.json" download>📋 Schema Catalog (.json)</a>
-            <a class="export-menu-item" href="/api/export/academic-analysis/${encodeURIComponent(item.folder_name)}" download>🏛️ Official University Report</a>
+
+          <!-- Analyze Dropdown -->
+          <div class="analysis-dropdown-wrapper">
+            <button type="button" class="btn btn-sm btn-outline history-btn-analyze" data-action="analyze-toggle" title="Perform Subject-wise or Semester-wise Analysis">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+              <span>Analyze ▾</span>
+            </button>
+            <div class="analysis-dropdown-menu hidden" style="bottom: 100%; top: auto; margin-bottom: 4px; min-width: 230px;">
+              <button type="button" class="export-menu-item" data-action="analyze-subject">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                <div style="display: flex; flex-direction: column; text-align: left;">
+                  <span style="font-weight: 600; color: var(--text-main);">Subject-wise Analysis</span>
+                  <span style="font-size: 0.72rem; color: var(--text-muted);">Pass rates, GP &amp; grade breakdown</span>
+                </div>
+              </button>
+              <button type="button" class="export-menu-item" data-action="analyze-semester">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="7"></circle><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"></polyline></svg>
+                <div style="display: flex; flex-direction: column; text-align: left;">
+                  <span style="font-weight: 600; color: var(--text-main);">Semester-wise Analysis</span>
+                  <span style="font-size: 0.72rem; color: var(--text-muted);">Cohort success, SGPI &amp; toppers</span>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <div class="export-dropdown-wrapper">
+            <button type="button" class="btn btn-sm btn-outline" data-action="export-toggle" title="Export this extraction">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              <span>Export ▾</span>
+            </button>
+            <div class="export-dropdown-menu hidden" style="bottom: 100%; top: auto; margin-bottom: 4px;">
+              <a class="export-menu-item" href="/api/download/${encodeURIComponent(item.folder_name)}/${encodeURIComponent(item.folder_name)}_extracted_data.xlsx" download>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+                Excel Workbook (.xlsx)
+              </a>
+              <a class="export-menu-item" href="/api/download/${encodeURIComponent(item.folder_name)}/${encodeURIComponent(item.folder_name)}_extracted_data.csv" download>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                CSV Spreadsheet (.csv)
+              </a>
+              <a class="export-menu-item" href="/api/export/academic-analysis/${encodeURIComponent(item.folder_name)}" download>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                Official University Report
+              </a>
+            </div>
           </div>
         </div>
-        <button type="button" class="history-action-btn history-btn-delete" data-action="delete" title="Delete this extraction from history">
-          🗑️ Delete
+        <button type="button" class="btn-icon-danger history-btn-delete" data-action="delete" title="Delete extraction record">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
         </button>
       </div>
     `;
@@ -6541,9 +6679,39 @@ function renderHistoryList(items) {
       btnOpen.addEventListener("click", () => loadHistoryItem(item.folder_name));
     }
 
-    const btnAnalyze = card.querySelector('[data-action="analyze"]');
-    if (btnAnalyze) {
-      btnAnalyze.addEventListener("click", () => useHistoryForAnalysis(item));
+    const analyzeBtn = card.querySelector('[data-action="analyze-toggle"]');
+    const analyzeMenu = card.querySelector('.analysis-dropdown-menu');
+    if (analyzeBtn && analyzeMenu) {
+      analyzeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        document.querySelectorAll('.analysis-dropdown-menu, .export-dropdown-menu').forEach(m => {
+          if (m !== analyzeMenu) m.classList.add("hidden");
+        });
+        analyzeMenu.classList.toggle("hidden");
+      });
+      document.addEventListener("click", (e) => {
+        if (!analyzeBtn.contains(e.target) && !analyzeMenu.contains(e.target)) {
+          analyzeMenu.classList.add("hidden");
+        }
+      });
+    }
+
+    const btnSubj = card.querySelector('[data-action="analyze-subject"]');
+    if (btnSubj) {
+      btnSubj.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (analyzeMenu) analyzeMenu.classList.add("hidden");
+        transferToSubjectAnalysis(item);
+      });
+    }
+
+    const btnSem = card.querySelector('[data-action="analyze-semester"]');
+    if (btnSem) {
+      btnSem.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (analyzeMenu) analyzeMenu.classList.add("hidden");
+        transferToSemesterAnalysis(item);
+      });
     }
 
     const exportBtn = card.querySelector('[data-action="export-toggle"]');
@@ -6551,6 +6719,9 @@ function renderHistoryList(items) {
     if (exportBtn && exportMenu) {
       exportBtn.addEventListener("click", (e) => {
         e.stopPropagation();
+        document.querySelectorAll('.analysis-dropdown-menu, .export-dropdown-menu').forEach(m => {
+          if (m !== exportMenu) m.classList.add("hidden");
+        });
         exportMenu.classList.toggle("hidden");
       });
       document.addEventListener("click", (e) => {
@@ -6562,7 +6733,11 @@ function renderHistoryList(items) {
 
     const btnDelete = card.querySelector('[data-action="delete"]');
     if (btnDelete) {
-      btnDelete.addEventListener("click", () => deleteHistoryItem(item));
+      btnDelete.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        promptDeleteHistoryItem(item, card);
+      });
     }
 
     list.appendChild(card);
@@ -6580,6 +6755,10 @@ async function loadHistoryItem(folderName) {
       alert("Failed to load historical record: " + (data.error || "Unknown"));
       return;
     }
+
+    // Flag that dataset was loaded from Historical Data without new extraction
+    window.openedFromHistory = true;
+    window.historySourceFolderName = folderName;
 
     renderResults({
       folder_name: data.folder_name,
@@ -6606,56 +6785,312 @@ async function loadHistoryItem(folderName) {
   }
 }
 
-function useHistoryForAnalysis(item) {
-  // Transfer selection into Subject-wise Analysis or Batch Suite
-  const subjectDatasetSelect = document.getElementById("subjectDatasetSelect");
-  if (subjectDatasetSelect) {
-    let opt = Array.from(subjectDatasetSelect.options).find(o => o.value === item.folder_name);
-    if (!opt) {
-      opt = document.createElement("option");
-      opt.value = item.folder_name;
-      opt.textContent = `${item.folder_name} (${item.semester || 'Sem'} • ${item.total_students || 0} students)`;
-      subjectDatasetSelect.appendChild(opt);
-    }
-    subjectDatasetSelect.value = item.folder_name;
-    const evt = new Event("change");
-    subjectDatasetSelect.dispatchEvent(evt);
+async function transferToSubjectAnalysis(item) {
+  navigateTo("/analysis/subject");
+  showProgress(`Configuring Subject Analysis for ${(item.department || '').replace(/_/g, " ")}...`, 30);
+
+  const deptSelect = document.getElementById("subDepartmentSelect") || document.getElementById("subBranchSelect");
+  const batchSelect = document.getElementById("subBatchSelect") || document.getElementById("subYearSelect");
+  const semSelect = document.getElementById("subSemesterSelect") || document.getElementById("subSemSelect");
+  const courseSelect = document.getElementById("subCourseSelect");
+  const btnRun = document.getElementById("btnRunSubjectAnalysis");
+
+  if (!deptSelect || !btnRun) {
+    hideProgress();
+    return;
   }
 
-  // Navigate directly to Subject-wise Analysis workspace
-  navigateTo("/analysis/subject");
+  if (deptSelect.dataset.initialized !== "true") {
+    await initSubjectAnalysisUI();
+  }
+
+  const norm = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+  // 1. Select matching Department
+  const targetDept = item.department || "";
+  let matchedDeptOpt = Array.from(deptSelect.options).find(o =>
+    norm(o.value) === norm(targetDept) ||
+    norm(o.textContent).includes(norm(targetDept)) ||
+    norm(targetDept).includes(norm(o.value))
+  );
+
+  if (!matchedDeptOpt && deptSelect.options.length > 1) {
+    matchedDeptOpt = document.createElement("option");
+    matchedDeptOpt.value = targetDept;
+    matchedDeptOpt.textContent = targetDept.replace(/_/g, " ");
+    deptSelect.appendChild(matchedDeptOpt);
+  }
+
+  if (matchedDeptOpt) {
+    deptSelect.value = matchedDeptOpt.value;
+    deptSelect.dispatchEvent(new Event("change"));
+  }
+
+  // 2. Select matching Batch
+  const targetBatch = item.batch || "";
+  let matchedBatchOpt = Array.from(batchSelect.options).find(o =>
+    norm(o.value) === norm(targetBatch) ||
+    norm(o.textContent).includes(norm(targetBatch))
+  );
+
+  if (!matchedBatchOpt && batchSelect) {
+    matchedBatchOpt = document.createElement("option");
+    matchedBatchOpt.value = targetBatch || "21-22";
+    matchedBatchOpt.textContent = targetBatch ? `Batch ${targetBatch}` : "Batch --";
+    batchSelect.appendChild(matchedBatchOpt);
+    batchSelect.disabled = false;
+  }
+
+  if (matchedBatchOpt) {
+    batchSelect.value = matchedBatchOpt.value;
+    batchSelect.dispatchEvent(new Event("change"));
+  }
+
+  // 3. Select matching Semester
+  showProgress(`Loading subjects for ${(item.semester || 'Semester').replace(/_/g, " ")}...`, 60);
+  const targetSem = item.semester || "";
+  const datasetKey = item.folder_name || item.id;
+
+  let matchedSemOpt = Array.from(semSelect.options).find(o =>
+    o.value === datasetKey ||
+    o.value === `excel_${item.department}/${item.batch}/${item.semester}.xlsx` ||
+    norm(o.textContent).includes(norm(targetSem)) ||
+    norm(o.value).includes(norm(targetSem))
+  );
+
+  if (!matchedSemOpt) {
+    matchedSemOpt = document.createElement("option");
+    matchedSemOpt.value = datasetKey;
+    matchedSemOpt.textContent = `${(targetSem || 'Semester').replace(/_/g, " ")} (${item.total_students || 0} students)`;
+    semSelect.appendChild(matchedSemOpt);
+    semSelect.disabled = false;
+  }
+
+  semSelect.value = matchedSemOpt.value;
+  semSelect.dispatchEvent(new Event("change"));
+
+  // 4. Wait for discovered subjects, auto-select first subject, and auto-generate analysis
+  let checkAttempts = 0;
+  const pollInterval = setInterval(() => {
+    checkAttempts++;
+    if (courseSelect.options.length > 1 && !courseSelect.disabled) {
+      clearInterval(pollInterval);
+      hideProgress();
+      courseSelect.selectedIndex = 1;
+      courseSelect.dispatchEvent(new Event("change"));
+
+      setTimeout(() => {
+        if (!btnRun.disabled) {
+          btnRun.click();
+          document.getElementById("subjectResultsDashboard")?.scrollIntoView({ behavior: "smooth" });
+        }
+      }, 180);
+    } else if (checkAttempts > 35) {
+      clearInterval(pollInterval);
+      hideProgress();
+    }
+  }, 100);
 }
 
-async function deleteHistoryItem(item) {
-  const confirmMsg = `Are you sure you want to delete this extraction from history?\n\n` +
-    `• Dataset: ${item.folder_name}\n` +
-    `• Department: ${item.department}\n` +
-    `• Batch: ${item.batch}\n` +
-    `• Semester: ${item.semester}\n\n` +
-    `This action removes the historical extraction entry safely.`;
+async function transferToSemesterAnalysis(item) {
+  navigateTo("/analysis/semester");
+  showProgress(`Configuring Semester Analysis for ${(item.department || '').replace(/_/g, " ")}...`, 30);
 
-  if (!confirm(confirmMsg)) {
+  const deptSelect = document.getElementById("semDepartmentSelect");
+  const batchSelect = document.getElementById("semBatchSelect");
+  const semSelect = document.getElementById("semSemesterSelect");
+  const btnRun = document.getElementById("btnRunSemesterAnalysis");
+
+  if (!deptSelect || !btnRun) {
+    hideProgress();
     return;
+  }
+
+  if (deptSelect.dataset.initialized !== "true") {
+    await initSemesterAnalysisUI();
+  }
+
+  const norm = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+  // 1. Select matching Department
+  const targetDept = item.department || "";
+  let matchedDeptOpt = Array.from(deptSelect.options).find(o =>
+    norm(o.value) === norm(targetDept) ||
+    norm(o.textContent).includes(norm(targetDept)) ||
+    norm(targetDept).includes(norm(o.value))
+  );
+
+  if (!matchedDeptOpt && deptSelect.options.length > 1) {
+    matchedDeptOpt = document.createElement("option");
+    matchedDeptOpt.value = targetDept;
+    matchedDeptOpt.textContent = targetDept.replace(/_/g, " ");
+    deptSelect.appendChild(matchedDeptOpt);
+  }
+
+  if (matchedDeptOpt) {
+    deptSelect.value = matchedDeptOpt.value;
+    deptSelect.dispatchEvent(new Event("change"));
+  }
+
+  // 2. Select matching Batch
+  const targetBatch = item.batch || "";
+  let matchedBatchOpt = Array.from(batchSelect.options).find(o =>
+    norm(o.value) === norm(targetBatch) ||
+    norm(o.textContent).includes(norm(targetBatch))
+  );
+
+  if (!matchedBatchOpt && batchSelect) {
+    matchedBatchOpt = document.createElement("option");
+    matchedBatchOpt.value = targetBatch || "21-22";
+    matchedBatchOpt.textContent = targetBatch ? `Batch ${targetBatch}` : "Batch --";
+    batchSelect.appendChild(matchedBatchOpt);
+    batchSelect.disabled = false;
+  }
+
+  if (matchedBatchOpt) {
+    batchSelect.value = matchedBatchOpt.value;
+    batchSelect.dispatchEvent(new Event("change"));
+  }
+
+  // 3. Select matching Semester
+  showProgress(`Loading semester records for ${(item.semester || 'Semester').replace(/_/g, " ")}...`, 60);
+  const targetSem = item.semester || "";
+  const datasetKey = item.folder_name || item.id;
+
+  let matchedSemOpt = Array.from(semSelect.options).find(o =>
+    o.value === datasetKey ||
+    o.value === `excel_${item.department}/${item.batch}/${item.semester}.xlsx` ||
+    norm(o.textContent).includes(norm(targetSem)) ||
+    norm(o.value).includes(norm(targetSem))
+  );
+
+  if (!matchedSemOpt) {
+    matchedSemOpt = document.createElement("option");
+    matchedSemOpt.value = datasetKey;
+    matchedSemOpt.textContent = `${(targetSem || 'Semester').replace(/_/g, " ")} (${item.total_students || 0} students)`;
+    semSelect.appendChild(matchedSemOpt);
+    semSelect.disabled = false;
+  }
+
+  semSelect.value = matchedSemOpt.value;
+  semSelect.dispatchEvent(new Event("change"));
+
+  hideProgress();
+
+  // 4. Auto-generate semester analysis
+  setTimeout(() => {
+    if (!btnRun.disabled) {
+      btnRun.click();
+      document.getElementById("semesterResultsDashboard")?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, 180);
+}
+
+function useHistoryForAnalysis(item) {
+  transferToSubjectAnalysis(item);
+}
+
+let pendingDeleteHistoryItem = null;
+let pendingDeleteCardEl = null;
+
+function promptDeleteHistoryItem(item, cardEl) {
+  pendingDeleteHistoryItem = item;
+  pendingDeleteCardEl = cardEl;
+
+  const modal = document.getElementById("historyDeleteModal");
+  if (!modal) {
+    if (confirm(`Are you sure you want to delete this historical record?`)) {
+      executeHistoryDelete();
+    }
+    return;
+  }
+
+  const deptEl = document.getElementById("delModalDeptName");
+  const batchSemEl = document.getElementById("delModalBatchSem");
+  const studentsEl = document.getElementById("delModalStudentsCount");
+  const btnConfirm = document.getElementById("btnConfirmHistoryDelete");
+  const btnConfirmText = document.getElementById("btnConfirmHistoryDeleteText");
+
+  const rawDept = item.department || "Artificial_Intelligence_and_Data_Science";
+  const deptPretty = rawDept.replace(/_/g, " ");
+  const semPretty = (item.semester || "Semester 1").replace(/_/g, " ");
+  const batchPretty = item.batch ? `Batch ${item.batch}` : "Batch --";
+
+  if (deptEl) deptEl.textContent = deptPretty;
+  if (batchSemEl) batchSemEl.textContent = `${batchPretty} • ${semPretty}`;
+  if (studentsEl) studentsEl.textContent = `${item.total_students != null ? item.total_students : 0} Students`;
+  if (btnConfirm) btnConfirm.disabled = false;
+  if (btnConfirmText) btnConfirmText.textContent = "Delete Record";
+
+  modal.classList.remove("hidden");
+}
+
+function closeHistoryDeleteModal() {
+  const modal = document.getElementById("historyDeleteModal");
+  if (modal) modal.classList.add("hidden");
+  pendingDeleteHistoryItem = null;
+  pendingDeleteCardEl = null;
+}
+
+async function executeHistoryDelete() {
+  if (!pendingDeleteHistoryItem) return;
+  const item = pendingDeleteHistoryItem;
+  const cardEl = pendingDeleteCardEl;
+
+  const btnConfirm = document.getElementById("btnConfirmHistoryDelete");
+  const btnConfirmText = document.getElementById("btnConfirmHistoryDeleteText");
+  if (btnConfirm) btnConfirm.disabled = true;
+  if (btnConfirmText) btnConfirmText.textContent = "Deleting...";
+
+  if (cardEl) {
+    cardEl.classList.add("deleting");
   }
 
   try {
     const res = await fetch(`/api/history/${encodeURIComponent(item.folder_name)}`, {
-      method: "DELETE"
+      method: "DELETE",
+      headers: { "Cache-Control": "no-cache" }
     });
     const data = await res.json();
     if (!data.success) {
+      if (btnConfirm) btnConfirm.disabled = false;
+      if (btnConfirmText) btnConfirmText.textContent = "Delete Record";
+      if (cardEl) cardEl.classList.remove("deleting");
       alert("Failed to delete extraction: " + (data.error || "Unknown error"));
       return;
     }
 
-    // Refresh history list and batch dropdown
-    initHistory();
+    // Success: Close modal
+    closeHistoryDeleteModal();
+
+    // Optimistically animate & remove card immediately
+    if (cardEl) {
+      cardEl.style.transition = "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)";
+      cardEl.style.opacity = "0";
+      cardEl.style.transform = "scale(0.95)";
+      setTimeout(() => cardEl.remove(), 280);
+    }
+
+    // Immediately remove from cachedHistoryItems and update counts
+    cachedHistoryItems = cachedHistoryItems.filter(it => it.folder_name !== item.folder_name && it.id !== item.id);
+    applyHistoryFilters();
+
+    // Synchronize backend history archive with cache-buster
+    await initHistory();
+
     if (typeof initBatches === "function") {
       initBatches();
     }
   } catch (err) {
+    if (btnConfirm) btnConfirm.disabled = false;
+    if (btnConfirmText) btnConfirmText.textContent = "Delete Record";
+    if (cardEl) cardEl.classList.remove("deleting");
     alert("Network error deleting extraction: " + err.message);
   }
+}
+
+function deleteHistoryItem(item) {
+  promptDeleteHistoryItem(item, null);
 }
 
 // 9. Interactive Chatbox for Ollama
@@ -8594,6 +9029,8 @@ function initTabularModal() {
         const data = await safeParseJson(res);
         if (data.success) {
           modalBackdrop.classList.add("hidden");
+          window.openedFromHistory = false;
+          window.historySourceFolderName = null;
           renderResults(data);
           appendChatMessage("assistant", `📥 <strong>Direct Import Successful!</strong> Loaded <strong>${data.total_students}</strong> records directly from <em>${escapeHtml(currentTabularInspection.filename)}</em> without consuming any AI tokens. Explore the data table, ask questions, or review the visual EDA analytics!`);
         } else {
@@ -8633,6 +9070,8 @@ function initTabularModal() {
         const data = await safeParseJson(res);
         if (data.success) {
           modalBackdrop.classList.add("hidden");
+          window.openedFromHistory = false;
+          window.historySourceFolderName = null;
           renderResults(data);
           const tokStr = data.token_usage && data.token_usage.total > 0 ? ` (${data.token_usage.total} tokens used)` : "";
           appendChatMessage("assistant", `🪄 <strong>AI Structure Normalization Complete!</strong> Extracted <strong>${data.total_students}</strong> student records from <em>${escapeHtml(currentTabularInspection.filename)}</em> using <strong>${escapeHtml(data.engine_used || 'AI')}</strong>${tokStr}. Multi-tier headers merged and student identities mapped.`);

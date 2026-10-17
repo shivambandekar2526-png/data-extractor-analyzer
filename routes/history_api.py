@@ -3,6 +3,7 @@ import re
 import csv
 import json
 import time
+import stat
 import shutil
 import logging
 from datetime import datetime
@@ -43,6 +44,9 @@ def list_history():
         for entry in os.listdir(OUTPUT_DIR):
             fpath = os.path.join(OUTPUT_DIR, entry)
             if not os.path.isdir(fpath):
+                continue
+            # Batch analysis outputs are summary reports, not ledger extraction records
+            if entry.startswith("batch_analysis_"):
                 continue
             cat_file = os.path.join(fpath, f"{entry}_catalog.json")
             meta = {}
@@ -141,7 +145,11 @@ def list_history():
     for e in history_entries:
         e.pop("_mtime", None)
 
-    return jsonify({"success": True, "history": history_entries})
+    resp = jsonify({"success": True, "history": history_entries})
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 
 @history_bp.route("/api/history/<folder_name>", methods=["GET"])
@@ -238,7 +246,16 @@ def load_history_entry(folder_name):
     })
 
 
-@history_bp.route("/api/history/<folder_name>", methods=["DELETE"])
+def _handle_remove_readonly(func, path, exc_info):
+    """Clear readonly bit and reattempt removal on Windows files."""
+    try:
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
+    except Exception as e:
+        logger.warning(f"Failed clearing readonly flag on {path}: {e}")
+
+
+@history_bp.route("/api/history/<path:folder_name>", methods=["DELETE"])
 def delete_history_entry(folder_name):
     """
     Delete an extraction record from history.
@@ -249,51 +266,82 @@ def delete_history_entry(folder_name):
     clean_folder = safe_folder_name(folder_name)
     deleted_any = False
 
-    # 1. If it's a DB item (e.g. db_<dept>_<batch>_<sem>)
-    if clean_folder.startswith("db_"):
-        try:
-            db_datasets = list_datasets_from_db(DB_PATH)
-            for ds in db_datasets:
-                test_id = f"db_{ds['department']}_{ds['batch']}_{ds['semester']}"
-                if test_id.lower() == clean_folder.lower():
-                    delete_dataset_from_db(DB_PATH, ds["department"], ds["batch"], ds["semester"])
-                    deleted_any = True
-                    break
-        except Exception as e:
-            logger.warning(f"Error removing dataset from SQLite: {e}")
+    # 1. Check SQLite database (match by synth_id or department/batch/semester)
+    try:
+        db_datasets = list_datasets_from_db(DB_PATH)
+        for ds in db_datasets:
+            test_id = f"db_{ds['department']}_{ds['batch']}_{ds['semester']}"
+            plain_id = f"{ds['department']}_{ds['batch']}_{ds['semester']}"
+            candidates = {
+                test_id.lower(),
+                safe_folder_name(test_id).lower(),
+                plain_id.lower(),
+                safe_folder_name(plain_id).lower()
+            }
+            if clean_folder.lower() in candidates or folder_name.lower() in candidates:
+                delete_dataset_from_db(DB_PATH, ds["department"], ds["batch"], ds["semester"])
+                # Also remove associated clean excel from departments_data/excel if present
+                excel_p = ds.get("excel_path")
+                if excel_p and os.path.isfile(excel_p):
+                    try:
+                        os.remove(excel_p)
+                    except Exception as err:
+                        logger.warning(f"Could not remove dataset excel file {excel_p}: {err}")
+                deleted_any = True
+                break
+    except Exception as e:
+        logger.warning(f"Error checking/removing dataset from SQLite: {e}")
 
-    # 2. Check output/ directory
-    folder_path = os.path.join(OUTPUT_DIR, clean_folder)
-    if os.path.isdir(folder_path):
-        try:
-            # Check catalog.json if it references a DB dataset
-            cat_file = os.path.join(folder_path, f"{clean_folder}_catalog.json")
-            if os.path.isfile(cat_file):
-                try:
-                    with open(cat_file, "r", encoding="utf-8") as f:
-                        meta = json.load(f)
-                    dsm = meta.get("dataset_meta")
-                    if dsm and isinstance(dsm, dict):
-                        d_dept = dsm.get("department")
-                        d_batch = dsm.get("batch")
-                        d_sem = dsm.get("semester")
+    # 2. Check output/ directory (test both clean_folder and raw folder_name)
+    targets = [t for t in [clean_folder, folder_name] if t]
+    for target_name in targets:
+        folder_path = os.path.join(OUTPUT_DIR, target_name)
+        if os.path.isdir(folder_path):
+            try:
+                # Check catalog.json if it references a DB dataset to sync SQLite deletion
+                cat_file = os.path.join(folder_path, f"{target_name}_catalog.json")
+                if not os.path.isfile(cat_file):
+                    for f in os.listdir(folder_path):
+                        if f.endswith("_catalog.json"):
+                            cat_file = os.path.join(folder_path, f)
+                            break
+                if os.path.isfile(cat_file):
+                    try:
+                        with open(cat_file, "r", encoding="utf-8") as f:
+                            meta = json.load(f)
+                        dsm = meta.get("dataset_meta") or {}
+                        d_dept = dsm.get("department") or meta.get("department") or meta.get("college_name")
+                        d_batch = dsm.get("batch") or meta.get("academic_year")
+                        d_sem = dsm.get("semester") or meta.get("semester")
                         if d_dept and d_batch and d_sem:
-                            delete_dataset_from_db(DB_PATH, d_dept, d_batch, d_sem)
-                except Exception:
-                    pass
+                            delete_dataset_from_db(DB_PATH, str(d_dept), str(d_batch), str(d_sem))
+                    except Exception as err:
+                        logger.warning(f"Error reading catalog to delete from DB: {err}")
 
-            shutil.rmtree(folder_path)
-            deleted_any = True
-        except Exception as e:
-            return jsonify({"success": False, "error": f"Failed deleting folder: {str(e)}"}), 500
+                # Safely remove the directory on Windows
+                try:
+                    shutil.rmtree(folder_path, onexc=_handle_remove_readonly)
+                except TypeError:
+                    shutil.rmtree(folder_path, onerror=_handle_remove_readonly)
+                deleted_any = True
+            except Exception as e:
+                return jsonify({"success": False, "error": f"Failed deleting folder: {str(e)}"}), 500
+
+    # 3. Synchronize in-memory job state
+    with jobs_lock:
+        to_del = [jid for jid, job in jobs.items() if job.get("folder_name") in (clean_folder, folder_name)]
+        for jid in to_del:
+            jobs.pop(jid, None)
 
     if not deleted_any:
         return jsonify({"success": False, "error": f"Dataset '{folder_name}' not found."}), 404
 
-    return jsonify({
+    resp = jsonify({
         "success": True,
         "message": f"Successfully deleted historical extraction '{folder_name}'."
     })
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
 
 
 
@@ -373,10 +421,70 @@ def sync_dataset():
     columns = data.get("columns", [])
     catalog_data = data.get("catalog")
 
+    is_dirty = data.get("is_dirty", True)
+    if not is_dirty:
+        return jsonify({
+            "success": True,
+            "message": "Dataset unmodified; no duplicate copy created.",
+            "unmodified": True
+        })
+
     if not folder_name:
         folder_name = "live_edited_results"
 
     clean_folder = safe_folder_name(folder_name)
+    ds_meta = data.get("dataset_meta") or {}
+
+    # If it is a SQLite dataset (db_<dept>_<batch>_<sem>), update in-place without duplicating in output/
+    if clean_folder.startswith("db_"):
+        try:
+            db_datasets = list_datasets_from_db(DB_PATH)
+            matched = None
+            for ds in db_datasets:
+                test_id = f"db_{ds['department']}_{ds['batch']}_{ds['semester']}"
+                if test_id.lower() == clean_folder.lower():
+                    matched = ds
+                    break
+
+            d_dept = (ds_meta.get("department") or (matched and matched.get("department")) or "Artificial_Intelligence_and_Data_Science")
+            d_batch = (ds_meta.get("batch") or (matched and matched.get("batch")) or "21-22")
+            d_sem = (ds_meta.get("semester") or (matched and matched.get("semester")) or "Semester_1")
+
+            canonical_excel = (matched and matched.get("excel_path")) or os.path.join(DEPARTMENTS_DATA_DIR, "excel", d_dept, d_batch, f"{d_sem}.xlsx")
+            os.makedirs(os.path.dirname(canonical_excel), exist_ok=True)
+
+            if not columns and students:
+                columns = list(students[0].keys())
+
+            meta_obj = ExamMeta(exam_title=f"{d_dept}_{d_batch}_{d_sem}")
+            write_excel_file(students, columns, None, meta_obj, canonical_excel)
+
+            save_dataset_to_db(
+                db_path=DB_PATH,
+                department=d_dept,
+                batch=d_batch,
+                semester=d_sem,
+                excel_path=canonical_excel,
+                pdf_path=matched.get("pdf_path") if matched else None,
+                students=students or [],
+                catalog=catalog_data
+            )
+
+            return jsonify({
+                "success": True,
+                "folder_name": clean_folder,
+                "csv_file": "",
+                "excel_file": os.path.basename(canonical_excel),
+                "json_file": "",
+                "count": len(students),
+                "db_saved": True,
+                "canonical_excel_path": canonical_excel,
+                "message": f"Successfully updated dataset in database and canonical mirror."
+            })
+        except Exception as e:
+            logger.error(f"Error updating SQLite dataset in sync: {e}", exc_info=True)
+            return jsonify({"success": False, "error": f"Failed updating database dataset: {str(e)}"}), 500
+
     folder_path = os.path.join(OUTPUT_DIR, clean_folder)
     os.makedirs(folder_path, exist_ok=True)
 
@@ -410,7 +518,8 @@ def sync_dataset():
     excel_filename = f"{clean_folder}_extracted_data.xlsx"
     excel_path = os.path.join(folder_path, excel_filename)
     canonical_excel_path = None
-    ds_meta = data.get("dataset_meta") or existing_cat.get("dataset_meta")
+    if not ds_meta:
+        ds_meta = existing_cat.get("dataset_meta")
     if not ds_meta:
         with jobs_lock:
             for jid, job in jobs.items():

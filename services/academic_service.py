@@ -138,6 +138,60 @@ def get_departments_data_excel_hierarchy() -> List[Dict[str, Any]]:
                 "batches": batches
             })
 
+    # Incorporate datasets from SQLite if not already in hierarchy
+    try:
+        from core.dataset_database import list_datasets_from_db
+        from services.state import DB_PATH
+        db_datasets = list_datasets_from_db(DB_PATH)
+        for ds in db_datasets:
+            d_dept = ds.get("department") or "Artificial_Intelligence_and_Data_Science"
+            d_batch = ds.get("batch") or "21-22"
+            d_sem = ds.get("semester") or "Semester_1"
+            synth_id = f"db_{d_dept}_{d_batch}_{d_sem}"
+
+            # Check if this department exists in departments
+            dept_obj = next((d for d in departments if d["id"].lower() == d_dept.lower()), None)
+            if not dept_obj:
+                dept_obj = {
+                    "id": d_dept,
+                    "folder": d_dept,
+                    "name": d_dept.replace("_", " "),
+                    "batches": []
+                }
+                departments.append(dept_obj)
+
+            # Check if batch exists in dept_obj
+            batch_obj = next((b for b in dept_obj["batches"] if b["id"].lower() == d_batch.lower() or b["folder"].lower() == d_batch.lower()), None)
+            if not batch_obj:
+                ay = _standardize_academic_year(d_batch)
+                batch_obj = {
+                    "id": d_batch,
+                    "folder": d_batch,
+                    "name": f"{ay} ({d_batch})" if ay != d_batch else d_batch,
+                    "academic_year": ay,
+                    "semesters": []
+                }
+                dept_obj["batches"].append(batch_obj)
+
+            # Check if semester already exists in batch_obj
+            sem_exists = any(
+                s.get("dataset_id", "").lower() == synth_id.lower() or
+                d_sem.lower() in s.get("display_name", "").lower() or
+                s.get("file_name", "").lower().startswith(d_sem.lower())
+                for s in batch_obj["semesters"]
+            )
+            if not sem_exists:
+                sem_label = _standardize_semester_label(d_sem)
+                batch_obj["semesters"].append({
+                    "file_name": f"{d_sem}.xlsx",
+                    "display_name": f"{sem_label} (Saved Database)",
+                    "semester_name": sem_label,
+                    "rel_path": ds.get("excel_path") or f"{d_dept}/{d_batch}/{d_sem}.xlsx",
+                    "dataset_id": synth_id
+                })
+    except Exception as e:
+        logger.warning(f"Error incorporating SQLite datasets into hierarchy: {e}")
+
     return departments
 
 

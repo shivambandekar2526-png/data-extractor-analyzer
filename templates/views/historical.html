@@ -33,14 +33,15 @@
     <section class="card history-workspace-card">
       <!-- Search & Filter Controls Bar -->
       <div class="history-controls-bar">
-        <div class="history-search-wrapper">
+        <div class="history-search-wrapper" id="historySearchWrapper">
           <span class="history-search-icon">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="11" cy="11" r="8"></circle>
               <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
             </svg>
           </span>
-          <input type="text" id="historySearchInput" class="history-search-input" placeholder="Search extraction history by name, department, batch, or semester...">
+          <input type="text" id="historySearchInput" class="history-search-input" placeholder="Search by department, batch, semester, or filename...">
+          <button type="button" id="btnClearHistorySearch" class="search-clear-btn hidden" title="Clear search">✕</button>
         </div>
 
         <!-- Lightweight Filter Dropdowns -->
@@ -49,25 +50,26 @@
             <label for="historyFilterDept">Department:</label>
             <select id="historyFilterDept" class="form-select form-select-sm">
               <option value="">All Departments</option>
-              <option value="Artificial_Intelligence_and_Data_Science">AI &amp; Data Science</option>
-              <option value="Computer_Engineering">Computer Engineering</option>
-              <option value="Information_Technology">Information Technology</option>
-              <option value="Electronics_and_Telecommunication">EXTC</option>
-              <option value="Mechanical_Engineering">Mechanical</option>
-              <option value="Civil_Engineering">Civil</option>
-              <option value="Electrical_Engineering">Electrical</option>
+              <option value="Artificial_Intelligence_and_Data_Science">AI &amp; Data Science (AIDS)</option>
+              <option value="Computer_Engineering">Computer Engineering (COMPS)</option>
+              <option value="Information_Technology">Information Technology (IT)</option>
+              <option value="Electronics_and_Telecommunication">Electronics &amp; Telecom (EXTC)</option>
+              <option value="Mechanical_Engineering">Mechanical Engineering (MECH)</option>
+              <option value="Civil_Engineering">Civil Engineering (CIVIL)</option>
+              <option value="Electrical_Engineering">Electrical Engineering (ELEC)</option>
+              <option value="Instrumentation_Engineering">Instrumentation (INST)</option>
             </select>
           </div>
 
           <div class="history-filter-item">
-            <label for="historyFilterBatch">Batch / Year:</label>
+            <label for="historyFilterBatch">Batch:</label>
             <select id="historyFilterBatch" class="form-select form-select-sm">
               <option value="">All Batches</option>
-              <option value="21-22">21-22</option>
-              <option value="22-23">22-23</option>
-              <option value="23-24">23-24</option>
-              <option value="24-25">24-25</option>
-              <option value="25-26">25-26</option>
+              <option value="21-22">2021 - 2022</option>
+              <option value="22-23">2022 - 2023</option>
+              <option value="23-24">2023 - 2024</option>
+              <option value="24-25">2024 - 2025</option>
+              <option value="25-26">2025 - 2026</option>
             </select>
           </div>
 
@@ -87,12 +89,12 @@
           </div>
 
           <div class="history-filter-item">
-            <label for="historyFilterSource">Source / Type:</label>
+            <label for="historyFilterSource">Source Format:</label>
             <select id="historyFilterSource" class="form-select form-select-sm">
               <option value="">All Sources</option>
               <option value="PDF">PDF Gazette</option>
-              <option value="Excel">Excel / Ingested</option>
-              <option value="Database">Database Saved</option>
+              <option value="Excel">Excel / Spreadsheet</option>
+              <option value="Database">Database Record</option>
             </select>
           </div>
 
@@ -108,7 +110,10 @@
 
       <!-- History Summary Bar -->
       <div class="history-status-strip">
-        <span class="history-status-count" id="historyCountBadge">Showing 0 extractions</span>
+        <div class="history-status-left">
+          <span class="history-status-count" id="historyCountBadge">Showing 0 extractions</span>
+          <span class="history-active-filter-chip hidden" id="historyActiveFilterBadge">Filters active</span>
+        </div>
         <span class="history-status-hint">Sorted by most recently extracted first</span>
       </div>
 
@@ -116,14 +121,63 @@
       <div id="historyList" class="history-grid-list">
         <div class="history-empty-state">
           <div class="empty-icon">
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
             </svg>
           </div>
-          <h3>No extraction history yet.</h3>
-          <p>Your completed extractions will automatically appear here.</p>
-          <button type="button" class="btn btn-primary btn-sm" onclick="navigateTo('/extract')">Go to Extract &amp; Audit</button>
+          <h3>No historical extractions found</h3>
+          <p>Completed ledger extractions and saved academic records will appear here.</p>
+          <button type="button" class="btn btn-primary btn-sm" onclick="navigateTo('/extract')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+            <span>Start Extraction</span>
+          </button>
         </div>
       </div>
     </section>
+
+    <!-- Dedicated Historical Record Delete Confirmation Modal -->
+    <div id="historyDeleteModal" class="modal-backdrop hidden" style="z-index: 10050;">
+      <div class="modal-card" style="max-width: 480px; width: 92%; padding: 0; overflow: hidden; border-radius: 12px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); background: var(--bg-card); border: 1px solid var(--border-color);">
+        <div style="padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
+          <div style="display: flex; align-items: flex-start; gap: 1rem;">
+            <div style="width: 44px; height: 44px; border-radius: 10px; background: rgba(239, 68, 68, 0.12); display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: #ef4444;">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              </svg>
+            </div>
+            <div style="flex: 1;">
+              <h3 style="margin: 0; font-size: 1.15rem; font-weight: 600; color: var(--text-main);">Delete Historical Record</h3>
+              <p style="margin: 4px 0 0; font-size: 0.85rem; color: var(--text-muted); line-height: 1.4;">
+                Are you sure you want to delete this historical extraction record?
+              </p>
+            </div>
+          </div>
+
+          <!-- Dataset Summary Box -->
+          <div style="background: var(--bg-hover); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 0.85rem 1rem; display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.82rem;">
+            <div style="font-weight: 600; color: var(--text-main);" id="delModalDeptName">Department Name</div>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-top: 2px;">
+              <span class="badge-dept-code" id="delModalBatchSem">Batch • Semester</span>
+              <span class="history-pill pill-source" id="delModalStudentsCount">0 Students</span>
+            </div>
+          </div>
+
+          <p style="margin: 0; font-size: 0.8rem; color: #f87171; line-height: 1.4;">
+            ⚠️ This will permanently remove this extraction ledger from historical records. Original source documents remain intact.
+          </p>
+        </div>
+
+        <div style="padding: 0.85rem 1.5rem; background: var(--bg-card-alt, rgba(0,0,0,0.15)); border-top: 1px solid var(--border-subtle); display: flex; justify-content: flex-end; gap: 0.6rem;">
+          <button type="button" id="btnCancelHistoryDelete" class="btn btn-sm btn-ghost">Cancel</button>
+          <button type="button" id="btnConfirmHistoryDelete" class="btn btn-sm" style="background: #dc2626; color: #ffffff; border: 1px solid #b91c1c; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+            <span id="btnConfirmHistoryDeleteText">Delete Record</span>
+          </button>
+        </div>
+      </div>
+    </div>
   </section>
