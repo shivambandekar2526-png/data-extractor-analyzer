@@ -242,7 +242,7 @@
         }
 
         /* Hide entire interface except print modals */
-        body > *:not(#modalSubjectPrintPreview):not(#modalSemesterPrintPreview):not(#modalBatchPrintPreview),
+        .app-header,
         .app-layout-shell,
         .workspace-sidebar,
         .workspace-header,
@@ -257,7 +257,9 @@
         #batchResultsDashboard,
         #viewSubjectAnalysis,
         #viewSemesterAnalysis,
-        #viewAnalysis {
+        #viewAnalysis,
+        .app-footer,
+        .custom-context-menu {
           display: none !important;
         }
 

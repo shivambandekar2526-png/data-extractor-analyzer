@@ -10516,37 +10516,41 @@ function printSinglePageReport(sheetElementId) {
     }
   });
 
-  // Create or reuse hidden iframe
-  let iframe = document.getElementById("reportPrintIsolatedFrame");
-  if (!iframe) {
-    iframe = document.createElement("iframe");
-    iframe.id = "reportPrintIsolatedFrame";
-    iframe.style.position = "fixed";
-    iframe.style.right = "0";
-    iframe.style.bottom = "0";
-    iframe.style.width = "0";
-    iframe.style.height = "0";
-    iframe.style.border = "none";
-    iframe.style.visibility = "hidden";
-    document.body.appendChild(iframe);
+  // Remove any pre-existing print iframe
+  const existingFrame = document.getElementById("reportPrintIsolatedFrame");
+  if (existingFrame) {
+    existingFrame.remove();
   }
 
-  const printStyles = document.getElementById("subjectPrintStyles")
-    ? document.getElementById("subjectPrintStyles").innerHTML
-    : "";
+  // Create isolated off-screen iframe
+  // CRITICAL: Do NOT set visibility:hidden or 0x0 size, as Chromium skips paint and prints blank!
+  const iframe = document.createElement("iframe");
+  iframe.id = "reportPrintIsolatedFrame";
+  iframe.style.position = "fixed";
+  iframe.style.left = "-9999px";
+  iframe.style.top = "-9999px";
+  iframe.style.width = "210mm";
+  iframe.style.height = "297mm";
+  iframe.style.border = "none";
+  iframe.style.opacity = "0.01";
+  iframe.style.pointerEvents = "none";
+  iframe.style.zIndex = "-9999";
+  document.body.appendChild(iframe);
 
-  const frameDoc = iframe.contentWindow.document;
-  frameDoc.open();
-  frameDoc.write(`<!DOCTYPE html>
-<html>
+  const printDocumentHtml = `<!DOCTYPE html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <title>Institutional Academic Report</title>
   <style>
-    ${printStyles}
+    *, *::before, *::after {
+      box-sizing: border-box !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
     @page {
       size: A4 portrait;
-      margin: 8mm 12mm 8mm 12mm;
+      margin: 6mm 10mm 6mm 10mm;
     }
     html, body {
       background: #ffffff !important;
@@ -10555,44 +10559,259 @@ function printSinglePageReport(sheetElementId) {
       padding: 0 !important;
       width: 100% !important;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
-      -webkit-print-color-adjust: exact !important;
-      print-color-adjust: exact !important;
+      font-size: 11px;
+      line-height: 1.35;
     }
     .subject-print-sheet {
-      box-shadow: none !important;
-      border: none !important;
-      margin: 0 auto !important;
-      padding: 0 !important;
+      background: #ffffff !important;
+      color: #1e293b !important;
       width: 100% !important;
       max-width: 100% !important;
       min-height: 0 !important;
       height: auto !important;
+      margin: 0 auto !important;
+      padding: 0 !important;
+      box-shadow: none !important;
+      border: none !important;
+      display: flex !important;
+      flex-direction: column !important;
+      justify-content: space-between !important;
+    }
+    .print-header-grid {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      margin-bottom: 6px !important;
+    }
+    .print-logo-box {
+      width: 76px !important;
+      height: 76px !important;
+      flex-shrink: 0 !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: flex-start !important;
+    }
+    .print-logo-box img {
+      width: 72px !important;
+      height: 72px !important;
+      object-fit: contain !important;
       display: block !important;
+    }
+    .print-header-text {
+      flex: 1 !important;
+      text-align: center !important;
+      margin-right: 76px !important;
+    }
+    .print-college-name {
+      text-align: center !important;
+      font-size: 19px !important;
+      font-weight: 800 !important;
+      color: #1F4E78 !important;
+      letter-spacing: 0.5px !important;
+      margin: 0 0 2px 0 !important;
+      text-transform: uppercase !important;
+    }
+    .print-dept-name {
+      text-align: center !important;
+      font-size: 13px !important;
+      font-weight: 700 !important;
+      color: #334155 !important;
+      margin: 0 0 3px 0 !important;
+      text-transform: uppercase !important;
+    }
+    .print-report-title {
+      text-align: center !important;
+      font-size: 9.5px !important;
+      font-weight: 600 !important;
+      color: #64748b !important;
+      letter-spacing: 0.8px !important;
+      margin: 0 0 6px 0 !important;
+    }
+    .print-divider {
+      height: 2px !important;
+      background: linear-gradient(90deg, #1F4E78 0%, #3b82f6 50%, #1F4E78 100%) !important;
+      margin-bottom: 8px !important;
+    }
+    .print-meta-grid {
+      display: flex !important;
+      justify-content: space-between !important;
+      background: #f8fafc !important;
+      border: 1px solid #e2e8f0 !important;
+      border-radius: 6px !important;
+      padding: 6px 12px !important;
+      margin-bottom: 8px !important;
+      font-size: 11px !important;
+    }
+    .print-meta-left, .print-meta-right {
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 2.5px !important;
+    }
+    .print-meta-row {
+      font-size: 11px !important;
+      color: #1e293b !important;
+    }
+    .print-meta-lbl {
+      color: #64748b !important;
+      font-weight: 600 !important;
+      min-width: 90px !important;
+      display: inline-block !important;
+    }
+    .print-subject-name {
+      color: #1F4E78 !important;
+      font-weight: 700 !important;
+    }
+    .print-section {
+      margin-bottom: 8px !important;
+    }
+    .print-section-title {
+      font-size: 11px !important;
+      font-weight: 700 !important;
+      color: #1F4E78 !important;
+      text-transform: uppercase !important;
+      letter-spacing: 0.4px !important;
+      margin-bottom: 4px !important;
+      display: flex !important;
+      align-items: center !important;
+      gap: 5px !important;
+    }
+    .print-table {
+      width: 100% !important;
+      border-collapse: collapse !important;
+      font-size: 10.5px !important;
     }
     .print-table th {
       background-color: #1F4E78 !important;
       color: #ffffff !important;
-      -webkit-print-color-adjust: exact !important;
-      print-color-adjust: exact !important;
+      font-weight: 700 !important;
+      padding: 4.5px 8px !important;
+      border: 1px solid #1F4E78 !important;
+      text-align: left !important;
     }
-    .print-table tbody tr:nth-child(even) {
+    .print-table td {
+      padding: 4px 8px !important;
+      border: 1px solid #cbd5e1 !important;
+      color: #1e293b !important;
+      background: #ffffff !important;
+    }
+    .print-table tbody tr:nth-child(even) td {
       background-color: #f8fafc !important;
-      -webkit-print-color-adjust: exact !important;
-      print-color-adjust: exact !important;
+    }
+    .print-table-graph-split {
+      display: flex !important;
+      gap: 12px !important;
+      align-items: stretch !important;
+    }
+    .print-table-wrap {
+      flex: 1.6 !important;
+    }
+    .print-graph-wrap {
+      flex: 1.1 !important;
+      background: #ffffff !important;
+      border: 1px solid #cbd5e1 !important;
+      border-radius: 6px !important;
+      padding: 4px !important;
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: center !important;
+      justify-content: center !important;
+    }
+    .print-chart-label {
+      font-size: 9.5px !important;
+      font-weight: 700 !important;
+      color: #1F4E78 !important;
+      text-align: center !important;
+      margin-bottom: 2px !important;
+    }
+    .print-dual-grid {
+      display: flex !important;
+      gap: 12px !important;
+    }
+    .print-dual-col {
+      flex: 1 !important;
+    }
+    .print-sub-heading {
+      font-size: 10px !important;
+      font-weight: 700 !important;
+      color: #334155 !important;
+      margin-bottom: 3px !important;
+    }
+    .print-mini-chart-container {
+      margin-top: 6px !important;
+      text-align: center !important;
+      background: #ffffff !important;
+      border: 1px solid #cbd5e1 !important;
+      border-radius: 5px !important;
+      padding: 4px !important;
+    }
+    .print-signatures,
+    .print-signatures-grid {
+      display: flex !important;
+      justify-content: space-between !important;
+      margin-top: 12px !important;
+      padding-top: 8px !important;
+      border-top: 1px dashed #cbd5e1 !important;
+    }
+    .print-sig-col {
+      text-align: center !important;
+      font-size: 10px !important;
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 1px !important;
+    }
+    .print-sig-line {
+      color: #94a3b8 !important;
+      margin-bottom: 2px !important;
+    }
+    .print-sig-role {
+      font-weight: 700 !important;
+      color: #1e293b !important;
+    }
+    .print-sig-dept {
+      font-size: 9px !important;
+      color: #64748b !important;
+    }
+    .print-sig-sub {
+      font-size: 9px !important;
+      color: #64748b !important;
+    }
+    .print-footer-audit {
+      display: flex !important;
+      justify-content: space-between !important;
+      margin-top: 8px !important;
+      padding-top: 6px !important;
+      border-top: 1px solid #e2e8f0 !important;
+      font-size: 8.5px !important;
+      color: #94a3b8 !important;
     }
   </style>
 </head>
 <body>
   ${clone.outerHTML}
 </body>
-</html>`);
+</html>`;
+
+  const frameDoc = iframe.contentWindow.document;
+  frameDoc.open();
+  frameDoc.write(printDocumentHtml);
   frameDoc.close();
 
-  // Allow DOM & images to settle before opening print dialog
-  setTimeout(() => {
-    iframe.contentWindow.focus();
-    iframe.contentWindow.print();
-  }, 250);
+  // Wait for all images in the iframe to finish decoding and loading
+  const images = Array.from(iframe.contentWindow.document.querySelectorAll("img"));
+  const imagePromises = images.map(img => {
+    if (img.complete) return Promise.resolve();
+    return new Promise(resolve => {
+      img.onload = resolve;
+      img.onerror = resolve;
+    });
+  });
+
+  Promise.all(imagePromises).then(() => {
+    setTimeout(() => {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+    }, 250);
+  });
 }
 
 function initBatchPrintAndExportHandlers() {
