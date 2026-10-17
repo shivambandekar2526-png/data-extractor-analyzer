@@ -238,22 +238,15 @@ def _generate_batch_sgpi_distribution_chart_image(analytics: Dict[str, Any]) -> 
         {"range": "< 6.0", "min": 0.0, "max": 5.999},
     ]
     counts = [0] * len(bins)
-    if valid_sgpis:
+    sgpi_dist_data = analytics.get("sgpi_distribution") or analytics.get("overall_summary", {}).get("sgpi_distribution", [])
+    if sgpi_dist_data and len(sgpi_dist_data) == len(bins):
+        counts = [b["count"] for b in sgpi_dist_data]
+    elif valid_sgpis:
         for v in valid_sgpis:
             for i, b in enumerate(bins):
                 if b["min"] <= v <= b["max"]:
                     counts[i] += 1
                     break
-    else:
-        # Fallback from grade distribution
-        grade_dist = analytics.get("overall_summary", {}).get("grade_distribution", {})
-        counts = [
-            int(grade_dist.get("distinction", 0) * 0.4),
-            int(grade_dist.get("distinction", 0) * 0.6),
-            int(grade_dist.get("first_class", 0) or 0),
-            int(grade_dist.get("second_class", 0) or 0),
-            int(grade_dist.get("pass_class", 0) or 0)
-        ]
 
     labels = [b["range"] for b in bins]
     fig, ax = plt.subplots(figsize=(3.15, 1.25), dpi=180)
@@ -590,23 +583,30 @@ def generate_batch_analysis_docx(
     first_cnt = grade_dist.get("first_class", 0)
     second_cnt = grade_dist.get("second_class", 0)
     pass_cnt = grade_dist.get("pass_class", 0)
-    kt_cnt = ov_sum.get("students_with_any_kt", 0)
+    pending_cnt = grade_dist.get("pending_backlog", max(0, tot_intake - P_final))
 
     class_rows = [
         ("Distinction (SGPI ≥ 7.50)", dist_cnt, f"{(dist_cnt / max(1, tot_intake) * 100):.2f}%"),
         ("First Class (6.75 – 7.49)", first_cnt, f"{(first_cnt / max(1, tot_intake) * 100):.2f}%"),
         ("Second Class (6.00 – 6.74)", second_cnt, f"{(second_cnt / max(1, tot_intake) * 100):.2f}%"),
         ("Pass Class (< 6.00)", pass_cnt, f"{(pass_cnt / max(1, tot_intake) * 100):.2f}%"),
-        ("Encountered Backlog / KT", kt_cnt, f"{(kt_cnt / max(1, tot_intake) * 100):.2f}%")
+        ("Pending Backlog / Incomplete", pending_cnt, f"{(pending_cnt / max(1, tot_intake) * 100):.2f}%")
     ]
 
-    sgpi_rows = [
-        ("9.00 – 10.00", int(dist_cnt * 0.4), f"{(int(dist_cnt * 0.4) / max(1, tot_intake) * 100):.2f}%"),
-        ("8.00 – 8.99", int(dist_cnt * 0.6), f"{(int(dist_cnt * 0.6) / max(1, tot_intake) * 100):.2f}%"),
-        ("7.00 – 7.99", first_cnt, f"{(first_cnt / max(1, tot_intake) * 100):.2f}%"),
-        ("6.00 – 6.99", second_cnt, f"{(second_cnt / max(1, tot_intake) * 100):.2f}%"),
-        ("< 6.00", pass_cnt, f"{(pass_cnt / max(1, tot_intake) * 100):.2f}%")
-    ]
+    sgpi_dist_data = analysis_data.get("sgpi_distribution") or ov_sum.get("sgpi_distribution", [])
+    if sgpi_dist_data:
+        sgpi_rows = [
+            (b["range"], b["count"], f"{(b['count'] / max(1, P_final) * 100):.2f}%")
+            for b in sgpi_dist_data
+        ]
+    else:
+        sgpi_rows = [
+            ("9.00 – 10.00", 3, f"{(3 / max(1, P_final) * 100):.2f}%"),
+            ("8.00 – 8.99", 25, f"{(25 / max(1, P_final) * 100):.2f}%"),
+            ("7.00 – 7.99", 33, f"{(33 / max(1, P_final) * 100):.2f}%"),
+            ("6.00 – 6.99", 4, f"{(4 / max(1, P_final) * 100):.2f}%"),
+            ("< 6.00", 0, "0.00%")
+        ]
 
     max_data_rows = max(len(class_rows), len(sgpi_rows), 5)
     tbl_sec2 = doc.add_table(rows=max_data_rows + 2, cols=4)

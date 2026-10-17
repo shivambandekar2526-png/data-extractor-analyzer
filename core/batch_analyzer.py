@@ -950,35 +950,8 @@ class BatchAcademicAnalyzer:
                 "final_status": final_status
             })
 
-        batch_avg_sgpi = round(float(np.mean(all_sgpis)), 2) if all_sgpis else None
-        batch_max_sgpi = max(all_sgpis) if all_sgpis else None
-        batch_min_sgpi = min(all_sgpis) if all_sgpis else None
-
-        # Grade distributions
-        distinction_count = sum(1 for s in all_sgpis if s >= 7.50)
-        first_class_count = sum(1 for s in all_sgpis if 6.75 <= s < 7.50)
-        second_class_count = sum(1 for s in all_sgpis if 6.00 <= s < 6.75)
-        pass_class_count = sum(1 for s in all_sgpis if s < 6.00)
-
-        overall_summary = {
-            "total_students": total_students,
-            "appeared_all_available_semesters": appeared_all_sems,
-            "cleared_all_available_semesters": cleared_all_sems,
-            "students_with_any_kt": students_with_any_kt,
-            "graduated_eligible": graduated_eligible,
-            "batch_average_sgpi": batch_avg_sgpi,
-            "batch_highest_sgpi": batch_max_sgpi,
-            "batch_lowest_passing_sgpi": batch_min_sgpi,
-            "cleared_all_percentage": round((cleared_all_sems / total_students) * 100, 1) if total_students else 0.0,
-            "kt_student_percentage": round((students_with_any_kt / total_students) * 100, 1) if total_students else 0.0,
-            "grade_distribution": {
-                "distinction": distinction_count,
-                "first_class": first_class_count,
-                "second_class": second_class_count,
-                "pass_class": pass_class_count
-            }
-        }
-
+        # -------------------------------------------------------------
+        # Cohort Partitioning & Graduation Evaluation
         # -------------------------------------------------------------
         final_sem = max(available_sems) if available_sems else 8
 
@@ -997,6 +970,7 @@ class BatchAcademicAnalyzer:
         N3 = len(lateral_students)
         N_other = len(other_students)
         total_cohort_intake = N1 + N3
+        cohort_students = regular_students + lateral_students
 
         def student_passed_sem(m_rec, s_num):
             if m_rec.get("passed_final") and s_num == final_sem:
@@ -1038,6 +1012,63 @@ class BatchAcademicAnalyzer:
         success_rate_with_kt_pct = round((P_with_kt / total_cohort_intake) * 100, 2) if total_cohort_intake > 0 else 0.0
 
         regular_success_rate = round((passed_final_regular / N1) * 100, 2) if N1 > 0 else 0.0
+        lateral_success_rate = round((passed_final_lateral / N3) * 100, 2) if N3 > 0 else 0.0
+
+        # Cohort Graduates Analysis (Official Degree Classification on P_final candidates)
+        cohort_graduates = [m for m in cohort_students if student_passed_sem(m, final_sem)]
+        grad_sgpis = [m["average_sgpi"] for m in cohort_graduates if m.get("average_sgpi") is not None]
+
+        batch_avg_sgpi = round(float(np.mean(grad_sgpis)), 2) if grad_sgpis else None
+        batch_max_sgpi = max(grad_sgpis) if grad_sgpis else None
+        batch_min_sgpi = min(grad_sgpis) if grad_sgpis else None
+
+        # Institutional Classifications for Degree Recipients
+        distinction_count = sum(1 for s in grad_sgpis if s >= 7.50)
+        first_class_count = sum(1 for s in grad_sgpis if 6.75 <= s < 7.50)
+        second_class_count = sum(1 for s in grad_sgpis if 6.00 <= s < 6.75)
+        pass_class_count = sum(1 for s in grad_sgpis if s < 6.00)
+        fc_dist_count = distinction_count + first_class_count
+        pending_backlog_count = max(0, total_cohort_intake - P_final)
+
+        # Real Histogram Bins from Graduated Students
+        sgpi_distribution = [
+            {"range": "9.00 – 10.00", "count": sum(1 for s in grad_sgpis if s >= 9.0), "percentage": round(sum(1 for s in grad_sgpis if s >= 9.0) / len(grad_sgpis) * 100, 2) if grad_sgpis else 0.0},
+            {"range": "8.00 – 8.99", "count": sum(1 for s in grad_sgpis if 8.0 <= s < 9.0), "percentage": round(sum(1 for s in grad_sgpis if 8.0 <= s < 9.0) / len(grad_sgpis) * 100, 2) if grad_sgpis else 0.0},
+            {"range": "7.00 – 7.99", "count": sum(1 for s in grad_sgpis if 7.0 <= s < 8.0), "percentage": round(sum(1 for s in grad_sgpis if 7.0 <= s < 8.0) / len(grad_sgpis) * 100, 2) if grad_sgpis else 0.0},
+            {"range": "6.00 – 6.99", "count": sum(1 for s in grad_sgpis if 6.0 <= s < 7.0), "percentage": round(sum(1 for s in grad_sgpis if 6.0 <= s < 7.0) / len(grad_sgpis) * 100, 2) if grad_sgpis else 0.0},
+            {"range": "< 6.00", "count": sum(1 for s in grad_sgpis if s < 6.0), "percentage": round(sum(1 for s in grad_sgpis if s < 6.0) / len(grad_sgpis) * 100, 2) if grad_sgpis else 0.0}
+        ]
+
+        overall_summary = {
+            "total_students": total_cohort_intake,
+            "total_cohort_intake": total_cohort_intake,
+            "total_intake_all": len(master_students),
+            "regular_intake_n1": N1,
+            "lateral_entry_n3": N3,
+            "other_entry": N_other,
+            "appeared_all_available_semesters": appeared_all_sems,
+            "cleared_all_available_semesters": P_no_kt,
+            "students_with_any_kt": students_with_any_kt,
+            "graduated_eligible": P_final,
+            "batch_average_sgpi": batch_avg_sgpi,
+            "batch_highest_sgpi": batch_max_sgpi,
+            "batch_lowest_passing_sgpi": batch_min_sgpi,
+            "cleared_all_percentage": round((P_final / total_cohort_intake) * 100, 2) if total_cohort_intake else 0.0,
+            "kt_student_percentage": round((students_with_any_kt / total_cohort_intake) * 100, 2) if total_cohort_intake else 0.0,
+            "first_class_distinction_count": fc_dist_count,
+            "first_class_distinction_percentage": round((fc_dist_count / total_cohort_intake) * 100, 2) if total_cohort_intake else 0.0,
+            "pending_backlog_count": pending_backlog_count,
+            "pending_backlog_percentage": round((pending_backlog_count / total_cohort_intake) * 100, 2) if total_cohort_intake else 0.0,
+            "grade_distribution": {
+                "distinction": distinction_count,
+                "first_class": first_class_count,
+                "second_class": second_class_count,
+                "pass_class": pass_class_count,
+                "pending_backlog": pending_backlog_count,
+                "total_graduated": P_final
+            },
+            "sgpi_distribution": sgpi_distribution
+        }
         lateral_success_rate = round((passed_final_lateral / N3) * 100, 2) if N3 > 0 else 0.0
 
         # Detailed roster for entity cross-checking & audit
@@ -1196,9 +1227,10 @@ class BatchAcademicAnalyzer:
             second_cnt = sum(1 for s in sem_sgpis if 6.0 <= s < 6.75)
             pass_class_cnt = sum(1 for s in sem_sgpis if s < 6.0)
 
-            # Count Regular vs Lateral in this semester
-            reg_cnt = sum(1 for m in master_students if (sem in m["semesters"] or str(sem) in m["semesters"]) and "Regular" in str(m.get("entry_type", "")))
-            lat_cnt = sum(1 for m in master_students if (sem in m["semesters"] or str(sem) in m["semesters"]) and ("Lateral" in str(m.get("entry_type", "")) or "Diploma" in str(m.get("entry_type", ""))))
+            # Count Regular (N1) vs Lateral Diploma (N3) vs Transfer / Other in this semester
+            reg_cnt = sum(1 for m in master_students if (sem in m["semesters"] or str(sem) in m["semesters"]) and m.get("entry_category") == "Regular Entry (Semester 1)")
+            lat_cnt = sum(1 for m in master_students if (sem in m["semesters"] or str(sem) in m["semesters"]) and m.get("entry_category") == "Diploma Student (Lateral Entry)")
+            other_cnt = sum(1 for m in master_students if (sem in m["semesters"] or str(sem) in m["semesters"]) and m.get("entry_category") not in ["Regular Entry (Semester 1)", "Diploma Student (Lateral Entry)"])
 
             # KT info
             kt_students = fail_cnt
@@ -1217,6 +1249,7 @@ class BatchAcademicAnalyzer:
                 "total_students": tot_cnt,
                 "regular_students": reg_cnt,
                 "lateral_students": lat_cnt,
+                "other_students": other_cnt,
                 "passed": pass_cnt,
                 "failed": fail_cnt,
                 "pass_percentage": pass_pct,
@@ -1278,6 +1311,17 @@ class BatchAcademicAnalyzer:
         topper_by_semester: Dict[int, List[Dict[str, Any]]] = {}
         topper_frequency: Dict[str, Dict[str, Any]] = {}
 
+        # Master student lookup for cross-semester identity resolution in toppers
+        student_lookup: Dict[Tuple[int, str], Dict[str, Any]] = {}
+        for m in master_students:
+            for s_num, s_info in m.get("semesters", {}).items():
+                if isinstance(s_info, dict) and s_info.get("seat_no"):
+                    student_lookup[(int(s_num), str(s_info["seat_no"]).strip())] = m
+            for raw_n in m.get("all_names", []):
+                for s_num in m.get("semesters", {}):
+                    student_lookup[(int(s_num), str(raw_n).strip().upper())] = m
+                    student_lookup[(int(s_num), " ".join(normalize_student_name_tokens(raw_n)))] = m
+
         for sem in available_sems:
             raw_s = semester_data[sem]
             recs = raw_s.get("records", []) if isinstance(raw_s, dict) else raw_s
@@ -1289,28 +1333,40 @@ class BatchAcademicAnalyzer:
                 r_name = str(r.get("name") or r.get("Name") or "")
                 r_seat = str(r.get("seat_no") or r.get("Seat_No") or "")
                 r_sgpi = float(r.get("sgpi") if r.get("sgpi") is not None else r.get("SGPI", 0))
+
+                norm_n = " ".join(normalize_student_name_tokens(r_name))
+                matched_m = (
+                    student_lookup.get((int(sem), r_seat.strip())) or
+                    student_lookup.get((int(sem), r_name.strip().upper())) or
+                    student_lookup.get((int(sem), norm_n))
+                )
+
+                c_name = matched_m["canonical_name"] if matched_m else format_canonical_name(r_name)
+                c_id = matched_m["student_id"] if matched_m else (format_canonical_name(r_name) or r_seat)
+
                 top_item = {
                     "rank": rank_idx + 1,
-                    "student_name": r_name,
+                    "student_name": c_name,
                     "seat_no": r_seat,
+                    "student_id": c_id,
                     "sgpi": r_sgpi,
                     "semester": sem
                 }
                 top_list.append(top_item)
 
-                # Track topper frequency
-                c_name = format_canonical_name(r_name)
-                if c_name not in topper_frequency:
-                    topper_frequency[c_name] = {
+                # Track topper frequency with unified master identity
+                if c_id not in topper_frequency:
+                    topper_frequency[c_id] = {
+                        "student_id": c_id,
                         "canonical_name": c_name,
                         "seat_no": r_seat,
                         "appearances": 0,
                         "semesters": [],
                         "sgpi_values": []
                     }
-                topper_frequency[c_name]["appearances"] += 1
-                topper_frequency[c_name]["semesters"].append(sem)
-                topper_frequency[c_name]["sgpi_values"].append(r_sgpi)
+                topper_frequency[c_id]["appearances"] += 1
+                topper_frequency[c_id]["semesters"].append(sem)
+                topper_frequency[c_id]["sgpi_values"].append(r_sgpi)
 
             topper_by_semester[sem] = top_list
 
@@ -1570,6 +1626,7 @@ class BatchAcademicAnalyzer:
             "success_rate_analysis": success_rate_analysis,
             "semester_wise_analysis": semester_analysis,
             "semester_analysis": semester_analysis,
+            "sgpi_distribution": sgpi_distribution,
             "student_progression": student_progression_list,
             "kt_analysis": kt_analysis_table,
             "repeated_kt_students": repeated_kt_students,
