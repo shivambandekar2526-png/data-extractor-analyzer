@@ -241,21 +241,23 @@
           height: auto !important;
         }
 
-        /* Hide entire interface except print sheet */
+        /* Hide entire interface except print modals */
         body > *:not(#modalSubjectPrintPreview):not(#modalSemesterPrintPreview):not(#modalBatchPrintPreview),
+        .app-layout-shell,
         .workspace-sidebar,
         .workspace-header,
         .tab-navigation,
         .print-toolbar,
         .modal-header,
         .btn,
+        .btn-close,
         .data-extractor-nav,
         #subjectResultsDashboard,
         #semesterResultsDashboard,
         #batchResultsDashboard,
-        #viewSubjectAnalysis > *:not(#modalSubjectPrintPreview),
-        #viewSemesterAnalysis > *:not(#modalSemesterPrintPreview),
-        #viewAnalysis > *:not(#modalBatchPrintPreview) {
+        #viewSubjectAnalysis,
+        #viewSemesterAnalysis,
+        #viewAnalysis {
           display: none !important;
         }
 
@@ -264,13 +266,16 @@
         #modalBatchPrintPreview:not(.hidden) {
           position: static !important;
           display: block !important;
-          background: transparent !important;
+          background: #ffffff !important;
           padding: 0 !important;
           margin: 0 !important;
           width: 100% !important;
           height: auto !important;
           box-shadow: none !important;
           overflow: visible !important;
+          z-index: auto !important;
+          backdrop-filter: none !important;
+          -webkit-backdrop-filter: none !important;
         }
 
         #modalSubjectPrintPreview.hidden,
@@ -282,30 +287,46 @@
         .print-modal-card {
           max-width: 100% !important;
           width: 100% !important;
+          height: auto !important;
+          max-height: none !important;
+          min-height: 0 !important;
           box-shadow: none !important;
           border: none !important;
-          background: transparent !important;
+          background: #ffffff !important;
           margin: 0 !important;
           padding: 0 !important;
+          overflow: visible !important;
+          animation: none !important;
+          display: block !important;
         }
 
         .modal-body {
-          background: transparent !important;
+          background: #ffffff !important;
           padding: 0 !important;
           margin: 0 !important;
           overflow: visible !important;
           max-height: none !important;
+          height: auto !important;
+          display: block !important;
         }
 
-        .subject-print-sheet {
+        .subject-print-sheet,
+        #batchPrintSheet,
+        #semesterPrintSheet,
+        #subjectPrintSheet {
           box-shadow: none !important;
-          margin: 0 !important;
+          margin: 0 auto !important;
           padding: 0 !important;
           width: 100% !important;
-          min-height: 275mm !important;
+          max-width: 100% !important;
+          min-height: 0 !important;
           height: auto !important;
-          page-break-inside: avoid !important;
-          page-break-after: avoid !important;
+          display: block !important;
+          background: #ffffff !important;
+          color: #1e293b !important;
+          overflow: visible !important;
+          page-break-inside: auto !important;
+          page-break-after: auto !important;
         }
 
         .print-table th {

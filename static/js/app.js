@@ -931,7 +931,7 @@ function initSubjectPrintAndExportHandlers() {
   if (btnModalPrint && !btnModalPrint.dataset.bound) {
     btnModalPrint.dataset.bound = "true";
     btnModalPrint.addEventListener("click", () => {
-      window.print();
+      printSinglePageReport("subjectPrintSheet");
     });
   }
 
@@ -2108,7 +2108,7 @@ function initSemesterPrintAndExportHandlers() {
   if (btnModalPrint && !btnModalPrint.dataset.bound) {
     btnModalPrint.dataset.bound = "true";
     btnModalPrint.addEventListener("click", () => {
-      window.print();
+      printSinglePageReport("semesterPrintSheet");
     });
   }
 
@@ -10485,6 +10485,116 @@ function renderBatchPerformanceCharts(analytics) {
   }
 }
 
+function printSinglePageReport(sheetElementId) {
+  const sheet = document.getElementById(sheetElementId);
+  if (!sheet) {
+    window.print();
+    return;
+  }
+
+  // Clone the sheet so live Chart.js canvases can be converted to high-resolution <img>
+  // This guarantees 100% chart print fidelity without canvas buffer clearing or blank output!
+  const clone = sheet.cloneNode(true);
+  const origCanvases = sheet.querySelectorAll("canvas");
+  const cloneCanvases = clone.querySelectorAll("canvas");
+
+  origCanvases.forEach((orig, idx) => {
+    try {
+      const dataUrl = orig.toDataURL("image/png");
+      const img = document.createElement("img");
+      img.src = dataUrl;
+      img.style.width = orig.style.width || `${orig.width}px`;
+      img.style.height = orig.style.height || `${orig.height}px`;
+      img.style.display = "block";
+      img.style.maxWidth = "100%";
+      img.style.objectFit = "contain";
+      if (cloneCanvases[idx] && cloneCanvases[idx].parentNode) {
+        cloneCanvases[idx].parentNode.replaceChild(img, cloneCanvases[idx]);
+      }
+    } catch (e) {
+      console.warn("Canvas to image conversion warning:", e);
+    }
+  });
+
+  // Create or reuse hidden iframe
+  let iframe = document.getElementById("reportPrintIsolatedFrame");
+  if (!iframe) {
+    iframe = document.createElement("iframe");
+    iframe.id = "reportPrintIsolatedFrame";
+    iframe.style.position = "fixed";
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "none";
+    iframe.style.visibility = "hidden";
+    document.body.appendChild(iframe);
+  }
+
+  const printStyles = document.getElementById("subjectPrintStyles")
+    ? document.getElementById("subjectPrintStyles").innerHTML
+    : "";
+
+  const frameDoc = iframe.contentWindow.document;
+  frameDoc.open();
+  frameDoc.write(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Institutional Academic Report</title>
+  <style>
+    ${printStyles}
+    @page {
+      size: A4 portrait;
+      margin: 8mm 12mm 8mm 12mm;
+    }
+    html, body {
+      background: #ffffff !important;
+      color: #1e293b !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      width: 100% !important;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    .subject-print-sheet {
+      box-shadow: none !important;
+      border: none !important;
+      margin: 0 auto !important;
+      padding: 0 !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      min-height: 0 !important;
+      height: auto !important;
+      display: block !important;
+    }
+    .print-table th {
+      background-color: #1F4E78 !important;
+      color: #ffffff !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    .print-table tbody tr:nth-child(even) {
+      background-color: #f8fafc !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+  </style>
+</head>
+<body>
+  ${clone.outerHTML}
+</body>
+</html>`);
+  frameDoc.close();
+
+  // Allow DOM & images to settle before opening print dialog
+  setTimeout(() => {
+    iframe.contentWindow.focus();
+    iframe.contentWindow.print();
+  }, 250);
+}
+
 function initBatchPrintAndExportHandlers() {
   const btnPrint = document.getElementById("btnBatchPrintPreview");
   const btnDocx = document.getElementById("btnBatchExportDocx");
@@ -10506,7 +10616,7 @@ function initBatchPrintAndExportHandlers() {
   if (btnModalPrint && !btnModalPrint.dataset.bound) {
     btnModalPrint.dataset.bound = "true";
     btnModalPrint.addEventListener("click", () => {
-      window.print();
+      printSinglePageReport("batchPrintSheet");
     });
   }
 
