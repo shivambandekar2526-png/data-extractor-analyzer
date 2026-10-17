@@ -33,28 +33,29 @@ USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 
 # Curated, verified working models for each provider (no outdated/dead endpoints)
 DEFAULT_PROVIDERS = {
-    "groq": {
-        "name": "Groq",
-        "default_model": "openai/gpt-oss-120b",
-        "available_models": [
-            "openai/gpt-oss-120b",
-            "qwen/qwen3.8-27b",
-            "openai/gpt-oss-20b"
-        ],
-        "base_url": "https://api.groq.com/openai/v1"
-    },
     "gemini": {
         "name": "Google Gemini",
-        "default_model": "gemini-flash-latest",
+        "default_model": "gemini-flash-lite-latest",
         "available_models": [
-            "gemini-flash-latest",
             "gemini-flash-lite-latest",
-            "gemini-3.8-flash",
-            "gemini-3.5-flash",
-            "gemini-3.5-flash-lite",
-            "gemini-pro-latest"
+            "gemini-2.0-flash-lite",
+            "gemini-2.0-flash",
+            "gemini-1.5-flash",
+            "gemini-1.5-pro",
+            "gemini-flash-latest"
         ],
         "base_url": "https://generativelanguage.googleapis.com/v1beta"
+    },
+    "groq": {
+        "name": "Groq",
+        "default_model": "llama-3.3-70b-versatile",
+        "available_models": [
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
+            "mixtral-8x7b-32768",
+            "gemma2-9b-it"
+        ],
+        "base_url": "https://api.groq.com/openai/v1"
     },
     "openai": {
         "name": "OpenAI",
@@ -87,12 +88,13 @@ DEFAULT_PROVIDERS = {
     },
     "openrouter": {
         "name": "OpenRouter",
-        "default_model": "google/gemma-4-31b-it:free",
+        "default_model": "meta-llama/llama-3.3-70b-instruct:free",
         "available_models": [
-            "google/gemma-4-31b-it:free",
-            "google/gemma-4-26b-a4b-it:free",
-            "qwen/qwen3.8-27b:free",
-            "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
+            "meta-llama/llama-3.3-70b-instruct:free",
+            "meta-llama/llama-3.1-8b-instruct:free",
+            "google/gemma-2-9b-it:free",
+            "mistralai/mistral-7b-instruct:free",
+            "qwen/qwen-2.5-72b-instruct:free"
         ],
         "base_url": "https://openrouter.ai/api/v1"
     },
@@ -107,23 +109,23 @@ DEFAULT_PROVIDERS = {
 # Hierarchy of candidates for automatic orchestration (ranked by speed, capability, & quota)
 ORCHESTRATION_CANDIDATES = [
     # Top Multimodal Vision Candidates
-    {"provider": "gemini", "model": "gemini-flash-latest", "label": "Google Gemini Flash", "supports_vision": True},
     {"provider": "gemini", "model": "gemini-flash-lite-latest", "label": "Google Gemini Flash Lite", "supports_vision": True},
-    {"provider": "gemini", "model": "gemini-3.8-flash", "label": "Google Gemini 3.8 Flash", "supports_vision": True},
-    {"provider": "gemini", "model": "gemini-3.5-flash", "label": "Google Gemini 3.5 Flash", "supports_vision": True},
-    {"provider": "gemini", "model": "gemini-3.5-flash-lite", "label": "Google Gemini 3.5 Flash Lite", "supports_vision": True},
-    {"provider": "gemini", "model": "gemini-pro-latest", "label": "Google Gemini Pro", "supports_vision": True},
-    {"provider": "openrouter", "model": "google/gemma-4-31b-it:free", "label": "OpenRouter Gemma 4 Vision (Free)", "supports_vision": True},
-    {"provider": "openrouter", "model": "google/gemma-4-26b-a4b-it:free", "label": "OpenRouter Gemma 4 26B (Free)", "supports_vision": True},
-    {"provider": "openrouter", "model": "qwen/qwen3.8-27b:free", "label": "OpenRouter Qwen Vision (Free)", "supports_vision": True},
+    {"provider": "gemini", "model": "gemini-2.0-flash-lite", "label": "Google Gemini 2.0 Flash Lite", "supports_vision": True},
+    {"provider": "gemini", "model": "gemini-2.0-flash", "label": "Google Gemini 2.0 Flash", "supports_vision": True},
+    {"provider": "gemini", "model": "gemini-1.5-flash", "label": "Google Gemini 1.5 Flash", "supports_vision": True},
+    {"provider": "gemini", "model": "gemini-flash-latest", "label": "Google Gemini Flash", "supports_vision": True},
+    {"provider": "gemini", "model": "gemini-1.5-pro", "label": "Google Gemini 1.5 Pro", "supports_vision": True},
+    {"provider": "openrouter", "model": "meta-llama/llama-3.3-70b-instruct:free", "label": "OpenRouter Llama 3.3 70B (Free)", "supports_vision": True},
+    {"provider": "openrouter", "model": "meta-llama/llama-3.1-8b-instruct:free", "label": "OpenRouter Llama 3.1 8B (Free)", "supports_vision": True},
+    {"provider": "openrouter", "model": "google/gemma-2-9b-it:free", "label": "OpenRouter Gemma 2 9B (Free)", "supports_vision": True},
     {"provider": "openai", "model": "gpt-4o-mini", "label": "OpenAI GPT-4o-mini", "supports_vision": True},
     {"provider": "anthropic", "model": "claude-3-5-sonnet-20241022", "label": "Anthropic Claude 3.5 Sonnet", "supports_vision": True},
     {"provider": "anthropic", "model": "claude-3-5-haiku-20241022", "label": "Anthropic Claude 3.5 Haiku", "supports_vision": True},
     {"provider": "openai", "model": "gpt-4o", "label": "OpenAI GPT-4o Flagship", "supports_vision": True},
     # Ultra-Fast Text & Reasoning Candidates (Groq & DeepSeek)
-    {"provider": "groq", "model": "openai/gpt-oss-120b", "label": "Groq Flagship (120B)", "supports_vision": False},
-    {"provider": "groq", "model": "qwen/qwen3.8-27b", "label": "Groq Fast Reasoning (27B)", "supports_vision": False},
-    {"provider": "groq", "model": "openai/gpt-oss-20b", "label": "Groq Speed (20B)", "supports_vision": False},
+    {"provider": "groq", "model": "llama-3.3-70b-versatile", "label": "Groq Llama 3.3 70B", "supports_vision": False},
+    {"provider": "groq", "model": "llama-3.1-8b-instant", "label": "Groq Llama 3.1 8B Instant", "supports_vision": False},
+    {"provider": "groq", "model": "mixtral-8x7b-32768", "label": "Groq Mixtral 8x7B", "supports_vision": False},
     {"provider": "deepseek", "model": "deepseek-chat", "label": "DeepSeek V3 (64k Context)", "supports_vision": False},
     {"provider": "deepseek", "model": "deepseek-reasoner", "label": "DeepSeek R1 Reasoner", "supports_vision": False}
 ]
@@ -418,7 +420,7 @@ class CloudClient:
         provider: str,
         model: str,
         api_key: Optional[str] = None,
-        timeout: int = 5
+        timeout: int = 8
     ) -> Tuple[bool, str, int]:
         """
         Sends a minimal test ping to check if a specific model endpoint is active and working.
@@ -671,13 +673,12 @@ class CloudClient:
         def _probe_provider(prov: str) -> Tuple[str, Dict[str, Any]]:
             p_info = DEFAULT_PROVIDERS.get(prov, {})
             k = (keys_to_test.get(prov) or self.get_api_key(prov)).strip()
-            test_mod = p_info.get("default_model", "")
 
             if not k and prov != "custom":
                 return prov, {
                     "configured": False,
                     "success": False,
-                    "model": test_mod,
+                    "model": p_info.get("default_model", ""),
                     "latency_ms": 0,
                     "key_count": 0,
                     "message": "No API key configured."
@@ -686,14 +687,50 @@ class CloudClient:
             tokens = [t.strip() for t in re.split(r"[\n,;]+", k) if t.strip()]
             key_count = len(tokens)
 
-            ok, msg, lat = self.probe_candidate(prov, test_mod, k, timeout=5)
+            # Build prioritized list of candidate models for this provider
+            candidates = []
+            # 1. User's currently configured model if this is their selected provider
+            if self.config.get("provider", "").lower() == prov and self.config.get("model"):
+                candidates.append(self.config.get("model"))
+            # 2. Provider's default model
+            if p_info.get("default_model") and p_info.get("default_model") not in candidates:
+                candidates.append(p_info.get("default_model"))
+            # 3. Available curated models for this provider
+            for m in p_info.get("available_models", []):
+                if m not in candidates:
+                    candidates.append(m)
+
+            last_msg = "Probe failed"
+            last_lat = 0
+            last_mod = candidates[0] if candidates else p_info.get("default_model", "")
+
+            for cand_mod in candidates:
+                ok, msg, lat = self.probe_candidate(prov, cand_mod, k, timeout=8)
+                if ok:
+                    return prov, {
+                        "configured": True,
+                        "success": True,
+                        "model": cand_mod,
+                        "latency_ms": lat,
+                        "key_count": key_count,
+                        "message": f"Verified ({lat}ms)"
+                    }
+                last_msg = msg
+                last_lat = lat
+                last_mod = cand_mod
+
+                # If authentication failed outright (invalid key), abort other models
+                msg_lower = msg.lower()
+                if "401" in msg or "invalid api key" in msg_lower or "unauthorized" in msg_lower or "api_key_invalid" in msg_lower:
+                    break
+
             return prov, {
                 "configured": True,
-                "success": ok,
-                "model": test_mod,
-                "latency_ms": lat,
+                "success": False,
+                "model": last_mod,
+                "latency_ms": last_lat,
                 "key_count": key_count,
-                "message": msg
+                "message": last_msg
             }
 
         with ThreadPoolExecutor(max_workers=min(len(providers_to_probe), 6)) as executor:

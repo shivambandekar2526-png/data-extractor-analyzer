@@ -15,73 +15,55 @@
     </div>
 
     <div class="settings-grid">
-      <!-- Settings Card 1: Local AI Engine -->
-      <section class="card settings-card">
+      <!-- Combined AI Settings Card: Local & Cloud Intelligence -->
+      <section class="card settings-card settings-card-unified">
         <div class="card-header">
-          <h2>Local AI Engine (Ollama)</h2>
-          <span class="tag tag-accent">Local Inference</span>
+          <h2>AI Intelligence &amp; Hybrid Orchestration</h2>
+          <span class="tag tag-accent">Dual Engine</span>
         </div>
-        <p class="settings-card-desc">Self-hosted local neural intelligence executing on GPU/CPU with complete local privacy.</p>
-        <div class="settings-control-row">
-          <label class="control-label" for="settingsModelSelect">Active Local Model:</label>
-          <select id="settingsModelSelect" class="form-select"></select>
-        </div>
-        <div class="settings-info-box">
-          <span class="info-dot green"></span>
-          <span>GPU Acceleration: RTX 4060 GPU Detected (CUDA / Local Engine Ready)</span>
-        </div>
-      </section>
+        <p class="settings-card-desc">Unified control for on-device local neural inference and high-speed multi-provider Cloud AI orchestration.</p>
 
-      <!-- Settings Card 2: Cloud AI Providers -->
-      <section class="card settings-card">
-        <div class="card-header">
-          <h2>Cloud AI &amp; Hybrid Orchestrator</h2>
-          <span class="tag" id="settingsCloudBadge">Multi-Provider</span>
-        </div>
-        <p class="settings-card-desc">Configure multi-provider failover pools across Google Gemini, Groq, Claude, DeepSeek, OpenAI, and OpenRouter.</p>
-        
-        <!-- Live Status & Key Presence Banner -->
-        <div class="settings-cloud-status-banner" id="settingsCloudStatusBanner">
-          <div class="cloud-status-indicator-row">
-            <span class="status-dot gray" id="settingsCloudDot"></span>
-            <div class="cloud-status-text-wrap">
-              <strong id="settingsCloudTitle">Checking Cloud AI Status...</strong>
-              <span class="cloud-status-sub" id="settingsCloudSubtitle">Detecting configured API keys &amp; active engines</span>
+        <div class="settings-unified-grid">
+          <!-- Column 1: Local AI Engine (Ollama) -->
+          <div class="settings-engine-col">
+            <div class="engine-col-header">
+              <span class="engine-col-title">Local AI Engine (Ollama)</span>
+              <span class="tag">Local Inference</span>
+            </div>
+            <p class="engine-col-desc">Self-hosted local neural intelligence executing on GPU/CPU with complete data privacy.</p>
+            <div class="settings-control-row">
+              <label class="control-label" for="settingsModelSelect">Active Local Model:</label>
+              <select id="settingsModelSelect" class="form-select"></select>
+            </div>
+            <div class="settings-info-box" style="margin-top: 0.85rem;">
+              <span class="info-dot green"></span>
+              <span>GPU Acceleration: RTX 4060 GPU Detected (CUDA / Local Engine Ready)</span>
             </div>
           </div>
-        </div>
 
-        <!-- Provider Key Presence Badges -->
-        <div class="settings-provider-pills-row" id="settingsProviderPillsRow">
-          <span class="prov-pill" id="pillProvGemini" data-prov="gemini">Gemini: <em>Checking...</em></span>
-          <span class="prov-pill" id="pillProvGroq" data-prov="groq">Groq: <em>Checking...</em></span>
-          <span class="prov-pill" id="pillProvAnthropic" data-prov="anthropic">Claude: <em>Checking...</em></span>
-          <span class="prov-pill" id="pillProvOpenai" data-prov="openai">OpenAI: <em>Checking...</em></span>
-          <span class="prov-pill" id="pillProvDeepseek" data-prov="deepseek">DeepSeek: <em>Checking...</em></span>
-          <span class="prov-pill" id="pillProvOpenrouter" data-prov="openrouter">OpenRouter: <em>Checking...</em></span>
-        </div>
+          <!-- Divider between columns -->
+          <div class="settings-engine-divider"></div>
 
-        <!-- Action Row -->
-        <div class="settings-control-row settings-actions-dual" style="margin-top: 1rem;">
-          <button type="button" id="btnOpenCloudModalFromSettings" class="btn btn-primary btn-sm flex-1">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
-            </svg>
-            <span>Configure Keys &amp; Routing</span>
-          </button>
-          <button type="button" id="btnQuickTestCloudSettings" class="btn btn-secondary btn-sm" title="Quickly test active Cloud AI connection">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-            </svg>
-            <span>Test Connection</span>
-          </button>
-        </div>
-
-        <!-- Quick Test Feedback Alert -->
-        <div id="settingsCloudQuickAlert" class="settings-inline-alert hidden"></div>
-
-        <div class="settings-info-box" style="margin-top: 0.85rem;">
-          <span id="settingsCloudFooterInfo">6 Providers Supported • Auto-Rotation on HTTP 429 • Session Stickiness</span>
+          <!-- Column 2: Cloud AI & Hybrid Orchestrator -->
+          <div class="settings-engine-col">
+            <div class="engine-col-header">
+              <span class="engine-col-title">Cloud AI &amp; Hybrid Orchestrator</span>
+              <span class="tag">Cloud AI</span>
+            </div>
+            <p class="engine-col-desc">Configure multi-provider failover pools across Google Gemini, Groq, Claude, DeepSeek, OpenAI, and OpenRouter.</p>
+            <div class="settings-control-row" style="margin-top: 0.85rem;">
+              <button type="button" id="btnOpenCloudModalFromSettings" class="btn btn-primary btn-sm" style="width: 100%;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+                <span>Configure Keys &amp; Routing</span>
+              </button>
+            </div>
+            <div class="settings-info-box" style="margin-top: 0.85rem;">
+              <span>API keys, active models, diagnostics, and test connections are managed in the configuration modal.</span>
+            </div>
+          </div>
         </div>
       </section>
 

@@ -2659,64 +2659,10 @@ function initLiveFolderActionListener() {
   }
 }
 
-// Refresh Settings View Cloud AI Status Card
+// Refresh Settings View AI Status
 async function refreshSettingsCloudStatus() {
-  try {
-    const res = await fetch("/api/cloud/config");
-    const data = await res.json();
-    if (!data) return;
-
-    const dot = document.getElementById("settingsCloudDot");
-    const title = document.getElementById("settingsCloudTitle");
-    const sub = document.getElementById("settingsCloudSubtitle");
-    const badge = document.getElementById("settingsCloudBadge");
-    const masked = data.masked_keys || {};
-    const configuredCount = Object.values(masked).filter(v => v && v.trim()).length;
-
-    if (data.is_configured && configuredCount > 0) {
-      if (dot) dot.className = "status-dot green";
-      const activeName = (data.locked_model ? data.locked_model.provider : data.provider).toUpperCase();
-      const activeMod = (data.locked_model ? data.locked_model.model : data.model);
-      if (title) title.textContent = `Active Engine: ${activeName} (${activeMod})`;
-      const activeKeyPreview = data.keys_summary && data.keys_summary[data.provider.toLowerCase()] ? data.keys_summary[data.provider.toLowerCase()].preview : "";
-      if (sub) sub.textContent = `Key Active (${activeKeyPreview || "Stored"}) • ${configuredCount} of 6 Providers Ready`;
-      if (badge) {
-        badge.className = "tag tag-accent";
-        badge.textContent = `${configuredCount} Active`;
-      }
-    } else {
-      if (dot) dot.className = "status-dot gray";
-      if (title) title.textContent = "Cloud AI: No Keys Configured";
-      if (sub) sub.textContent = "Add at least one API key to enable multi-provider cloud cross-checking.";
-      if (badge) {
-        badge.className = "tag";
-        badge.textContent = "Offline";
-      }
-    }
-
-    // Update mini provider pills on Settings page
-    const provList = [
-      { id: "gemini", label: "Gemini", el: document.getElementById("pillProvGemini") },
-      { id: "groq", label: "Groq", el: document.getElementById("pillProvGroq") },
-      { id: "anthropic", label: "Claude", el: document.getElementById("pillProvAnthropic") },
-      { id: "openai", label: "OpenAI", el: document.getElementById("pillProvOpenai") },
-      { id: "deepseek", label: "DeepSeek", el: document.getElementById("pillProvDeepseek") },
-      { id: "openrouter", label: "OpenRouter", el: document.getElementById("pillProvOpenrouter") }
-    ];
-
-    provList.forEach(p => {
-      if (!p.el) return;
-      const mask = masked[p.id];
-      if (mask && mask.trim()) {
-        p.el.className = "prov-pill active";
-        p.el.innerHTML = `${p.label}: <strong>● Stored (${escapeHtml(mask)})</strong>`;
-      } else {
-        p.el.className = "prov-pill empty";
-        p.el.innerHTML = `${p.label}: <span>○ No Key</span>`;
-      }
-    });
-  } catch (err) {
-    console.error("Error refreshing settings cloud status:", err);
+  if (typeof updateAIStatus === "function") {
+    updateAIStatus();
   }
 }
 
@@ -2726,8 +2672,6 @@ function initSettingsView() {
   const topModelSelector = document.getElementById("modelSelector");
   const btnCloudModal = document.getElementById("btnOpenCloudModalFromSettings");
   const btnThemeToggle = document.getElementById("btnThemeToggleSettings");
-  const btnQuickTest = document.getElementById("btnQuickTestCloudSettings");
-  const quickAlert = document.getElementById("settingsCloudQuickAlert");
 
   if (modelSelect && !modelSelect.dataset.bound) {
     modelSelect.dataset.bound = "true";
@@ -2769,42 +2713,6 @@ function initSettingsView() {
         const modal = document.getElementById("cloudModalOverlay");
         if (modal) modal.classList.remove("hidden");
         if (typeof loadCloudConfig === "function") loadCloudConfig();
-      }
-    });
-  }
-
-  if (btnQuickTest && !btnQuickTest.dataset.bound) {
-    btnQuickTest.dataset.bound = "true";
-    btnQuickTest.addEventListener("click", async () => {
-      btnQuickTest.disabled = true;
-      const origHtml = btnQuickTest.innerHTML;
-      btnQuickTest.innerHTML = "<span>⏳ Testing...</span>";
-      if (quickAlert) {
-        quickAlert.className = "settings-inline-alert info";
-        quickAlert.textContent = "Testing active Cloud AI connection...";
-        quickAlert.classList.remove("hidden");
-      }
-      try {
-        const res = await fetch("/api/cloud/test", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider: "active" })
-        });
-        const d = await res.json();
-        if (quickAlert) {
-          quickAlert.className = d.success ? "settings-inline-alert success" : "settings-inline-alert error";
-          quickAlert.textContent = d.message;
-        }
-      } catch (e) {
-        if (quickAlert) {
-          quickAlert.className = "settings-inline-alert error";
-          quickAlert.textContent = `Network error: ${e.message}`;
-        }
-      } finally {
-        btnQuickTest.disabled = false;
-        btnQuickTest.innerHTML = origHtml;
-        refreshSettingsCloudStatus();
-        initStatus();
       }
     });
   }
