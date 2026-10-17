@@ -3,95 +3,109 @@
           <div class="workspace-title-group">
             <div class="workspace-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg></div>
             <div>
-              <h1 class="workspace-title">Batch Multi-Semester Analysis</h1>
-              <p class="workspace-subtitle">Review academic performance, cohort retention, and NBA/NAAC institutional metrics across multi-semester cohorts.</p>
+              <h1 class="workspace-title">Batch Analysis</h1>
+              <p class="workspace-subtitle">Multi-semester degree cohort analysis, student progression tracking, NBA/NAAC accreditation metrics, and 10-sheet academic reporting.</p>
             </div>
           </div>
         </div>
 
         <div id="batchWorkspaceSection">
-      <!-- 1. Batch Selection & Inspection Card -->
-      <section class="card batch-workspace-card">
+      <!-- 1. Cohort Configuration Card -->
+      <section class="card subject-controls-card" id="batchControlsCard">
         <div class="card-header">
-          <div>
-            <h2>Batch Multi-Semester Academic Intake (Sem 1 to 8)</h2>
-            <p class="results-meta-text">Analyze full degree cohorts across mixed formats (PDF Gazettes, Ledgers, Excel Spreadsheets)</p>
+          <div class="card-title-group">
+            <span class="workflow-step-badge">1</span>
+            <div>
+              <h2>Batch Analytics Configuration</h2>
+              <p class="card-subtitle">Select cohort parameters to analyze multi-semester academic performance and NBA/NAAC progression</p>
+            </div>
           </div>
-          <span class="tag tag-accent">Sem 1 ➔ 8 Suite</span>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <span id="liveFolderWatcherBadgeBatch" class="tag" style="background: rgba(16, 185, 129, 0.1); color: #059669; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 0.75rem; display: inline-flex; align-items: center; gap: 0.4rem;" title="Changes in department_data/excel update automatically"><span style="width: 7px; height: 7px; border-radius: 50%; background: #10b981; display: inline-block;"></span> Live Folder Sync</span>
+            <span class="tag tag-accent">Cohort Suite (Sem 1–8)</span>
+          </div>
         </div>
 
         <!-- Cascading Controls Row: Branch -> Academic Year -> Semesters -->
-        <div class="batch-controls-row">
-          <div>
-            <label class="batch-select-label" for="batchBranchSelect">
-              <span class="batch-step-badge">1</span> Branch / Department:
+        <div class="subject-selection-grid">
+          <div class="form-group">
+            <label class="control-label" for="batchBranchSelect">
+              <strong>Branch / Department:</strong>
             </label>
             <select id="batchBranchSelect" class="form-select">
               <option value="">-- Select Branch --</option>
             </select>
           </div>
-          <div>
-            <label class="batch-select-label" for="batchYearSelect">
-              <span class="batch-step-badge">2</span> Academic Year / Batch:
+          <div class="form-group">
+            <label class="control-label" for="batchYearSelect">
+              <strong>Academic Year / Batch:</strong>
             </label>
             <select id="batchYearSelect" class="form-select" disabled>
               <option value="">-- Select Academic Year --</option>
             </select>
           </div>
-          <div>
-            <label class="batch-select-label" for="batchSemesterSelect">
-              <span class="batch-step-badge">3</span> Semesters Scope:
+          <div class="form-group">
+            <label class="control-label" for="batchSemesterSelect">
+              <strong>Semester Scope:</strong>
             </label>
             <select id="batchSemesterSelect" class="form-select" disabled>
               <option value="all">All Semesters (Sem 1–8 Full Suite)</option>
             </select>
           </div>
-          <div>
-            <button type="button" id="btnInspectBatch" class="btn btn-outline" style="height: 42px; margin-top: auto;" title="Scan directory for semester files">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> <span>Scan Files</span>
-            </button>
-          </div>
         </div>
 
-        <!-- Hidden legacy inputs for backward compatibility -->
+        <!-- Hidden compatibility inputs -->
         <input type="hidden" id="batchBranchInput" value="AIDS">
         <select id="batchSuiteSelect" class="form-select hidden" style="display: none;"></select>
+        <select id="batchPdfPipelineSelect" class="form-select hidden" style="display: none;"><option value="local" selected>local</option></select>
+        <select id="batchExcelModeSelect" class="form-select hidden" style="display: none;"><option value="direct" selected>direct</option></select>
+        <select id="batchExcelModeSelectMain" class="form-select hidden" style="display: none;"><option value="direct" selected>direct</option></select>
 
         <!-- Semester 1-8 Visual Discovery Matrix -->
-        <div class="semester-grid-title" style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem;">
-          <span style="font-weight: 600;">Detected Cohort Semesters (1st Sem to 8th Sem)</span>
-          <div style="display: flex; gap: 0.5rem; align-items: center;">
-            <button type="button" id="btnToggleBatchFilesTable" class="btn btn-outline btn-sm" style="font-size: 0.75rem; padding: 2px 8px; display: none;">
-              <span>Toggle Sheet Details</span>
-            </button>
-            <span id="batchDetectSummary" class="chip chip-active hidden">8 Semesters Ready</span>
+        <div class="batch-discovery-container">
+          <div class="batch-discovery-header">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+              <span style="font-weight: 600; font-size: 0.88rem; color: var(--text-main);">Cohort Examination Ledgers (Sem 1 to 8)</span>
+            </div>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+              <span id="batchDetectSummary" class="chip chip-active hidden">0 Semesters Ready</span>
+              <button type="button" id="btnToggleBatchFilesTable" class="btn btn-ghost btn-sm" style="display: none; font-size: 0.78rem; padding: 3px 8px;" title="Toggle sheet details">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+                <span>Sheet Details</span>
+              </button>
+              <button type="button" id="btnInspectBatch" class="btn btn-ghost btn-sm" style="font-size: 0.78rem; padding: 3px 8px;" title="Re-scan directory for files">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <span>Rescan</span>
+              </button>
+            </div>
           </div>
-        </div>
 
-        <div class="semester-grid" id="semesterGridContainer">
-          <div class="sem-card missing" id="semCard1"><span class="sem-num-badge">Sem 1</span><span class="sem-filename-text">No File</span></div>
-          <div class="sem-card missing" id="semCard2"><span class="sem-num-badge">Sem 2</span><span class="sem-filename-text">No File</span></div>
-          <div class="sem-card missing" id="semCard3"><span class="sem-num-badge">Sem 3</span><span class="sem-filename-text">No File</span></div>
-          <div class="sem-card missing" id="semCard4"><span class="sem-num-badge">Sem 4</span><span class="sem-filename-text">No File</span></div>
-          <div class="sem-card missing" id="semCard5"><span class="sem-num-badge">Sem 5</span><span class="sem-filename-text">No File</span></div>
-          <div class="sem-card missing" id="semCard6"><span class="sem-num-badge">Sem 6</span><span class="sem-filename-text">No File</span></div>
-          <div class="sem-card missing" id="semCard7"><span class="sem-num-badge">Sem 7</span><span class="sem-filename-text">No File</span></div>
-          <div class="sem-card missing" id="semCard8"><span class="sem-num-badge">Sem 8</span><span class="sem-filename-text">No File</span></div>
+          <div class="semester-grid" id="semesterGridContainer">
+            <div class="sem-card missing" id="semCard1"><span class="sem-num-badge">Sem 1</span><span class="sem-filename-text">No File</span></div>
+            <div class="sem-card missing" id="semCard2"><span class="sem-num-badge">Sem 2</span><span class="sem-filename-text">No File</span></div>
+            <div class="sem-card missing" id="semCard3"><span class="sem-num-badge">Sem 3</span><span class="sem-filename-text">No File</span></div>
+            <div class="sem-card missing" id="semCard4"><span class="sem-num-badge">Sem 4</span><span class="sem-filename-text">No File</span></div>
+            <div class="sem-card missing" id="semCard5"><span class="sem-num-badge">Sem 5</span><span class="sem-filename-text">No File</span></div>
+            <div class="sem-card missing" id="semCard6"><span class="sem-num-badge">Sem 6</span><span class="sem-filename-text">No File</span></div>
+            <div class="sem-card missing" id="semCard7"><span class="sem-num-badge">Sem 7</span><span class="sem-filename-text">No File</span></div>
+            <div class="sem-card missing" id="semCard8"><span class="sem-num-badge">Sem 8</span><span class="sem-filename-text">No File</span></div>
+          </div>
         </div>
 
         <!-- Excel Sheets of the Selected Batch Table (Collapsible) -->
-        <div id="batchExcelFilesSection" class="batch-excel-files-section hidden" style="margin-top: 1rem; background: var(--card-bg, #ffffff); border: 1px solid var(--border-color, #e2e8f0); border-radius: 8px; padding: 0.85rem 1rem;">
+        <div id="batchExcelFilesSection" class="batch-excel-files-section hidden" style="margin-top: 1rem; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.85rem 1rem;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
             <div style="display: flex; align-items: center; gap: 0.5rem;">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
-              <strong style="font-size: 0.88rem; color: var(--text-primary, #1e293b);">Excel Sheets Available in Selected Batch</strong>
+              <strong style="font-size: 0.88rem; color: var(--text-main);">Excel Sheets Available in Selected Batch</strong>
               <span id="batchExcelSheetCountBadge" class="chip chip-active">0 Sheets</span>
             </div>
-            <span id="batchExcelSourcePath" style="font-size: 0.75rem; color: var(--text-muted, #64748b); font-family: monospace;"></span>
+            <span id="batchExcelSourcePath" style="font-size: 0.75rem; color: var(--text-muted); font-family: monospace;"></span>
           </div>
-          <div class="table-responsive" style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border-color, #e2e8f0); border-radius: 6px;">
+          <div class="table-responsive" style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 6px;">
             <table class="table table-sm table-hover mb-0" style="font-size: 0.82rem; width: 100%; border-collapse: collapse;">
-              <thead style="background: var(--bg-secondary, #f8fafc); position: sticky; top: 0; z-index: 2;">
+              <thead style="background: var(--bg-hover); position: sticky; top: 0; z-index: 2;">
                 <tr>
                   <th style="padding: 6px 10px; text-align: left;">Semester</th>
                   <th style="padding: 6px 10px; text-align: left;">Excel Filename</th>
@@ -107,47 +121,31 @@
           </div>
         </div>
 
-        <!-- Hidden proxy for backward compatibility -->
-        <select id="batchExcelModeSelect" class="form-select hidden" style="display: none;">
-          <option value="direct">direct</option>
-          <option value="ai_fix">ai_fix</option>
-        </select>
-
-        <!-- Engine & Options Selection -->
-        <div class="batch-options-grid" style="margin-top: 1rem;">
-          <div class="batch-option-box">
-            <label class="batch-option-title" for="batchPdfPipelineSelect">
-              <span>PDF Gazette Extraction Engine:</span>
-            </label>
-            <span class="batch-option-desc">Select the parsing engine used for PDF Tabulation and Gazette Ledgers.</span>
-            <select id="batchPdfPipelineSelect" class="form-select">
-              <option value="local">Local AI (Possibility &amp; Ollama GPU - Fast &amp; Private)</option>
-              <option value="cloud">Pure Cloud AI (Groq / Gemini / OpenAI Orchestrator)</option>
-              <option value="visual_blueprint">Visual Blueprint &amp; Sliced Stream Vision AI</option>
-            </select>
-          </div>
-
-          <div class="batch-option-box">
-            <label class="batch-option-title" for="batchExcelModeSelectMain">
-              <span>Excel Spreadsheet Ingestion Mode:</span>
-            </label>
-            <span class="batch-option-desc">Control whether spreadsheets are parsed directly or normalized via AI.</span>
-            <select id="batchExcelModeSelectMain" class="form-select">
-              <option value="direct">Keep As Is (Direct Fast Ingestion - 0 Tokens)</option>
-              <option value="ai_fix">Fix with AI (Multi-Tier Structure Fusion)</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- Run Analysis Button -->
-        <div style="display: flex; justify-content: flex-end; gap: 1rem; align-items: center; margin-top: 1.25rem;">
+        <!-- Run Analysis Button Action Bar -->
+        <div class="subject-action-bar">
           <span id="batchReadyHint" class="results-meta-text">Select a batch to begin analysis</span>
-          <button type="button" id="btnRunBatchAnalysis" class="btn btn-primary" style="padding: 0.85rem 1.8rem; font-size: 0.95rem;" disabled>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> <span>Run Complete Batch Analysis (Sem 1–8)</span>
+          <button type="button" id="btnRunBatchAnalysis" class="btn btn-primary" style="padding: 0.75rem 1.75rem; font-size: 0.95rem;" disabled>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+            <span>Run Batch Analysis (Sem 1–8)</span>
           </button>
         </div>
       </section>
     </div>
+
+    <!-- Empty State Before Generation -->
+    <section class="card subject-empty-card" id="batchEmptyState">
+      <div class="workspace-empty-state">
+        <div class="empty-state-icon">
+          <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="20" x2="18" y2="10"></line>
+            <line x1="12" y1="20" x2="12" y2="4"></line>
+            <line x1="6" y1="20" x2="6" y2="14"></line>
+          </svg>
+        </div>
+        <h3>Select a Batch Cohort to Begin Multi-Semester Analysis</h3>
+        <p>Choose a Branch/Department and Academic Year above to analyze cohort intake, graduation clearance rates, continuous academic progression across Sem 1 to 8, and export official NBA/NAAC compliant 10-sheet workbooks.</p>
+      </div>
+    </section>
 
     <!-- Live Batch Progress Section -->
     <div id="batchProgressSection" class="progress-section hidden">
@@ -172,12 +170,14 @@
     <!-- ===================================================================== -->
     <div id="batchResultsSection" class="batch-results-section hidden">
       <!-- MASTER SECTION TAB SWITCHER -->
-      <div class="batch-master-section-nav" style="display: flex; gap: 0.85rem; margin-bottom: 1.25rem; flex-wrap: wrap;">
-        <button type="button" class="btn batch-master-tab-btn active" id="btnTabSectionExecutive" data-section="secBatchPerformanceAnalysis" style="font-weight: 700; padding: 0.7rem 1.5rem; font-size: 0.95rem; display: inline-flex; align-items: center; gap: 8px; border-radius: 8px;">
-          <span>Section 1: Batch Performance Analysis (Institutional Report)</span>
+      <div class="batch-master-section-nav">
+        <button type="button" class="batch-master-tab-btn active" id="btnTabSectionExecutive" data-section="secBatchPerformanceAnalysis">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+          <span>Batch Performance Report</span>
         </button>
-        <button type="button" class="btn btn-outline batch-master-tab-btn" id="btnTabSectionAuditSuite" data-section="secBatchAuditExcelSuite" style="font-weight: 700; padding: 0.7rem 1.5rem; font-size: 0.95rem; display: inline-flex; align-items: center; gap: 8px; border-radius: 8px;">
-          <span>Section 2: 10-Sheet Multi-Semester Audit &amp; Excel Suite</span>
+        <button type="button" class="batch-master-tab-btn" id="btnTabSectionAuditSuite" data-section="secBatchAuditExcelSuite">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+          <span>10-Sheet Audit &amp; Excel Suite</span>
         </button>
       </div>
 
@@ -235,7 +235,7 @@
           <div class="eda-kpi-card">
             <span class="eda-kpi-label">TOTAL COHORT INTAKE</span>
             <strong class="eda-kpi-value" id="kpiBatchOverviewIntake">0</strong>
-            <span class="eda-kpi-sub">Base Admitted: N1 + N3</span>
+            <span class="eda-kpi-sub">Regular (N1) + Lateral (N3)</span>
           </div>
           <div class="eda-kpi-card kpi-success">
             <span class="eda-kpi-label">GRADUATED / PASSED</span>
@@ -243,17 +243,17 @@
             <span class="eda-kpi-sub">Final Semester Cleared</span>
           </div>
           <div class="eda-kpi-card">
-            <span class="eda-kpi-label">CLEARED BACKLOG (P_WITH_KT)</span>
+            <span class="eda-kpi-label">CLEARED VIA REMEDIAL</span>
             <strong class="eda-kpi-value text-warning" id="kpiBatchOverviewKt">0</strong>
             <span class="eda-kpi-sub" id="kpiBatchOverviewKtSub">Cleared Earlier Backlogs</span>
           </div>
           <div class="eda-kpi-card kpi-accent" style="border: 2px solid #1F4E78;">
             <span class="eda-kpi-label" style="color: #1F4E78;">OFFICIAL SUCCESS RATE</span>
             <strong class="eda-kpi-value" id="kpiBatchOverviewSuccessRate" style="color: #1F4E78; font-size: 1.8rem;">0.00%</strong>
-            <span class="eda-kpi-sub">P / (N1 + N3) × 100</span>
+            <span class="eda-kpi-sub">Graduated / Total Intake</span>
           </div>
           <div class="eda-kpi-card kpi-success">
-            <span class="eda-kpi-label">WITHOUT BACKLOG (P_no_kt)</span>
+            <span class="eda-kpi-label">WITHOUT BACKLOG</span>
             <strong class="eda-kpi-value text-success" id="kpiBatchOverviewNoKt">0%</strong>
             <span class="eda-kpi-sub">Graduated Zero KT</span>
           </div>
@@ -437,17 +437,49 @@
           </div>
 
           <!-- Navigation Tabs for 10 Showcase Views -->
-          <div class="batch-nav-tabs">
-            <button type="button" class="batch-tab-btn active" data-batch-tab="tabBatchSuccessRate">🎯 1. Success Rate &amp; Intake</button>
-            <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchSemester">📊 2. Semester-Wise Analysis</button>
-            <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchSummary">📋 3. Overall Summary</button>
-            <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchProgression">🎓 4. Student Progression (Sem 1-8)</button>
-            <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchKt">⚠️ 5. KT &amp; Backlog Analysis</button>
-            <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchTopper">🏆 6. Topper Analysis</button>
-            <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchRetention">👥 7. Retention &amp; Progression</button>
-            <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchPerformance">📈 8. Student Performance</button>
-            <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchQuality">🛡️ 9. Data Quality Log</button>
-            <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchData">📑 10. Semester Data Trace</button>
+          <div class="batch-nav-tabs-wrapper">
+            <div class="batch-nav-tabs">
+              <button type="button" class="batch-tab-btn active" data-batch-tab="tabBatchSuccessRate">
+                <span class="tab-index-badge">1</span>
+                <span>Success Rate &amp; Intake</span>
+              </button>
+              <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchSemester">
+                <span class="tab-index-badge">2</span>
+                <span>Semester-wise Analysis</span>
+              </button>
+              <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchSummary">
+                <span class="tab-index-badge">3</span>
+                <span>Cohort Summary</span>
+              </button>
+              <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchProgression">
+                <span class="tab-index-badge">4</span>
+                <span>Student Progression (Sem 1–8)</span>
+              </button>
+              <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchKt">
+                <span class="tab-index-badge">5</span>
+                <span>KT &amp; Backlog Audit</span>
+              </button>
+              <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchTopper">
+                <span class="tab-index-badge">6</span>
+                <span>Merit &amp; Toppers</span>
+              </button>
+              <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchRetention">
+                <span class="tab-index-badge">7</span>
+                <span>Retention &amp; Flow</span>
+              </button>
+              <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchPerformance">
+                <span class="tab-index-badge">8</span>
+                <span>Performance Breakdown</span>
+              </button>
+              <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchQuality">
+                <span class="tab-index-badge">9</span>
+                <span>Data Quality Audit</span>
+              </button>
+              <button type="button" class="batch-tab-btn" data-batch-tab="tabBatchData">
+                <span class="tab-index-badge">10</span>
+                <span>Semester Data Trace</span>
+              </button>
+            </div>
           </div>
 
           <!-- TAB 1: Official Success Rate & Intake Audit -->
@@ -499,7 +531,7 @@
                 <span class="eda-kpi-sub">P / (N1 + N3)</span>
               </div>
               <div class="eda-kpi-card kpi-success">
-                <span class="eda-kpi-label">WITHOUT BACKLOG (P_no_kt)</span>
+                <span class="eda-kpi-label">WITHOUT BACKLOG</span>
                 <strong class="eda-kpi-value text-success" id="kpiBatchSuccessRateNoKt">0%</strong>
                 <span class="eda-kpi-sub" id="kpiBatchNoKtSub">0 Cleared Zero KT</span>
               </div>

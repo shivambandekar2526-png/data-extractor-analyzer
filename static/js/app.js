@@ -230,7 +230,7 @@ function applyDensity(density, save = true) {
 const APP_ROUTES = {
   "/extract": { id: "viewExtract", title: "Extract & Audit" },
   "/historical": { id: "viewHistorical", title: "Historical Data" },
-  "/analysis": { id: "viewAnalysis", title: "Analysis Overview" },
+  "/analysis": { id: "viewAnalysis", title: "Batch Analysis" },
   "/analysis/subject": { id: "viewSubjectAnalysis", title: "Subject-wise Analysis" },
   "/analysis/semester": { id: "viewSemesterAnalysis", title: "Semester-wise Analysis" },
   "/reports": { id: "viewReports", title: "Generated Reports" },
@@ -325,6 +325,11 @@ function navigateTo(route, pushState = true) {
     if (typeof initHistory === "function") initHistory();
   } else if (targetRoute === "/analysis") {
     if (typeof loadBatchSuiteDatasets === "function") loadBatchSuiteDatasets();
+    const emptyState = document.getElementById("batchEmptyState");
+    const resultsSec = document.getElementById("batchResultsSection");
+    if (emptyState && (!resultsSec || resultsSec.classList.contains("hidden"))) {
+      emptyState.classList.remove("hidden");
+    }
   } else if (targetRoute === "/analysis/subject") {
     if (typeof initSubjectAnalysisUI === "function") initSubjectAnalysisUI();
   } else if (targetRoute === "/analysis/semester") {
@@ -9835,6 +9840,8 @@ async function runBatchAnalysisAction() {
   }
 
   btnRun.disabled = true;
+  const emptyState = document.getElementById("batchEmptyState");
+  if (emptyState) emptyState.classList.add("hidden");
   if (resultsSec) resultsSec.classList.add("hidden");
   if (progressSec) progressSec.classList.remove("hidden");
   if (pBar) pBar.style.width = "2%";
@@ -9904,6 +9911,9 @@ async function runBatchAnalysisAction() {
 function renderBatchDashboard(analytics, jobId) {
   const resultsSec = document.getElementById("batchResultsSection");
   if (!resultsSec || !analytics) return;
+
+  const emptyState = document.getElementById("batchEmptyState");
+  if (emptyState) emptyState.classList.add("hidden");
 
   resultsSec.classList.remove("hidden");
   resultsSec.scrollIntoView({ behavior: "smooth" });
