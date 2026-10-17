@@ -1,7 +1,12 @@
   <section id="viewSettings" class="workspace-view hidden" data-view="/settings">
     <div class="workspace-page-header">
       <div class="workspace-title-group">
-        <div class="workspace-icon">⚙️</div>
+        <div class="workspace-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </div>
         <div>
           <h1 class="workspace-title">Settings</h1>
           <p class="workspace-subtitle">Configure application, Local Ollama, and Cloud AI hybrid routing preferences.</p>
@@ -37,8 +42,7 @@
         <div class="settings-control-row" style="margin-top: 1rem;">
           <button type="button" id="btnOpenCloudModalFromSettings" class="btn btn-primary btn-sm" style="width: 100%;">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="3"></circle>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+              <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
             </svg>
             <span>Configure Cloud Keys &amp; Routing Rules</span>
           </button>
@@ -54,15 +58,21 @@
           <h2>Application &amp; Interface</h2>
           <span class="tag">UI Preferences</span>
         </div>
-        <p class="settings-card-desc">Display theme and navigation behaviors.</p>
+        <p class="settings-card-desc">Display theme, layout density, and navigation behaviors.</p>
         <div class="settings-control-row">
-          <span class="control-label">Color Theme Mode:</span>
+          <span class="control-label">Theme Appearance:</span>
           <button type="button" id="btnThemeToggleSettings" class="btn btn-secondary btn-sm">
             <span>Toggle Day / Night Mode</span>
           </button>
         </div>
         <div class="settings-control-row" style="margin-top: 0.8rem;">
-          <span class="control-label">Persistent Side Drawer:</span>
+          <span class="control-label">Display Density:</span>
+          <button type="button" id="btnDensityToggleSettings" class="btn btn-secondary btn-sm">
+            <span>Toggle Compact / Comfortable Mode</span>
+          </button>
+        </div>
+        <div class="settings-control-row" style="margin-top: 0.8rem;">
+          <span class="control-label">Collapsible Side Drawer:</span>
           <button type="button" id="btnDrawerToggleSettings" class="btn btn-secondary btn-sm">
             <span>Toggle Drawer (Ctrl+B)</span>
           </button>
@@ -70,8 +80,3 @@
       </section>
     </div>
   </section>
-
-    <!-- App Workspace Footer -->
-    <footer class="app-footer">
-      <p>Data Extractor AI • Local GPU Acceleration • Independent Standalone Architecture</p>
-    </footer>

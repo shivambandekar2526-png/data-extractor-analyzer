@@ -1,7 +1,12 @@
   <section id="viewSubjectAnalysis" class="workspace-view hidden" data-view="/analysis/subject">
     <div class="workspace-page-header">
       <div class="workspace-title-group">
-        <div class="workspace-icon">📘</div>
+        <div class="workspace-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+          </svg>
+        </div>
         <div>
           <h1 class="workspace-title">Subject-wise Analysis</h1>
           <p class="workspace-subtitle">Analyze performance, pass thresholds, grade distribution, and remedial alerts for individual subjects.</p>
@@ -66,7 +71,8 @@
       <div class="subject-action-bar">
         <span id="subStatusHint" class="results-meta-text">Select Department, Batch, Semester Excel sheet, and Subject to begin</span>
         <button type="button" id="btnRunSubjectAnalysis" class="btn btn-primary" style="padding: 0.75rem 1.75rem; font-size: 0.95rem;" disabled>
-          <span>🚀 Generate Analysis</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+          <span>Generate Analysis</span>
         </button>
       </div>
     </section>
@@ -74,7 +80,12 @@
     <!-- Empty State Before Generation -->
     <section class="card subject-empty-card" id="subjectEmptyState">
       <div class="workspace-empty-state">
-        <div class="empty-state-icon">📘</div>
+        <div class="empty-state-icon">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+          </svg>
+        </div>
         <h3>Select a Dataset and Subject to Begin</h3>
         <p>Choose an examination ledger and dynamic subject above to inspect pass/fail ratios, institutional grade classifications, marks distributions, term work, and top performers.</p>
       </div>
@@ -119,12 +130,14 @@
         </div>
 
         <!-- Print & Export Action Bar -->
-        <div class="subject-header-actions" style="margin-top: 1rem; display: flex; justify-content: flex-end; gap: 0.75rem; align-items: center; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 0.85rem; flex-wrap: wrap;">
-          <button type="button" id="btnSubjectPrintPreview" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; padding: 0.55rem 1.15rem; font-size: 0.88rem; box-shadow: 0 2px 8px rgba(31,78,120,0.3);">
-            <span>🖨️ View & Print 1-Page Report</span>
+        <div class="subject-header-actions" style="margin-top: 1rem; display: flex; justify-content: flex-end; gap: 0.75rem; align-items: center; border-top: 1px solid var(--border-color); padding-top: 0.85rem; flex-wrap: wrap;">
+          <button type="button" id="btnSubjectPrintPreview" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; padding: 0.55rem 1.15rem; font-size: 0.88rem;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+            <span>View &amp; Print 1-Page Report</span>
           </button>
-          <button type="button" id="btnSubjectExportDocx" class="btn btn-outline" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; padding: 0.55rem 1.15rem; font-size: 0.88rem; border-color: #3b82f6; color: #3b82f6;">
-            <span>📄 Export Word (.docx)</span>
+          <button type="button" id="btnSubjectExportDocx" class="btn btn-outline" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; padding: 0.55rem 1.15rem; font-size: 0.88rem;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+            <span>Export Word (.docx)</span>
           </button>
         </div>
 
@@ -152,9 +165,9 @@
           <strong class="eda-kpi-value text-danger" id="kpiThFailed">0</strong>
           <span class="eda-kpi-sub" id="kpiThFailedSub">Backlog / KT in Theory</span>
         </div>
-        <div class="eda-kpi-card kpi-accent" style="border: 2px solid #1F4E78;">
-          <span class="eda-kpi-label" style="color: #1F4E78;">PASS PERCENTAGE</span>
-          <strong class="eda-kpi-value" id="kpiThPassRate" style="color: #1F4E78; font-size: 1.8rem;">0.00%</strong>
+        <div class="eda-kpi-card kpi-accent">
+          <span class="eda-kpi-label">PASS PERCENTAGE</span>
+          <strong class="eda-kpi-value text-accent" id="kpiThPassRate">0.00%</strong>
           <span class="eda-kpi-sub">Passed / Appeared</span>
         </div>
         <div class="eda-kpi-card">
@@ -162,9 +175,9 @@
           <strong class="eda-kpi-value text-warning" id="kpiThFailRate">0.00%</strong>
           <span class="eda-kpi-sub">Failed / Appeared</span>
         </div>
-        <div class="eda-kpi-card" style="border-left: 4px solid #2563eb;">
-          <span class="eda-kpi-label" style="color: #2563eb;">FIRST CLASS & DISTINCTION</span>
-          <strong class="eda-kpi-value" id="kpiThFirstClassDist" style="color: #2563eb;">0</strong>
+        <div class="eda-kpi-card">
+          <span class="eda-kpi-label">FIRST CLASS &amp; DISTINCTION</span>
+          <strong class="eda-kpi-value" id="kpiThFirstClassDist">0</strong>
           <span class="eda-kpi-sub" id="kpiThFirstClassDistSub">≥ 60% of marks</span>
         </div>
       </div>
@@ -175,10 +188,10 @@
         <section class="card">
           <div class="card-header">
             <div>
-              <h3>Pass / Fail & First Class Analysis</h3>
+              <h3>Pass / Fail &amp; First Class Analysis</h3>
               <p class="results-meta-text">Clearance and First Class / Distinction distribution</p>
             </div>
-            <span class="tag">Pass, Fail & 1st Class</span>
+            <span class="tag">Pass, Fail &amp; 1st Class</span>
           </div>
           <div class="chart-and-table-wrapper">
             <div class="chart-box" style="position: relative; height: 230px; margin-bottom: 1rem;">
@@ -286,7 +299,7 @@
             </div>
             <div class="eda-kpi-card kpi-accent">
               <span class="eda-kpi-label">TW PASS RATE</span>
-              <strong class="eda-kpi-value" id="kpiTwPassRate" style="color: #1F4E78;">0.00%</strong>
+              <strong class="eda-kpi-value text-accent" id="kpiTwPassRate">0.00%</strong>
               <span class="eda-kpi-sub">Cleared TW</span>
             </div>
             <div class="eda-kpi-card">
@@ -317,7 +330,9 @@
 
         <!-- TW Unavailable Notice -->
         <div id="twUnavailableNotice" class="sub-notice-box">
-          <span class="sub-notice-icon">ℹ️</span>
+          <span class="sub-notice-icon">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          </span>
           <span>Term work data unavailable in selected dataset.</span>
         </div>
       </section>
@@ -352,7 +367,7 @@
             </div>
             <div class="eda-kpi-card kpi-accent">
               <span class="eda-kpi-label">PASS RATE</span>
-              <strong class="eda-kpi-value" id="kpiPrPassRate" style="color: #1F4E78;">0.00%</strong>
+              <strong class="eda-kpi-value text-accent" id="kpiPrPassRate">0.00%</strong>
               <span class="eda-kpi-sub">Cleared Practical</span>
             </div>
             <div class="eda-kpi-card">
@@ -383,7 +398,9 @@
 
         <!-- Practical Unavailable Notice -->
         <div id="prUnavailableNotice" class="sub-notice-box">
-          <span class="sub-notice-icon">ℹ️</span>
+          <span class="sub-notice-icon">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          </span>
           <span>Practical/Oral data unavailable in selected dataset.</span>
         </div>
       </section>
@@ -392,7 +409,7 @@
       <section class="card" style="margin-top: 1.5rem; margin-bottom: 2rem;">
         <div class="card-header">
           <div>
-            <h3>🏆 TOP 5 STUDENTS</h3>
+            <h3>Top 5 Subject Scorers</h3>
             <p class="results-meta-text">Ranked strictly by total subject examination marks (Theory + Lab combined)</p>
           </div>
           <span class="tag tag-accent">Merit Leaders</span>
@@ -416,5 +433,3 @@
       </section>
     </div>
   </section>
-
-  <!-- VIEW: Semester-wise Analysis (/analysis/semester) -->

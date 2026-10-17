@@ -51,6 +51,7 @@ let batchChartInstances = {};
 document.addEventListener("DOMContentLoaded", () => {
   const initFns = [
     ["initTheme", initTheme],
+    ["initDensityMode", initDensityMode],
     ["initAppRouting", initAppRouting],
     ["initDrawerCollapse", initDrawerCollapse],
     ["initStatus", initStatus],
@@ -179,6 +180,49 @@ function updateChartsTheme(theme) {
   });
 }
 
+function initDensityMode() {
+  const btnDensityToggle = document.getElementById("btnDensityToggle");
+  const btnDensityToggleSettings = document.getElementById("btnDensityToggleSettings");
+
+  const saved = localStorage.getItem("data-extractor-density") || "comfortable";
+  applyDensity(saved, false);
+
+  const toggle = () => {
+    const current = document.documentElement.getAttribute("data-density") || "comfortable";
+    const next = current === "compact" ? "comfortable" : "compact";
+    applyDensity(next, true);
+  };
+
+  if (btnDensityToggle) btnDensityToggle.addEventListener("click", toggle);
+  if (btnDensityToggleSettings) btnDensityToggleSettings.addEventListener("click", toggle);
+}
+
+function applyDensity(density, save = true) {
+  const isCompact = density === "compact";
+  document.documentElement.setAttribute("data-density", density);
+  if (document.body) {
+    if (isCompact) {
+      document.body.classList.add("compact-mode");
+      document.documentElement.classList.add("compact-mode");
+    } else {
+      document.body.classList.remove("compact-mode");
+      document.documentElement.classList.remove("compact-mode");
+    }
+  }
+  const label = document.getElementById("densityLabelText");
+  if (label) {
+    label.textContent = isCompact ? "Comfortable" : "Compact";
+  }
+  const btn = document.getElementById("btnDensityToggle");
+  if (btn) {
+    btn.setAttribute("title", isCompact ? "Switch to Comfortable View" : "Switch to Compact View");
+    btn.setAttribute("aria-label", isCompact ? "Switch to Comfortable View" : "Switch to Compact View");
+  }
+  if (save) {
+    localStorage.setItem("data-extractor-density", density);
+  }
+}
+
 // ==========================================================================
 // PHASE 1: APPLICATION SHELL, PERSISTENT COLLAPSIBLE SIDE DRAWER & ROUTING
 // ==========================================================================
@@ -296,86 +340,98 @@ function navigateTo(route, pushState = true) {
   }
 }
 
-// Drawer Collapsible Controller
+// Professional App Drawer Overlay Controller
 function initDrawerCollapse() {
   const shell = document.getElementById("appLayoutShell");
   const btnToggleDrawer = document.getElementById("btnToggleDrawer");
+  const backdrop = document.getElementById("drawerBackdrop");
   const btnDrawerPin = document.getElementById("btnDrawerPin");
   const btnDrawerToggleSettings = document.getElementById("btnDrawerToggleSettings");
 
   if (!shell) return;
 
-  // Retrieve saved preference or auto-collapse on small screens (<1024px)
-  const saved = localStorage.getItem("data-extractor-drawer-collapsed");
-  const shouldCollapse = saved !== null ? saved === "true" : (window.innerWidth < 1024);
-  applyDrawerCollapsed(shouldCollapse, false);
+  // Retrieve saved preference (default: closed for maximum workspace space)
+  const saved = localStorage.getItem("data-extractor-drawer-open");
+  const isOpen = saved === "true";
+  setDrawerState(isOpen, false);
 
   const toggle = () => {
-    const isCurrentlyCollapsed = shell.classList.contains("drawer-collapsed");
-    applyDrawerCollapsed(!isCurrentlyCollapsed, true);
+    const currentlyOpen = document.body.classList.contains("drawer-open");
+    setDrawerState(!currentlyOpen, true);
   };
 
   if (btnToggleDrawer) btnToggleDrawer.addEventListener("click", toggle);
   if (btnDrawerPin) btnDrawerPin.addEventListener("click", toggle);
   if (btnDrawerToggleSettings) btnDrawerToggleSettings.addEventListener("click", toggle);
+  if (backdrop) backdrop.addEventListener("click", () => setDrawerState(false, true));
 
-  // Global Keyboard Shortcut: Ctrl+B or Cmd+B
+  // Global Keyboard Shortcuts: Ctrl+B or Cmd+B to toggle, Escape to close
   document.addEventListener("keydown", (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
       const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : "";
       if (tag === "input" || tag === "textarea") return;
       e.preventDefault();
       toggle();
+    } else if (e.key === "Escape" && document.body.classList.contains("drawer-open")) {
+      setDrawerState(false, true);
     }
   });
 
-  // Responsive resize watcher: auto-collapse on small viewport if user didn't explicitly store
-  window.addEventListener("resize", () => {
-    if (localStorage.getItem("data-extractor-drawer-collapsed") === null) {
-      if (window.innerWidth < 1024 && !shell.classList.contains("drawer-collapsed")) {
-        applyDrawerCollapsed(true, false);
-      } else if (window.innerWidth >= 1024 && shell.classList.contains("drawer-collapsed")) {
-        applyDrawerCollapsed(false, false);
+  // Automatically close drawer when user clicks any navigation link
+  document.querySelectorAll(".drawer-nav-item").forEach(item => {
+    item.addEventListener("click", () => {
+      if (document.body.classList.contains("drawer-open")) {
+        setDrawerState(false, true);
       }
-    }
+    });
   });
 }
 
-function applyDrawerCollapsed(collapsed, save = true) {
-  const shell = document.getElementById("appLayoutShell");
-  const btnToggleDrawer = document.getElementById("btnToggleDrawer");
-  const btnDrawerPin = document.getElementById("btnDrawerPin");
+function setDrawerState(open, save = true) {
   const drawer = document.getElementById("appSidebarDrawer");
+  const backdrop = document.getElementById("drawerBackdrop");
+  const btnToggleDrawer = document.getElementById("btnToggleDrawer");
+  const shell = document.getElementById("appLayoutShell");
 
-  if (!shell) return;
-
-  if (collapsed) {
-    shell.classList.add("drawer-collapsed");
-    if (drawer) drawer.setAttribute("aria-expanded", "false");
-    if (btnToggleDrawer) {
-      btnToggleDrawer.setAttribute("title", "Expand Sidebar (Ctrl+B)");
-      btnToggleDrawer.setAttribute("aria-label", "Expand Sidebar");
+  if (open) {
+    document.body.classList.add("drawer-open");
+    if (shell) shell.classList.remove("drawer-collapsed");
+    if (drawer) {
+      drawer.classList.add("open");
+      drawer.setAttribute("aria-expanded", "true");
     }
-    if (btnDrawerPin) {
-      btnDrawerPin.setAttribute("title", "Expand Sidebar (Ctrl+B)");
-      btnDrawerPin.setAttribute("aria-label", "Expand Sidebar");
+    if (backdrop) backdrop.classList.add("active");
+    if (btnToggleDrawer) {
+      btnToggleDrawer.classList.add("active");
+      btnToggleDrawer.setAttribute("aria-expanded", "true");
+      btnToggleDrawer.setAttribute("title", "Close Sidebar (Ctrl+B)");
+      btnToggleDrawer.setAttribute("aria-label", "Close Sidebar");
     }
   } else {
-    shell.classList.remove("drawer-collapsed");
-    if (drawer) drawer.setAttribute("aria-expanded", "true");
-    if (btnToggleDrawer) {
-      btnToggleDrawer.setAttribute("title", "Collapse Sidebar (Ctrl+B)");
-      btnToggleDrawer.setAttribute("aria-label", "Collapse Sidebar");
+    document.body.classList.remove("drawer-open");
+    if (shell) shell.classList.add("drawer-collapsed");
+    if (drawer) {
+      drawer.classList.remove("open");
+      drawer.setAttribute("aria-expanded", "false");
     }
-    if (btnDrawerPin) {
-      btnDrawerPin.setAttribute("title", "Collapse Sidebar (Ctrl+B)");
-      btnDrawerPin.setAttribute("aria-label", "Collapse Sidebar");
+    if (backdrop) backdrop.classList.remove("active");
+    if (btnToggleDrawer) {
+      btnToggleDrawer.classList.remove("active");
+      btnToggleDrawer.setAttribute("aria-expanded", "false");
+      btnToggleDrawer.setAttribute("title", "Open Sidebar (Ctrl+B)");
+      btnToggleDrawer.setAttribute("aria-label", "Open Sidebar");
     }
   }
 
   if (save) {
-    localStorage.setItem("data-extractor-drawer-collapsed", collapsed ? "true" : "false");
+    localStorage.setItem("data-extractor-drawer-open", open ? "true" : "false");
+    localStorage.setItem("data-extractor-drawer-collapsed", open ? "false" : "true");
   }
+}
+
+// Backward-compatible alias for any legacy calls
+function applyDrawerCollapsed(collapsed, save = true) {
+  setDrawerState(!collapsed, save);
 }
 
 // ==========================================================================
@@ -3085,6 +3141,36 @@ function initUpload() {
   const fileInput = document.getElementById("fileInput");
   const extractBtn = document.getElementById("extractBtn");
 
+  // Segmented Source Switcher (Upload vs Library)
+  const tabUpload = document.getElementById("tabSourceUpload");
+  const tabLibrary = document.getElementById("tabSourceLibrary");
+  const paneUpload = document.getElementById("paneSourceUpload");
+  const paneLibrary = document.getElementById("paneSourceLibrary");
+
+  if (tabUpload && tabLibrary && paneUpload && paneLibrary) {
+    tabUpload.addEventListener("click", () => {
+      tabUpload.classList.add("active");
+      tabUpload.setAttribute("aria-selected", "true");
+      tabLibrary.classList.remove("active");
+      tabLibrary.setAttribute("aria-selected", "false");
+      paneUpload.classList.remove("hidden");
+      paneUpload.classList.add("active");
+      paneLibrary.classList.add("hidden");
+      paneLibrary.classList.remove("active");
+    });
+
+    tabLibrary.addEventListener("click", () => {
+      tabLibrary.classList.add("active");
+      tabLibrary.setAttribute("aria-selected", "true");
+      tabUpload.classList.remove("active");
+      tabUpload.setAttribute("aria-selected", "false");
+      paneLibrary.classList.remove("hidden");
+      paneLibrary.classList.add("active");
+      paneUpload.classList.add("hidden");
+      paneUpload.classList.remove("active");
+    });
+  }
+
   if (dropArea && fileInput) {
     // Unified click listener on dropArea (and browseBtn / change-file-pill inside it)
     dropArea.addEventListener("click", () => {
@@ -4383,7 +4469,8 @@ function renderResults(result) {
       telemTokens.textContent = `In: ${inTok.toLocaleString()} | Out: ${outTok.toLocaleString()} (Tot: ${totTok.toLocaleString()})`;
     }
   } else if (tokenPill) {
-    tokenPill.classList.add("hidden");
+    if (tokenPillText) tokenPillText.textContent = "Tokens: 0 in / 0 out (0 tot)";
+    tokenPill.classList.remove("hidden");
   }
 
   currentRecords = result.students || [];

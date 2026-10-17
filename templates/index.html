@@ -12,8 +12,11 @@
   <script>
     (function() {
       try {
-        const saved = localStorage.getItem('data-extractor-ai-theme') || localStorage.getItem('theme');
-        const theme = saved || 'dark';
+        const savedTheme = localStorage.getItem('data-extractor-ai-theme') || localStorage.getItem('theme');
+        let theme = savedTheme;
+        if (!theme) {
+          theme = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+        }
         document.documentElement.setAttribute('data-theme', theme);
         if (theme === 'light') {
           document.documentElement.classList.add('light-theme');
@@ -22,6 +25,12 @@
           document.documentElement.classList.add('dark-theme');
           document.documentElement.classList.remove('light-theme');
         }
+
+        const savedDensity = localStorage.getItem('data-extractor-density') || 'comfortable';
+        document.documentElement.setAttribute('data-density', savedDensity);
+        if (savedDensity === 'compact') {
+          document.documentElement.classList.add('compact-mode');
+        }
       } catch (e) {}
     })();
   </script>
@@ -29,6 +38,9 @@
 <body class="dark-theme">
 
   {% include 'components/header.html' %}
+
+  <!-- Drawer Backdrop Blur Overlay -->
+  <div class="drawer-backdrop" id="drawerBackdrop" aria-hidden="true"></div>
 
   <!-- Persistent Desktop App Shell: Drawer + Main Workspace -->
   <div class="app-layout-shell" id="appLayoutShell">
