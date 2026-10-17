@@ -1378,24 +1378,37 @@ class BatchAcademicAnalyzer:
 
             topper_by_semester[sem] = top_list
 
-        # Multi-Semester Consistent Toppers: appeared in top 10 >= 2 times
+        # Multi-Semester Merit Leaders & Toppers: Ranked primarily by Cumulative SGPI (CGPI)
+        prog_lookup = {p["canonical_name"]: p for p in student_progression_list}
         multi_sem_toppers = []
         for v in topper_frequency.values():
             if v["appearances"] >= 2:
-                avg_sg = round(float(np.mean(v["sgpi_values"])), 2) if v["sgpi_values"] else 0.0
+                c_name = v["canonical_name"]
+                p_info = prog_lookup.get(c_name)
+
+                # Use true overall degree Cumulative SGPI across all semesters if available, else topper-semesters average
+                cgpi_val = (p_info.get("average_sgpi") if p_info and p_info.get("average_sgpi") is not None
+                            else (round(float(np.mean(v["sgpi_values"])), 2) if v["sgpi_values"] else 0.0))
+
+                prn_val = (p_info.get("prn") if p_info and p_info.get("prn") and p_info.get("prn") != "N/A"
+                           else (v.get("student_id") or v["seat_no"]))
+
                 multi_sem_toppers.append({
-                    "canonical_name": v["canonical_name"],
-                    "name": v["canonical_name"],
-                    "student_name": v["canonical_name"],
+                    "canonical_name": c_name,
+                    "name": c_name,
+                    "student_name": c_name,
                     "seat_no": v["seat_no"],
-                    "student_id": v.get("student_id") or v["seat_no"],
+                    "prn": prn_val,
+                    "student_id": prn_val,
                     "appearances": v["appearances"],
                     "count": v["appearances"],
                     "semesters": sorted(v["semesters"]),
-                    "average_sgpi": avg_sg,
-                    "avg_sgpi": avg_sg
+                    "average_sgpi": cgpi_val,
+                    "avg_sgpi": cgpi_val
                 })
-        multi_sem_toppers.sort(key=lambda x: (x["appearances"], x["average_sgpi"]), reverse=True)
+
+        # Rank students primarily by CGPI (Cumulative SGPI) descending, with appearances as secondary tiebreaker
+        multi_sem_toppers.sort(key=lambda x: (x["average_sgpi"], x["appearances"]), reverse=True)
         for rank_idx, t in enumerate(multi_sem_toppers, 1):
             t["rank"] = rank_idx
 

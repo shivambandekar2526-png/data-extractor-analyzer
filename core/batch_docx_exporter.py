@@ -703,7 +703,7 @@ def generate_batch_analysis_docx(
     p_sec3.paragraph_format.space_before = Pt(6)
     p_sec3.paragraph_format.space_after = Pt(2)
     p_sec3.paragraph_format.line_spacing = Pt(10)
-    r_s3 = p_sec3.add_run("3. TOP BATCH MERIT LEADERS (CONSISTENT HONOR ROLL)")
+    r_s3 = p_sec3.add_run("3. TOP BATCH MERIT LEADERS (CUMULATIVE CGPI MERIT ROLL)")
     r_s3.bold = True
     r_s3.font.size = Pt(9.5)
     r_s3.font.color.rgb = COLOR_NAVY
