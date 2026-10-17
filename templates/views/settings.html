@@ -15,17 +15,17 @@
     </div>
 
     <div class="settings-grid">
-      <!-- Combined AI Settings Card: Local & Cloud Intelligence -->
-      <section class="card settings-card settings-card-unified">
+      <!-- Combined AI Settings Card: Local & Cloud Intelligence (Vertical Layout) -->
+      <section class="card settings-card">
         <div class="card-header">
           <h2>AI Intelligence &amp; Hybrid Orchestration</h2>
           <span class="tag tag-accent">Dual Engine</span>
         </div>
-        <p class="settings-card-desc">Unified control for on-device local neural inference and high-speed multi-provider Cloud AI orchestration.</p>
+        <p class="settings-card-desc">Unified control for local neural models and multi-provider Cloud AI failover pools.</p>
 
-        <div class="settings-unified-grid">
-          <!-- Column 1: Local AI Engine (Ollama) -->
-          <div class="settings-engine-col">
+        <div class="settings-engine-stack">
+          <!-- Subsection 1: Local AI Engine (Ollama) -->
+          <div class="settings-engine-section">
             <div class="engine-col-header">
               <span class="engine-col-title">Local AI Engine (Ollama)</span>
               <span class="tag">Local Inference</span>
@@ -35,23 +35,19 @@
               <label class="control-label" for="settingsModelSelect">Active Local Model:</label>
               <select id="settingsModelSelect" class="form-select"></select>
             </div>
-            <div class="settings-info-box" style="margin-top: 0.85rem;">
-              <span class="info-dot green"></span>
-              <span>GPU Acceleration: RTX 4060 GPU Detected (CUDA / Local Engine Ready)</span>
-            </div>
           </div>
 
-          <!-- Divider between columns -->
-          <div class="settings-engine-divider"></div>
+          <!-- Subtle horizontal divider -->
+          <div class="settings-engine-divider-h"></div>
 
-          <!-- Column 2: Cloud AI & Hybrid Orchestrator -->
-          <div class="settings-engine-col">
+          <!-- Subsection 2: Cloud AI & Hybrid Orchestrator -->
+          <div class="settings-engine-section">
             <div class="engine-col-header">
               <span class="engine-col-title">Cloud AI &amp; Hybrid Orchestrator</span>
               <span class="tag">Cloud AI</span>
             </div>
             <p class="engine-col-desc">Configure multi-provider failover pools across Google Gemini, Groq, Claude, DeepSeek, OpenAI, and OpenRouter.</p>
-            <div class="settings-control-row" style="margin-top: 0.85rem;">
+            <div class="settings-control-row" style="margin-top: 0.5rem;">
               <button type="button" id="btnOpenCloudModalFromSettings" class="btn btn-primary btn-sm" style="width: 100%;">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
@@ -60,7 +56,7 @@
                 <span>Configure Keys &amp; Routing</span>
               </button>
             </div>
-            <div class="settings-info-box" style="margin-top: 0.85rem;">
+            <div class="settings-info-box" style="margin-top: 0.65rem;">
               <span>API keys, active models, diagnostics, and test connections are managed in the configuration modal.</span>
             </div>
           </div>
