@@ -183,6 +183,8 @@ function updateChartsTheme(theme) {
 function initDensityMode() {
   const btnDensityToggle = document.getElementById("btnDensityToggle");
   const btnDensityToggleSettings = document.getElementById("btnDensityToggleSettings");
+  const btnDensityComfortable = document.getElementById("btnDensityComfortable");
+  const btnDensityCompact = document.getElementById("btnDensityCompact");
 
   const saved = localStorage.getItem("data-extractor-density") || "comfortable";
   applyDensity(saved, false);
@@ -193,6 +195,12 @@ function initDensityMode() {
     applyDensity(next, true);
   };
 
+  if (btnDensityComfortable) {
+    btnDensityComfortable.addEventListener("click", () => applyDensity("comfortable", true));
+  }
+  if (btnDensityCompact) {
+    btnDensityCompact.addEventListener("click", () => applyDensity("compact", true));
+  }
   if (btnDensityToggle) btnDensityToggle.addEventListener("click", toggle);
   if (btnDensityToggleSettings) btnDensityToggleSettings.addEventListener("click", toggle);
 }
@@ -209,6 +217,20 @@ function applyDensity(density, save = true) {
       document.documentElement.classList.remove("compact-mode");
     }
   }
+
+  // Update segmented control buttons in header
+  const btnComf = document.getElementById("btnDensityComfortable");
+  const btnComp = document.getElementById("btnDensityCompact");
+  if (btnComf && btnComp) {
+    if (isCompact) {
+      btnComp.classList.add("active");
+      btnComf.classList.remove("active");
+    } else {
+      btnComf.classList.add("active");
+      btnComp.classList.remove("active");
+    }
+  }
+
   const label = document.getElementById("densityLabelText");
   if (label) {
     label.textContent = isCompact ? "Comfortable" : "Compact";
@@ -2644,18 +2666,35 @@ function initSettingsView() {
   const btnCloudModal = document.getElementById("btnOpenCloudModalFromSettings");
   const btnThemeToggle = document.getElementById("btnThemeToggleSettings");
 
-  if (modelSelect && topModelSelector && topModelSelector.options && topModelSelector.options.length > 0) {
-    modelSelect.innerHTML = topModelSelector.innerHTML;
-    modelSelect.value = topModelSelector.value;
-
-    if (!modelSelect.dataset.bound) {
-      modelSelect.dataset.bound = "true";
-      modelSelect.addEventListener("change", () => {
-        topModelSelector.value = modelSelect.value;
-        const event = new Event("change");
-        topModelSelector.dispatchEvent(event);
-      });
-    }
+  if (modelSelect && !modelSelect.dataset.bound) {
+    modelSelect.dataset.bound = "true";
+    modelSelect.addEventListener("change", async (e) => {
+      const selected = e.target.value;
+      if (topModelSelector) {
+        topModelSelector.value = selected;
+      }
+      try {
+        const swRes = await fetch("/api/model/switch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model: selected })
+        });
+        const swData = await swRes.json();
+        if (swData.success) {
+          const modelTag = document.getElementById("activeModelTag");
+          const chatModelTag = document.getElementById("chatModelTag");
+          const auditGpuText = document.getElementById("auditGpuText");
+          const telemEngine = document.getElementById("telemEngine");
+          if (modelTag) modelTag.textContent = swData.active_model;
+          if (chatModelTag) chatModelTag.textContent = swData.active_model;
+          if (auditGpuText) auditGpuText.textContent = `Ollama Online (${swData.active_model} on GPU)`;
+          if (telemEngine) telemEngine.textContent = `${swData.active_model} on Local GPU`;
+          appendChatMessage("assistant", `⚡ Switched active local model to <strong>${escapeHtml(swData.active_model)}</strong>.`);
+        }
+      } catch (err) {
+        console.error("Failed to switch model from settings:", err);
+      }
+    });
   }
 
   if (btnCloudModal && !btnCloudModal.dataset.bound) {
@@ -2691,28 +2730,31 @@ async function initStatus() {
     const pickerContainer = document.getElementById("modelPickerContainer");
     const modelSelector = document.getElementById("modelSelector");
 
-    // Cloud AI Status Pill
+    // Cloud AI Status Pill: Show ONLY whether active or inactive
     const cloudBadge = document.getElementById("cloudStatusBadge");
     const cloudText = document.getElementById("cloudStatusText");
     if (cloudBadge && cloudText && data.cloud_ai) {
       if (data.cloud_ai.is_configured) {
-        cloudBadge.className = "status-pill status-cloud-pill";
-        cloudBadge.querySelector(".status-dot").className = "status-dot green";
-        cloudText.textContent = `${data.cloud_ai.provider.toUpperCase()} (${data.cloud_ai.model})`;
+        cloudBadge.className = "status-pill status-cloud-pill status-active";
+        const dot = cloudBadge.querySelector(".status-dot");
+        if (dot) dot.className = "status-dot green";
+        cloudText.textContent = "Cloud AI: Active";
       } else {
-        cloudBadge.className = "status-pill status-cloud-pill";
-        cloudBadge.querySelector(".status-dot").className = "status-dot gray";
-        cloudText.textContent = "Cloud AI: Not Set";
+        cloudBadge.className = "status-pill status-cloud-pill status-inactive";
+        const dot = cloudBadge.querySelector(".status-dot");
+        if (dot) dot.className = "status-dot gray";
+        cloudText.textContent = "Cloud AI: Inactive";
       }
     }
 
+    // Local AI Status: Show ONLY whether active or inactive
     if (data.ollama_available) {
       if (badge) {
-        badge.className = "status-pill status-trained";
+        badge.className = "status-pill status-local-pill status-active";
         const dot = badge.querySelector(".status-dot");
         if (dot) dot.className = "status-dot green";
       }
-      if (statusText) statusText.textContent = `Local AI Active (${data.active_model})`;
+      if (statusText) statusText.textContent = "Local AI: Active";
       if (modelTag) modelTag.textContent = data.active_model;
       if (chatModelTag) chatModelTag.textContent = data.active_model;
       if (auditGpuBadge) {
@@ -2722,7 +2764,20 @@ async function initStatus() {
       if (auditGpuText) auditGpuText.textContent = `Ollama Online (${data.active_model} on GPU)`;
       if (telemEngine) telemEngine.textContent = `${data.active_model} on Local GPU`;
 
-      // Populate Model Picker Dropdown
+      // Populate Settings Model Selector
+      const settingsModelSelect = document.getElementById("settingsModelSelect");
+      if (settingsModelSelect && Array.isArray(data.available_models) && data.available_models.length > 0) {
+        settingsModelSelect.innerHTML = "";
+        data.available_models.forEach(m => {
+          const opt = document.createElement("option");
+          opt.value = m;
+          opt.textContent = m;
+          if (m === data.active_model) opt.selected = true;
+          settingsModelSelect.appendChild(opt);
+        });
+      }
+
+      // Populate Model Picker Dropdown if it exists in DOM
       if (pickerContainer && modelSelector && Array.isArray(data.available_models) && data.available_models.length > 0) {
         pickerContainer.style.display = "flex";
         modelSelector.innerHTML = "";
@@ -2747,7 +2802,6 @@ async function initStatus() {
               });
               const swData = await swRes.json();
               if (swData.success) {
-                statusText.textContent = `Local AI Active (${swData.active_model})`;
                 if (modelTag) modelTag.textContent = swData.active_model;
                 if (chatModelTag) chatModelTag.textContent = swData.active_model;
                 if (auditGpuText) auditGpuText.textContent = `Ollama Online (${swData.active_model} on GPU)`;
@@ -2762,12 +2816,12 @@ async function initStatus() {
       }
     } else {
       if (badge) {
-        badge.className = "status-pill status-trained";
+        badge.className = "status-pill status-local-pill status-inactive";
         const dot = badge.querySelector(".status-dot");
-        if (dot) dot.className = "status-dot green";
+        if (dot) dot.className = "status-dot gray";
       }
-      if (statusText) statusText.textContent = "Possibility Engine Active (Fast Offline)";
-      if (modelTag) modelTag.textContent = "Pre-Trained KB";
+      if (statusText) statusText.textContent = "Local AI: Inactive";
+      if (modelTag) modelTag.textContent = "Offline";
       if (pickerContainer) pickerContainer.style.display = "none";
       if (auditGpuBadge) {
         const dot = auditGpuBadge.querySelector(".status-dot");
@@ -2778,6 +2832,22 @@ async function initStatus() {
     }
   } catch (e) {
     console.error("Status fetch failed:", e);
+    const badge = document.getElementById("aiStatusBadge");
+    const statusText = document.getElementById("aiStatusText");
+    const cloudBadge = document.getElementById("cloudStatusBadge");
+    const cloudText = document.getElementById("cloudStatusText");
+    if (badge) {
+      badge.className = "status-pill status-local-pill status-inactive";
+      const dot = badge.querySelector(".status-dot");
+      if (dot) dot.className = "status-dot gray";
+    }
+    if (statusText) statusText.textContent = "Local AI: Inactive";
+    if (cloudBadge) {
+      cloudBadge.className = "status-pill status-cloud-pill status-inactive";
+      const dot = cloudBadge.querySelector(".status-dot");
+      if (dot) dot.className = "status-dot gray";
+    }
+    if (cloudText) cloudText.textContent = "Cloud AI: Inactive";
   }
 }
 

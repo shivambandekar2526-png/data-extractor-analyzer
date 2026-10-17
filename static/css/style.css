@@ -432,6 +432,106 @@ body.light-theme .btn-theme-toggle .icon-sun,
   letter-spacing: 0.02em;
 }
 
+/* Layout Density Segmented Slider / Toggle */
+.density-segmented-control {
+  display: inline-flex;
+  align-items: center;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-full);
+  padding: 3px;
+  height: 34px;
+  gap: 3px;
+  box-sizing: border-box;
+  user-select: none;
+}
+
+.density-seg-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: 26px;
+  padding: 0 0.65rem;
+  border-radius: var(--radius-full);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  white-space: nowrap;
+}
+
+.density-seg-btn:hover {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.density-seg-btn.active {
+  background: #4F46E5;
+  color: #FFFFFF;
+  font-weight: 600;
+  box-shadow: 0 1px 6px rgba(79, 70, 229, 0.45);
+}
+
+.density-seg-btn svg {
+  stroke: currentColor;
+  flex-shrink: 0;
+}
+
+body.light-theme .density-segmented-control,
+[data-theme="light"] .density-segmented-control {
+  background: #F1F5F9;
+  border-color: #CBD5E1;
+}
+
+body.light-theme .density-seg-btn,
+[data-theme="light"] .density-seg-btn {
+  color: #64748B;
+}
+
+body.light-theme .density-seg-btn:hover,
+[data-theme="light"] .density-seg-btn:hover {
+  color: #0F172A;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+body.light-theme .density-seg-btn.active,
+[data-theme="light"] .density-seg-btn.active {
+  background: #4F46E5;
+  color: #FFFFFF;
+  box-shadow: 0 1px 6px rgba(79, 70, 229, 0.3);
+}
+
+/* Status Pill Styling Refinements */
+.status-pill.status-active {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.08);
+  color: #6EE7B7;
+}
+
+.status-pill.status-inactive {
+  border-color: var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+}
+
+body.light-theme .status-pill.status-active,
+[data-theme="light"] .status-pill.status-active {
+  border-color: rgba(16, 185, 129, 0.3);
+  background: rgba(16, 185, 129, 0.09);
+  color: #065F46;
+}
+
+body.light-theme .status-pill.status-inactive,
+[data-theme="light"] .status-pill.status-inactive {
+  border-color: #E2E8F0;
+  background: #F8FAFC;
+  color: #94A3B8;
+}
+
 /* Main Layout */
 .app-main {
   flex: 1;
