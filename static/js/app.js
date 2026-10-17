@@ -45,6 +45,9 @@ let semesterChartInstances = {};
 let semesterOptionsCache = null;
 let currentSemesterAnalysisResult = null;
 
+// Phase 6 Batch Analytics Variables
+let batchChartInstances = {};
+
 document.addEventListener("DOMContentLoaded", () => {
   const initFns = [
     ["initTheme", initTheme],
@@ -70,7 +73,8 @@ document.addEventListener("DOMContentLoaded", () => {
     ["initSettingsView", initSettingsView],
     ["initLiveFolderActionListener", initLiveFolderActionListener],
     ["initSubjectPrintAndExportHandlers", initSubjectPrintAndExportHandlers],
-    ["initSemesterPrintAndExportHandlers", initSemesterPrintAndExportHandlers]
+    ["initSemesterPrintAndExportHandlers", initSemesterPrintAndExportHandlers],
+    ["initBatchPrintAndExportHandlers", initBatchPrintAndExportHandlers]
   ];
   for (const [name, fn] of initFns) {
     try {
@@ -9883,7 +9887,6 @@ function renderRawSemesterTable(sem) {
 // ==========================================================================
 // Batch Suite Interactive Charts (Chart.js Engine)
 // ==========================================================================
-let batchChartInstances = {};
 
 function destroyBatchCharts() {
   Object.keys(batchChartInstances).forEach(k => {
@@ -10579,20 +10582,32 @@ function openBatchPrintPreview() {
     if (el) el.textContent = val;
   };
 
-  const totIntake = sr.total_admitted_n1_n3 || sr.total_cohort_intake || sr.total_intake || overall.total_students || 0;
+  const totIntake = sr.total_cohort_intake || sr.total_admitted_n1_n3 || sr.total_intake || overall.total_cohort_intake || overall.total_students || 0;
   const passedFinal = sr.P_final_passed || sr.passed_final_sem || sr.P_final || overall.graduated_eligible || 0;
   const pNoKt = sr.P_no_kt_passed || sr.passed_without_backlogs || sr.P_no_kt || overall.cleared_all_available_semesters || 0;
   const pWithKt = sr.P_with_kt_passed || sr.passed_with_backlogs || sr.P_with_kt || Math.max(0, passedFinal - pNoKt);
-  const successRate = sr.success_rate_percentage !== undefined ? sr.success_rate_percentage : (sr.success_rate_pct || 0.0);
-  const successRateNoKt = sr.success_rate_without_backlog_percentage !== undefined ? sr.success_rate_without_backlog_percentage : (sr.success_rate_no_backlog_percentage || sr.success_rate_no_kt_pct || 0.0);
+  const successRate = (sr.success_rate_percentage !== undefined)
+    ? sr.success_rate_percentage
+    : (overall.cleared_all_percentage !== undefined ? overall.cleared_all_percentage : (totIntake > 0 ? (passedFinal / totIntake * 100) : 0));
+  const successRateNoKt = (sr.success_rate_without_backlog_percentage !== undefined)
+    ? sr.success_rate_without_backlog_percentage
+    : (totIntake > 0 ? (pNoKt / totIntake * 100) : 0);
 
   const gradeDist = overall.grade_distribution || {};
-  const distCnt = gradeDist.distinction || 0;
-  const firstCnt = gradeDist.first_class || 0;
-  const secondCnt = gradeDist.second_class || 0;
-  const passCnt = gradeDist.pass_class || 0;
-  const fcDistCnt = distCnt + firstCnt;
-  const fcDistPct = totIntake > 0 ? (fcDistCnt / totIntake * 100) : 0.0;
+  const distCnt = (gradeDist.distinction !== undefined) ? gradeDist.distinction : 0;
+  const firstCnt = (gradeDist.first_class !== undefined) ? gradeDist.first_class : 0;
+  const secondCnt = (gradeDist.second_class !== undefined) ? gradeDist.second_class : 0;
+  const passCnt = (gradeDist.pass_class !== undefined) ? gradeDist.pass_class : 0;
+  const pendingBacklogCnt = (overall.pending_backlog_count !== undefined)
+    ? overall.pending_backlog_count
+    : (gradeDist.pending_backlog !== undefined ? gradeDist.pending_backlog : Math.max(0, totIntake - passedFinal));
+
+  const fcDistCnt = (overall.first_class_distinction_count !== undefined)
+    ? overall.first_class_distinction_count
+    : (distCnt + firstCnt);
+  const fcDistPct = (overall.first_class_distinction_percentage !== undefined)
+    ? overall.first_class_distinction_percentage
+    : (totIntake > 0 ? (fcDistCnt / totIntake * 100) : 0.0);
 
   setText("prnBatchDeptName", deptDisplay.toUpperCase());
   setText("prnBatchCohort", batchRaw);
@@ -10607,8 +10622,8 @@ function openBatchPrintPreview() {
   const clrTbody = document.getElementById("prnTblBatchClearanceBody");
   if (clrTbody) {
     clrTbody.innerHTML = "";
-    const n1 = sr.regular_intake_n1 || sr.N1_regular_admitted || sr.N1 || 0;
-    const n3 = sr.lateral_entry_n3 || sr.N3_lateral_entry || sr.N3 || 0;
+    const n1 = sr.regular_intake_n1 || sr.N1_regular_admitted || sr.N1 || overall.regular_intake_n1 || 0;
+    const n3 = sr.lateral_entry_n3 || sr.N3_lateral_entry || sr.N3 || overall.lateral_entry_n3 || 0;
     const rows = [
       { label: "Total Cohort Intake (N1 + N3)", count: totIntake, pct: "100.00%", color: "#1e293b", bold: true, dot: "#1F4E78" },
       { label: "Regular Intake Admitted Sem 1 (N1)", count: n1, pct: totIntake > 0 ? `${(n1/totIntake*100).toFixed(2)}%` : "0%", color: "#334155", bold: false, dot: "#64748b" },
@@ -10640,11 +10655,11 @@ function openBatchPrintPreview() {
   if (classTbody) {
     classTbody.innerHTML = "";
     const classRows = [
-      { label: "Distinction (≥ 7.5)", count: distCnt },
-      { label: "First Class (6.75–7.49)", count: firstCnt },
-      { label: "Second Class (6.0–6.74)", count: secondCnt },
-      { label: "Pass Class (< 6.0)", count: passCnt },
-      { label: "With Backlogs / KT", count: overall.students_with_any_kt || 0 }
+      { label: "Distinction (SGPI ≥ 7.50)", count: distCnt },
+      { label: "First Class (6.75 – 7.49)", count: firstCnt },
+      { label: "Second Class (6.00 – 6.74)", count: secondCnt },
+      { label: "Pass Class (< 6.00)", count: passCnt },
+      { label: "Pending Backlog / Incomplete", count: pendingBacklogCnt }
     ];
     classRows.forEach(row => {
       const pct = totIntake > 0 ? (row.count / totIntake * 100).toFixed(2) : "0.00";
@@ -10660,17 +10675,19 @@ function openBatchPrintPreview() {
 
   // Populate SGPI Table
   const sgpiTbody = document.getElementById("prnTblBatchSgpiDistBody");
+  const sgpiRows = overall.sgpi_distribution || data.sgpi_distribution || [
+    { range: "9.00 – 10.00", count: 0, percentage: 0 },
+    { range: "8.00 – 8.99", count: 0, percentage: 0 },
+    { range: "7.00 – 7.99", count: 0, percentage: 0 },
+    { range: "6.00 – 6.99", count: 0, percentage: 0 },
+    { range: "< 6.00", count: 0, percentage: 0 }
+  ];
   if (sgpiTbody) {
     sgpiTbody.innerHTML = "";
-    const sgpiRows = [
-      { range: "9.00 – 10.00", count: Math.round(distCnt * 0.4) },
-      { range: "8.00 – 8.99", count: Math.round(distCnt * 0.6) },
-      { range: "7.00 – 7.99", count: firstCnt },
-      { range: "6.00 – 6.99", count: secondCnt },
-      { range: "< 6.00", count: passCnt }
-    ];
     sgpiRows.forEach(row => {
-      const pct = totIntake > 0 ? (row.count / totIntake * 100).toFixed(2) : "0.00";
+      const pct = (row.percentage !== undefined)
+        ? Number(row.percentage).toFixed(2)
+        : (passedFinal > 0 ? (row.count / passedFinal * 100).toFixed(2) : "0.00");
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td><strong>${row.range}</strong></td>
@@ -10693,29 +10710,33 @@ function openBatchPrintPreview() {
       else if (st.rank === 2) medal = "🥈 ";
       else if (st.rank === 3) medal = "🥉 ";
 
-      const sgpiVal = st.avg_sgpi !== null && st.avg_sgpi !== undefined ? Number(st.avg_sgpi).toFixed(2) : "—";
-      const timesVal = st.count ? `${st.count} Semesters in Top 10` : "Honor Roll";
+      const studentName = st.canonical_name || st.name || st.student_name || "Unknown";
+      const prnOrSeat = st.prn || st.student_id || st.seat_no || "N/A";
+      const sgpiVal = (st.avg_sgpi !== null && st.avg_sgpi !== undefined)
+        ? Number(st.avg_sgpi).toFixed(2)
+        : (st.average_sgpi !== undefined ? Number(st.average_sgpi).toFixed(2) : "—");
+      const timesVal = st.appearances || st.count || st.top_10_count || 0;
 
       tr.innerHTML = `
         <td style="text-align: center; font-weight: 700;">${medal}Rank ${st.rank || idx + 1}</td>
-        <td style="font-weight: 600;">${st.student_name}</td>
-        <td style="text-align: center; font-family: monospace;">${st.student_id || "N/A"}</td>
-        <td style="text-align: center; font-weight: 600; color: #1F4E78;">${timesVal}</td>
+        <td style="font-weight: 600;">${studentName}</td>
+        <td style="text-align: center; font-family: monospace;">${prnOrSeat}</td>
+        <td style="text-align: center; font-weight: 600; color: #1F4E78;">${timesVal} Semesters in Top 10</td>
         <td style="text-align: right; font-weight: 700; color: #059669;">${sgpiVal}</td>
       `;
       topTbody.appendChild(tr);
     });
   }
 
-  // Render Printable Charts
-  renderPrintBatchCharts(totIntake, pNoKt, pWithKt, distCnt, firstCnt, secondCnt, passCnt);
-
-  // Show Modal
+  // Show Modal before rendering charts so canvas elements have rendered dimensions
   const modal = document.getElementById("modalBatchPrintPreview");
   if (modal) modal.classList.remove("hidden");
+
+  // Render Printable Charts
+  renderPrintBatchCharts(totIntake, pNoKt, pWithKt, distCnt, firstCnt, secondCnt, passCnt, pendingBacklogCnt, sgpiRows);
 }
 
-function renderPrintBatchCharts(totIntake, pNoKt, pWithKt, distCnt, firstCnt, secondCnt, passCnt) {
+function renderPrintBatchCharts(totIntake, pNoKt, pWithKt, distCnt, firstCnt, secondCnt, passCnt, pendingBacklogCnt, sgpiRows) {
   if (typeof Chart === "undefined") return;
 
   if (batchChartInstances.prnClearance) { try { batchChartInstances.prnClearance.destroy(); } catch (e) {} }
@@ -10725,13 +10746,12 @@ function renderPrintBatchCharts(totIntake, pNoKt, pWithKt, distCnt, firstCnt, se
   // 1. Donut Clearance
   const ctxClearance = document.getElementById("prnChartBatchClearance");
   if (ctxClearance) {
-    const pending = Math.max(0, totIntake - (pNoKt + pWithKt));
     batchChartInstances.prnClearance = new Chart(ctxClearance, {
       type: "doughnut",
       data: {
-        labels: [`Zero KT (${pNoKt})`, `With KT (${pWithKt})`, `Backlog (${pending})`],
+        labels: [`Zero KT (${pNoKt})`, `With KT (${pWithKt})`, `Pending (${pendingBacklogCnt})`],
         datasets: [{
-          data: [pNoKt, pWithKt, pending],
+          data: [pNoKt, pWithKt, pendingBacklogCnt],
           backgroundColor: ["#10b981", "#f59e0b", "#ef4444"],
           borderWidth: 1.5,
           borderColor: "#ffffff"
@@ -10753,12 +10773,12 @@ function renderPrintBatchCharts(totIntake, pNoKt, pWithKt, distCnt, firstCnt, se
     batchChartInstances.prnClassification = new Chart(ctxClass, {
       type: "bar",
       data: {
-        labels: ["Distinction", "1st Class", "2nd Class", "Pass Class"],
+        labels: ["Distinction", "1st Class", "2nd Class", "Pass Class", "Pending KT"],
         datasets: [{
-          data: [distCnt, firstCnt, secondCnt, passCnt],
-          backgroundColor: ["#7c3aed", "#2563eb", "#06b6d4", "#64748b"],
+          data: [distCnt, firstCnt, secondCnt, passCnt, pendingBacklogCnt],
+          backgroundColor: ["#7c3aed", "#2563eb", "#06b6d4", "#64748b", "#ef4444"],
           borderRadius: 3,
-          maxBarThickness: 24
+          maxBarThickness: 20
         }]
       },
       options: {
@@ -10766,7 +10786,7 @@ function renderPrintBatchCharts(totIntake, pNoKt, pWithKt, distCnt, firstCnt, se
         animation: false,
         plugins: { legend: { display: false } },
         scales: {
-          x: { ticks: { font: { size: 7.5 } }, grid: { display: false } },
+          x: { ticks: { font: { size: 7.0 } }, grid: { display: false } },
           y: { beginAtZero: true, ticks: { font: { size: 7.5 }, precision: 0 }, grid: { color: "#e2e8f0" } }
         }
       }
@@ -10776,22 +10796,17 @@ function renderPrintBatchCharts(totIntake, pNoKt, pWithKt, distCnt, firstCnt, se
   // 3. SGPI Bar
   const ctxSgpi = document.getElementById("prnChartBatchSgpiDist");
   if (ctxSgpi) {
-    const counts = [
-      Math.round(distCnt * 0.4),
-      Math.round(distCnt * 0.6),
-      firstCnt,
-      secondCnt,
-      passCnt
-    ];
+    const labels = (sgpiRows || []).map(r => r.range.replace(" \u2013 ", "-").replace(" – ", "-"));
+    const counts = (sgpiRows || []).map(r => r.count);
     batchChartInstances.prnSgpiDist = new Chart(ctxSgpi, {
       type: "bar",
       data: {
-        labels: ["9-10", "8-8.99", "7-7.99", "6-6.99", "< 6.0"],
+        labels: labels.length ? labels : ["9-10", "8-8.99", "7-7.99", "6-6.99", "< 6.0"],
         datasets: [{
-          data: counts,
+          data: counts.length ? counts : [0, 0, 0, 0, 0],
           backgroundColor: "#0284c7",
           borderRadius: 3,
-          maxBarThickness: 24
+          maxBarThickness: 20
         }]
       },
       options: {
