@@ -224,7 +224,15 @@ class BatchAcademicAnalyzer:
             dest_dir = os.path.join(self.app_batch_dir, clean_slug)
 
         os.makedirs(dest_dir, exist_ok=True)
-        target_file = os.path.join(dest_dir, f"Sem_{sem_num}.xlsx")
+        # Preserve existing naming convention (Semester_N.xlsx vs Sem_N.xlsx) to prevent duplicate extra files
+        cand_canonical = os.path.join(dest_dir, f"Semester_{sem_num}.xlsx")
+        cand_legacy = os.path.join(dest_dir, f"Sem_{sem_num}.xlsx")
+        if os.path.isfile(cand_canonical):
+            target_file = cand_canonical
+        elif os.path.isfile(cand_legacy):
+            target_file = cand_legacy
+        else:
+            target_file = cand_legacy
 
         wb = openpyxl.Workbook()
         ws = wb.active
@@ -1700,28 +1708,36 @@ class BatchAcademicAnalyzer:
             if ftype == "excel":
                 use_ai = (excel_mode == "ai_fix")
                 records = self.parse_excel_semester(fpath, sem, target_branch, use_ai_fix=use_ai, progress_cb=sem_prog)
-                # Ensure clean sorted Excel copy is saved into app's designated batch store
-                clean_store_file = os.path.join(app_store_dir, f"Sem_{sem}.xlsx")
-                if not os.path.isfile(clean_store_file) or not s_info.get("is_app_store"):
+                # Never generate redundant duplicate Excel files if an Excel already exists for this semester
+                store_has_excel = any(
+                    os.path.isfile(os.path.join(app_store_dir, f"{p}_{sem}.xlsx"))
+                    for p in ["Semester", "Sem"]
+                )
+                if not store_has_excel and not s_info.get("is_app_store") and os.path.abspath(app_store_dir) != os.path.abspath(os.path.dirname(fpath)):
                     try:
                         self.save_clean_semester_excel(records, batch_slug, sem, target_dir=app_store_dir)
                     except Exception as e:
                         logger.warning(f"Could not copy clean excel for Sem {sem}: {e}")
             else:
-                # PDF format: extract and then save as clean Excel into app batch store!
+                # PDF format: extract and only auto-save to clean Excel if no Excel file exists for this semester
                 records = self.extract_pdf_semester(fpath, sem, engine_mode=pdf_pipeline, progress_cb=sem_prog)
-                try:
-                    clean_path = self.save_clean_semester_excel(records, batch_slug, sem, target_dir=app_store_dir)
-                    if audit_cb:
-                        audit_cb({
-                            "timestamp": time.strftime("%H:%M:%S"),
-                            "type": "clean_excel_saved",
-                            "badge": f"SEM {sem} EXCEL SAVED",
-                            "title": f"Auto-sorted clean Excel saved to {os.path.basename(os.path.dirname(clean_path))}/Sem_{sem}.xlsx",
-                            "details": {"path": clean_path, "students": len(records)}
-                        })
-                except Exception as e:
-                    logger.warning(f"Could not auto-save extracted PDF records to clean Excel: {e}")
+                store_has_excel = any(
+                    os.path.isfile(os.path.join(app_store_dir, f"{p}_{sem}.xlsx"))
+                    for p in ["Semester", "Sem"]
+                )
+                if not store_has_excel:
+                    try:
+                        clean_path = self.save_clean_semester_excel(records, batch_slug, sem, target_dir=app_store_dir)
+                        if audit_cb:
+                            audit_cb({
+                                "timestamp": time.strftime("%H:%M:%S"),
+                                "type": "clean_excel_saved",
+                                "badge": f"SEM {sem} EXCEL SAVED",
+                                "title": f"Auto-sorted clean Excel saved to {os.path.basename(os.path.dirname(clean_path))}/{os.path.basename(clean_path)}",
+                                "details": {"path": clean_path, "students": len(records)}
+                            })
+                    except Exception as e:
+                        logger.warning(f"Could not auto-save extracted PDF records to clean Excel: {e}")
 
             semester_data[sem] = records
 
