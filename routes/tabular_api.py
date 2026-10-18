@@ -1,4 +1,5 @@
 import os
+import time
 import logging
 import pandas as pd
 from flask import Blueprint, request, jsonify
@@ -23,16 +24,22 @@ def inspect_tabular_file():
     target_path = None
     target_filename = None
 
-    # Check for direct file upload
-    for key in ["file", "excel_file", "csv_file", "pdf_file"]:
-        if key in request.files:
-            up = request.files[key]
-            if up and up.filename:
-                safe_name = secure_filename(up.filename)
-                target_path = os.path.join(INPUT_DIR, safe_name)
-                up.save(target_path)
-                target_filename = safe_name
-                break
+    # Check for direct file upload across all file fields
+    if request.files:
+        keys_to_check = list(request.files.keys()) + ["file", "excel_file", "csv_file", "pdf_file", "tabular_file"]
+        for key in keys_to_check:
+            if key in request.files:
+                up = request.files[key]
+                if up and up.filename:
+                    safe_name = secure_filename(up.filename)
+                    if not safe_name or not os.path.splitext(safe_name)[1]:
+                        _, ext = os.path.splitext(up.filename)
+                        safe_name = f"uploaded_tabular_{int(time.time())}{ext if ext else '.xlsx'}"
+                    os.makedirs(INPUT_DIR, exist_ok=True)
+                    target_path = os.path.join(INPUT_DIR, safe_name)
+                    up.save(target_path)
+                    target_filename = safe_name
+                    break
 
     json_data = request.get_json(silent=True) or {}
     if not target_path:
@@ -41,6 +48,14 @@ def inspect_tabular_file():
             or json_data.get("filename")
             or request.form.get("batch_file")
             or json_data.get("batch_file")
+            or request.form.get("input_file")
+            or json_data.get("input_file")
+            or request.form.get("file")
+            or json_data.get("file")
+            or request.form.get("file_path")
+            or json_data.get("file_path")
+            or request.form.get("excel_path")
+            or json_data.get("excel_path")
         )
         if fname:
             resolved = resolve_tabular_file_path(fname)
@@ -61,7 +76,7 @@ def inspect_tabular_file():
 def import_tabular_direct():
     """Directly import Excel or CSV table without invoking AI (0 tokens)."""
     data = request.get_json(silent=True) or request.form.to_dict()
-    filename = data.get("filename")
+    filename = data.get("filename") or data.get("batch_file") or data.get("file")
     sheet_name = data.get("sheet_name")
     header_row = data.get("header_row")
     if header_row is not None:
@@ -91,7 +106,7 @@ def import_tabular_direct():
 def ai_fix_tabular():
     """Extract and restructure messy/unformatted Excel or CSV using AI."""
     data = request.get_json(silent=True) or request.form.to_dict()
-    filename = data.get("filename")
+    filename = data.get("filename") or data.get("batch_file") or data.get("file")
     sheet_name = data.get("sheet_name")
     pipeline_mode = data.get("pipeline_mode", "local")
     model = data.get("model")

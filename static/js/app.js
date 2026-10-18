@@ -9584,9 +9584,20 @@ async function inspectTabularFile(file) {
   if (thead) thead.innerHTML = "";
   if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1rem;">Reading table preview...</td></tr>`;
 
+  if (!(file instanceof File) && !(file instanceof Blob)) {
+    if (file && (file.rel_path || file.name)) {
+      return inspectTabularBatchFile(file.rel_path || file.name);
+    }
+  }
+
   try {
     const formData = new FormData();
-    formData.append("file", file);
+    if (file instanceof File || file instanceof Blob) {
+      formData.append("file", file, file.name || "uploaded.xlsx");
+      formData.append("tabular_file", file, file.name || "uploaded.xlsx");
+    } else if (typeof file === "string") {
+      return inspectTabularBatchFile(file);
+    }
 
     const res = await fetch("/api/tabular/inspect", {
       method: "POST",

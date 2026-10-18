@@ -444,15 +444,25 @@ def resolve_tabular_file_path(filename_or_rel: str) -> Optional[Tuple[str, str]]
         if cand_batch.startswith(os.path.abspath(base_store)) and os.path.isfile(cand_batch):
             return cand_batch, clean_rel
 
-    # 3. Walk directories to search by filename
-    for base_store in [DEPARTMENTS_DATA_DIR, INPUT_DIR]:
-        if not os.path.isdir(base_store):
-            continue
-        for root, _, files in os.walk(base_store):
-            for f in files:
-                if f.lower() == safe_base.lower() or f.lower() == os.path.basename(clean_rel).lower():
-                    found_path = os.path.join(root, f)
-                    rel_display = os.path.relpath(found_path, base_store).replace("\\", "/")
-                    return found_path, rel_display
+    # 4. Check Supabase Storage
+    try:
+        from services.supabase_service import get_supabase_service
+        svc = get_supabase_service()
+        if svc.is_configured:
+            remote_candidates = [
+                clean_rel,
+                f"excel/{clean_rel}" if not clean_rel.startswith("excel/") else clean_rel,
+                clean_rel.replace("departments_data/", "").replace("excel/", "")
+            ]
+            for r_cand in remote_candidates:
+                file_bytes = svc.download_file_bytes(r_cand)
+                if file_bytes:
+                    os.makedirs(INPUT_DIR, exist_ok=True)
+                    local_tmp = os.path.join(INPUT_DIR, os.path.basename(clean_rel))
+                    with open(local_tmp, "wb") as f:
+                        f.write(file_bytes)
+                    return local_tmp, clean_rel
+    except Exception as e:
+        logger.warning(f"Error fetching tabular file from Supabase: {e}")
 
     return None

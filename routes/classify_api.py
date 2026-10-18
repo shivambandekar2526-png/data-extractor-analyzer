@@ -28,14 +28,19 @@ def classify_uploaded_document():
     safe_name = None
     ext = None
 
-    for key in ["pdf_file", "file", "excel_file", "csv_file"]:
+    keys_to_check = list(request.files.keys()) + ["pdf_file", "file", "excel_file", "csv_file", "tabular_file"]
+    for key in keys_to_check:
         if key in request.files:
             up = request.files[key]
             if up and up.filename:
                 safe_name = secure_filename(up.filename)
+                if not safe_name or not os.path.splitext(safe_name)[1]:
+                    _, orig_ext = os.path.splitext(up.filename)
+                    safe_name = f"uploaded_classify_{int(time.time())}{orig_ext if orig_ext else '.pdf'}"
                 ext = os.path.splitext(safe_name)[1].lower()
                 if ext not in (".pdf", ".xlsx", ".xls", ".csv"):
                     return jsonify({"success": False, "error": "Supported formats for classification: .pdf, .xlsx, .xls, .csv"}), 400
+                os.makedirs(INPUT_DIR, exist_ok=True)
                 saved_path = os.path.join(INPUT_DIR, safe_name)
                 up.save(saved_path)
                 target_file_path = saved_path

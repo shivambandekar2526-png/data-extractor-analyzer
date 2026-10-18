@@ -73,15 +73,20 @@ def start_extraction():
     target_pdf_path = None
     target_tabular_path = None
 
-    # Check for direct file uploads
-    for key in ["pdf_file", "file", "excel_file", "csv_file"]:
+    # Check for direct file uploads across all keys
+    keys_to_check = list(request.files.keys()) + ["pdf_file", "file", "excel_file", "csv_file", "tabular_file"]
+    for key in keys_to_check:
         if key in request.files:
             up = request.files[key]
             if up and up.filename:
                 safe_name = secure_filename(up.filename)
+                if not safe_name or not os.path.splitext(safe_name)[1]:
+                    _, orig_ext = os.path.splitext(up.filename)
+                    safe_name = f"uploaded_file_{int(time.time())}{orig_ext if orig_ext else '.xlsx'}"
                 ext = os.path.splitext(safe_name)[1].lower()
                 if ext not in (".pdf", ".xlsx", ".xls", ".csv"):
                     return jsonify({"success": False, "error": "Supported formats: .pdf, .xlsx, .xls, .csv"}), 400
+                os.makedirs(INPUT_DIR, exist_ok=True)
                 saved_path = os.path.join(INPUT_DIR, safe_name)
                 up.save(saved_path)
                 if ext == ".pdf":
@@ -129,10 +134,31 @@ def start_extraction():
             )
         return jsonify(res)
 
-    if not target_pdf_path:
+    if not target_pdf_path and not target_tabular_path:
         batch_rel = request.form.get("batch_file") or json_data.get("batch_file") or json_data.get("pdf_path")
         if batch_rel:
             clean_rel = batch_rel.replace("\\", "/").strip().lstrip("/")
+            b_ext = os.path.splitext(clean_rel)[1].lower()
+            if b_ext in (".xlsx", ".xls", ".csv"):
+                resolved = resolve_tabular_file_path(batch_rel)
+                if resolved:
+                    target_tabular_path = resolved[0]
+                    sheet_name = request.form.get("sheet_name") or json_data.get("sheet_name")
+                    insp = tabular_ingester.inspect_file(target_tabular_path, sheet_name=sheet_name)
+                    if insp.get("is_clean") and pipeline_mode not in ("cloud", "visual_blueprint"):
+                        res = tabular_ingester.direct_import(target_tabular_path, sheet_name=sheet_name)
+                    else:
+                        oc = OllamaClient()
+                        cc = CloudClient()
+                        res = tabular_ingester.ai_fix_and_import(
+                            target_tabular_path,
+                            sheet_name=sheet_name,
+                            pipeline_mode=pipeline_mode,
+                            ollama_client=oc,
+                            cloud_client=cc
+                        )
+                    return jsonify(res)
+
             if clean_rel.lower().startswith("departments data/") or clean_rel.lower().startswith("departments_data/"):
                 clean_rel = clean_rel.split("/", 1)[1].lstrip("/")
             elif clean_rel.lower().startswith("batch data/") or clean_rel.lower().startswith("batch_data/"):
