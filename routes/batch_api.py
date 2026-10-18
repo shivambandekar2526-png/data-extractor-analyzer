@@ -48,15 +48,18 @@ def sync_supabase_catalog():
 @batch_bp.route("/api/batches", methods=["GET"])
 def list_batches():
     """List batch datasets with structured hierarchy and backward-compatible batches."""
+    refresh = request.args.get("refresh", "0") in ("1", "true", "True")
     try:
         from services.supabase_service import get_supabase_service
         supabase_svc = get_supabase_service()
         if supabase_svc.is_configured:
+            if refresh:
+                supabase_svc.reconcile_catalog_with_storage(force_save=True)
             cloud_map = supabase_svc.get_cloud_batches_map()
-            if cloud_map and (cloud_map.get("batches") or cloud_map.get("structured")):
-                return jsonify(cloud_map)
+            return jsonify(cloud_map or {"batches": {}, "structured": {"pdf": {}, "excel": {}}})
     except Exception as e:
         logger.warning(f"Could not load batches from Supabase: {e}")
+        return jsonify({"batches": {}, "structured": {"pdf": {}, "excel": {}}, "error": str(e)})
 
     batches = {}
     structured = {

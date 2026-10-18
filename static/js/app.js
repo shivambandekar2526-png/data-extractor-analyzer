@@ -3039,9 +3039,10 @@ async function initStatus() {
 let cachedBatchesData = null;
 let currentBrowseFormat = "pdf"; // 'pdf' or 'excel'
 
-async function initBatches() {
+async function initBatches(forceRefresh = false) {
   try {
-    const res = await fetch("/api/batches");
+    const url = forceRefresh ? "/api/batches?refresh=1" : "/api/batches";
+    const res = await fetch(url);
     const data = await res.json();
     cachedBatchesData = data;
 
@@ -3292,12 +3293,21 @@ function onDeptFileSelected(relPath) {
   const overrideDept = document.getElementById("overrideDeptInput");
   const overrideBatch = document.getElementById("overrideBatchInput");
   const overrideSem = document.getElementById("overrideSemInput");
-  const metaBadge = document.getElementById("metaOverrideStatusBadge");
+  const detectedCard = document.getElementById("detectedMetaPreviewCard");
+  const metaBadge = document.getElementById("detectedMetaStatusBadge") || document.getElementById("metaOverrideStatusBadge");
+  const reasonHint = document.getElementById("detectedMetaReasonHint");
 
   if (overrideDept && dept) overrideDept.value = dept;
   if (overrideBatch && batch) overrideBatch.value = batch;
   if (overrideSem && sem) overrideSem.value = sem;
-  if (metaBadge) metaBadge.textContent = "From Department Store";
+  if (detectedCard) detectedCard.style.display = "block";
+  if (metaBadge) {
+    metaBadge.textContent = "✨ Auto-Detected from Department Library";
+    metaBadge.className = "detected-meta-badge success";
+  }
+  if (reasonHint) {
+    reasonHint.textContent = `Loaded from verified Supabase Cloud archive (${fType.toUpperCase()}). Review or adjust metadata if needed:`;
+  }
 
   // Synchronize results section metadata inputs
   const resDept = document.getElementById("resultsDeptInput");
@@ -3356,6 +3366,8 @@ function clearDeptDataSelection() {
   if (!window.currentSelectedFile && btn) {
     btn.disabled = true;
     btn.innerHTML = `<span>⚡ Extract Data</span>`;
+    const detectedCard = document.getElementById("detectedMetaPreviewCard");
+    if (detectedCard) detectedCard.style.display = "none";
   }
   updateExtractionHint();
 }
@@ -3427,6 +3439,11 @@ function initUpload() {
       paneLibrary.classList.add("active");
       paneUpload.classList.add("hidden");
       paneUpload.classList.remove("active");
+
+      // Auto-refresh catalog from Supabase on opening Department Library
+      if (typeof initBatches === "function") {
+        initBatches(true);
+      }
     });
   }
 
