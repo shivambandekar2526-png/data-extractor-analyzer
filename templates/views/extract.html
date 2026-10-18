@@ -146,22 +146,24 @@
                 </div>
               </div>
 
-              <!-- Manual Metadata Override Controls (Department / Batch / Semester) -->
-              <div class="manual-meta-override-container">
-                <button type="button" class="btn-toggle-meta-override" id="btnToggleMetaOverride" title="Manually specify or correct department, batch, and semester">
-                  <span id="metaOverrideIcon">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-                  </span>
-                  <span>Dataset Metadata &amp; Storage Mapping</span>
-                  <span class="meta-override-badge" id="metaOverrideStatusBadge">Auto-detected by AI</span>
-                </button>
-                <div class="meta-override-drawer" id="metaOverrideDrawer">
-                  <p class="meta-override-hint">Auto-detected via AI on upload. You can adjust any values if needed before or after extraction:</p>
+              <!-- Auto-Detected Dataset Metadata Card (Department / Batch / Semester) -->
+              <div class="detected-meta-card" id="detectedMetaPreviewCard" style="display: none;">
+                <div class="detected-meta-header">
+                  <div class="detected-meta-title-group">
+                    <span class="detected-meta-icon">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"></path></svg>
+                    </span>
+                    <span class="detected-meta-title">Dataset Auto-Detection</span>
+                  </div>
+                  <span class="detected-meta-badge" id="detectedMetaStatusBadge">Analyzing Document...</span>
+                </div>
+                <div class="detected-meta-body">
+                  <p class="detected-meta-hint" id="detectedMetaReasonHint">Auto-detected from document contents (PRN cohorts &amp; exam session progression). Verify or adjust if needed:</p>
                   <div class="meta-override-grid">
                     <div class="meta-override-field">
                       <label for="overrideDeptInput">Department / Branch:</label>
                       <select id="overrideDeptInput" class="form-select form-select-sm">
-                        <option value="">-- Auto-detect from document --</option>
+                        <option value="">-- Detecting... --</option>
                         <option value="Artificial_Intelligence_and_Data_Science">Artificial Intelligence &amp; Data Science (AIDS)</option>
                         <option value="Computer_Engineering">Computer Engineering (COMPS)</option>
                         <option value="Information_Technology">Information Technology (IT)</option>
@@ -173,13 +175,13 @@
                       </select>
                     </div>
                     <div class="meta-override-field">
-                      <label for="overrideBatchInput">Batch / Academic Year (e.g. 21-22):</label>
-                      <input type="text" id="overrideBatchInput" class="form-control form-control-sm" placeholder="e.g. 21-22, 22-23" pattern="^\d{2}-\d{2}$" title="Format: YY-YY (e.g. 21-22)">
+                      <label for="overrideBatchInput">Batch / Academic Year (e.g. 22-23):</label>
+                      <input type="text" id="overrideBatchInput" class="form-control form-control-sm" placeholder="e.g. 22-23" pattern="^\d{2}-\d{2}$" title="Format: YY-YY (e.g. 22-23)">
                     </div>
                     <div class="meta-override-field">
                       <label for="overrideSemInput">Semester:</label>
                       <select id="overrideSemInput" class="form-select form-select-sm">
-                        <option value="">-- Auto-detect --</option>
+                        <option value="">-- Detecting... --</option>
                         <option value="Semester_1">Semester 1</option>
                         <option value="Semester_2">Semester 2</option>
                         <option value="Semester_3">Semester 3</option>
@@ -191,7 +193,7 @@
                       </select>
                     </div>
                   </div>
-                  <div class="step-meta-preview-strip" style="display: none;">
+                  <div class="step-meta-preview-strip mt-2">
                     <div class="meta-bar-preview-box">
                       <span class="meta-preview-title">PDF Target:</span>
                       <code id="stepPdfMirrorPreview" class="meta-mirror-path">departments_data/pdf/...</code>

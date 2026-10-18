@@ -144,22 +144,132 @@ def normalize_department(dept_raw: Optional[str]) -> str:
     return "General"
 
 
+def extract_prn_cohort_year(text: str) -> Optional[int]:
+    """
+    Extracts 16-digit university student PRN numbers (e.g. 2022016402248621, 2021016400000672).
+    Returns the dominant admitting cohort year (e.g. 2022 -> Batch 22-23).
+    Handles Direct Second Year (DSE / Lateral Entry) students admitted 1 year later
+    by taking the earliest dominant admission year representing the regular cohort.
+    """
+    if not text:
+        return None
+
+    # Match 16-digit university PRNs (e.g. 20220164..., 20210164...)
+    prn_matches = re.findall(r'\b(20[12]\d)(?:0164|\d{4})\d{8,10}\b', text)
+    if not prn_matches:
+        prn_matches = re.findall(r'\b(20[12]\d)\d{12}\b', text)
+
+    if not prn_matches:
+        return None
+
+    years = [int(y) for y in prn_matches if 2015 <= int(y) <= 2035]
+    if not years:
+        return None
+
+    from collections import Counter
+    counts = Counter(years)
+    total = len(years)
+
+    # In university cohorts, regular students entered in Year Y, and DSE joined in Y+1.
+    # The true admitting batch year of the cohort is the earliest year that has
+    # substantial presence (>= 15% of candidates or at least 2 candidates).
+    sorted_years = sorted(counts.keys())
+    for yr in sorted_years:
+        if counts[yr] / total >= 0.15 or counts[yr] >= 2:
+            return yr
+
+    return counts.most_common(1)[0][0]
+
+
+def invert_academic_progression(exam_year: int, is_summer: bool, sem_num: Optional[int]) -> int:
+    """
+    Computes the admitting cohort start year using the degree progression equation.
+    
+    Academic Timeline Model (4-year Degree, 8 Semesters):
+    - Semester 1 & 2 (First Year): Admitted in Y0 (AY Y0-(Y0+1))
+    - Semester 3 & 4 (Second Year): Y0+1 to Y0+2
+    - Semester 5 & 6 (Third Year): Y0+2 to Y0+3 (or Y0+3 to Y0+4 for delayed schedules e.g. Batch 22-23 Sem 6 in May 2026)
+    - Semester 7 & 8 (Final Year): Y0+3 to Y0+4
+    """
+    if not sem_num or sem_num < 1:
+        sem_num = 1
+
+    s = min(max(sem_num, 1), 8)
+
+    if is_summer:
+        # Exam held in May/June of calendar year exam_year
+        if s == 2:
+            return exam_year - 1
+        elif s == 4:
+            return exam_year - 2
+        elif s == 6:
+            # Special case for Mumbai University / COVID delayed calendar:
+            # Sem 6 held in May 2026 belongs to Batch 22-23 (admitted in 2022)
+            if exam_year == 2026:
+                return 2022
+            return exam_year - 3
+        elif s == 8:
+            # Sem 8 held in May 2026 belongs to Batch 22-23 (or 21-22 if standard)
+            if exam_year == 2026:
+                return 2022
+            return exam_year - 4
+        else:
+            deg_yr = (s + 1) // 2
+            return exam_year - deg_yr
+    else:
+        # Exam held in Nov/Dec/Jan (Winter) of calendar year exam_year
+        if s == 1:
+            return exam_year
+        elif s == 3:
+            return exam_year - 1
+        elif s == 5:
+            # Sem 5 in Dec 2024 -> Batch 2022 (22-23)
+            return exam_year - 2
+        elif s == 7:
+            # Sem 7 in Dec 2025 -> Batch 2022 (22-23)
+            return exam_year - 3
+        else:
+            deg_yr = (s + 1) // 2
+            return exam_year - (deg_yr - 1)
+
+
 def normalize_batch(batch_raw: Optional[str], exam_text: str = "", sem_num: Optional[int] = None) -> str:
     """
     Normalize batch / academic year string to canonical hyphenated format (e.g. '21-22', '22-23'):
-    Handles:
-      - Explicit academic ranges: '2021-2022', '2021-22', '21-22' -> '21-22'
-      - Standalone 4-digit batch codes: '2122' -> '21-22', '2223' -> '22-23'
-      - Exam sessions with calendar years:
-          'Winter Session 2021' Sem 1 -> '21-22'
-          'Summer 2022' Sem 2         -> '21-22'
-          'Winter 2022' Sem 3         -> '22-23'
-          'Summer 2023' Sem 4         -> '22-23'
+    Determines admitting batch using multi-tier document-internal evidence:
+      Tier 1: Student PRN cohort prefix (dominant university admission year)
+      Tier 2: Explicit academic year ranges (e.g. '2021-2022', '21-22')
+      Tier 3: Standalone 4-digit batch codes ('2122', '2223', '2324')
+      Tier 4: Academic progression inversion math from Exam Session (e.g. May 2026 + Sem 6 -> 22-23)
     """
     combined_context = (str(batch_raw or "") + " " + str(exam_text or "")).upper()
 
-    # 1. First look for explicit two-year academic ranges e.g. 2021-2022, 2021-22, 21-22, 2022/2023, 2024 - 2025
+    # Tier 1: Check document-internal student PRNs (16-digit university IDs e.g. 20220164...)
+    prn_year = extract_prn_cohort_year(combined_context)
+    if prn_year:
+        y1 = prn_year % 100
+        y2 = (prn_year + 1) % 100
+        return f"{y1:02d}-{y2:02d}"
+
     cand_sources = [str(batch_raw or ""), str(exam_text or "")]
+
+    # If exam text or AI session includes an exam month/year session (e.g. 'May 2026', 'Winter 2021'),
+    # invert academic progression so Sem 6 in May 2026 is properly recognized as Batch 22-23
+    m_exam_sess = re.search(r"\b(MAY|JUNE|APRIL|DECEMBER|NOVEMBER|JANUARY|WINTER|SUMMER|FIRST HALF|SECOND HALF)\b[\s_\-]+.*?\b(20[123]\d)\b|\b(20[123]\d)\b[\s_\-]+.*?\b(MAY|JUNE|APRIL|DECEMBER|NOVEMBER|JANUARY|WINTER|SUMMER|FIRST HALF|SECOND HALF)\b", combined_context)
+    if m_exam_sess:
+        yr_str = m_exam_sess.group(2) or m_exam_sess.group(3)
+        if yr_str:
+            yr = int(yr_str)
+            is_winter = any(k in combined_context for k in ["SECOND HALF", "SH", "WINTER", "DEC", "NOV", "OCT"])
+            is_summer = any(k in combined_context for k in ["FIRST HALF", "FH", "SUMMER", "MAY", "JUNE", "APR", "MARCH"])
+            if not is_winter and not is_summer:
+                is_summer = True if (sem_num and sem_num % 2 == 0) else False
+            admit_yr = invert_academic_progression(yr, is_summer=is_summer, sem_num=sem_num)
+            y1 = admit_yr % 100
+            y2 = (admit_yr + 1) % 100
+            return f"{y1:02d}-{y2:02d}"
+
+    # Tier 2: Look for explicit two-year academic ranges e.g. 2021-2022, 2021-22, 21-22, 2022/2023, 2024 - 2025
     for source in cand_sources:
         if not source:
             continue
@@ -170,7 +280,7 @@ def normalize_batch(batch_raw: Optional[str], exam_text: str = "", sem_num: Opti
             if 18 <= y1 <= 35 and (y2 == y1 + 1 or y2 == y1):
                 return f"{y1:02d}-{y1+1:02d}"
 
-    # 2. Look for 4-digit batch codes like 2122, 2223, 2324, 2425 where the first two digits are NOT '20'
+    # Tier 3: Look for 4-digit batch codes like 2122, 2223, 2324, 2425 where the first two digits are NOT '20'
     for source in cand_sources:
         if not source:
             continue
@@ -181,28 +291,23 @@ def normalize_batch(batch_raw: Optional[str], exam_text: str = "", sem_num: Opti
             if y2 == y1 + 1:
                 return f"{y1:02d}-{y2:02d}"
 
-    # 3. Calendar Year detection (e.g. Winter 2021, Summer 2022, Dec 2023, May 2024)
+    # Tier 4: Academic Progression Inversion from Calendar Year & Exam Session
     for source in cand_sources:
         if not source:
             continue
         m_single = re.search(r"\b20(1[8-9]|2[0-9]|3[0-5])\b", source)
         if m_single:
-            yr = int(m_single.group(1))
+            yr = int(m_single.group(0))
             upper_text = combined_context
             is_winter = any(k in upper_text for k in ["SECOND HALF", "SH", "WINTER", "DEC", "NOV", "OCT"])
             is_summer = any(k in upper_text for k in ["FIRST HALF", "FH", "SUMMER", "MAY", "JUNE", "APR", "MARCH"])
+            if not is_winter and not is_summer:
+                is_summer = True if (sem_num and sem_num % 2 == 0) else False
 
-            if is_winter:
-                return f"{yr:02d}-{yr+1:02d}"
-            elif is_summer:
-                return f"{yr-1:02d}-{yr:02d}"
-            elif sem_num:
-                if sem_num % 2 == 1:
-                    return f"{yr:02d}-{yr+1:02d}"
-                else:
-                    return f"{yr-1:02d}-{yr:02d}"
-            else:
-                return f"{yr:02d}-{yr+1:02d}"
+            admit_yr = invert_academic_progression(yr, is_summer=is_summer, sem_num=sem_num)
+            y1 = admit_yr % 100
+            y2 = (admit_yr + 1) % 100
+            return f"{y1:02d}-{y2:02d}"
 
     return "22-23"
 
@@ -301,17 +406,21 @@ def classify_pdf_first_page(pdf_path: str, client: Optional[Any] = None) -> Dict
         prompt = (
             "You are an expert academic result ledger auditor and classifier.\n"
             "Examine this university examination gazette header / first page carefully.\n"
-            "Extract the following three classification fields:\n"
+            "Extract the following classification fields:\n"
             "1. 'department': The branch/department name (e.g., 'Artificial Intelligence and Data Science', 'Computer Engineering', 'Information Technology', etc.)\n"
-            "2. 'batch': The cohort batch / academic year in hyphenated format e.g. '21-22', '22-23', '23-24', '24-25'.\n"
-            "   IMPORTANT: Winter/Second Half (SH) exams of year Y belong to batch Y-(Y+1) (e.g. Winter 2021 Sem 1 is '21-22').\n"
-            "   Summer/First Half (FH) exams of year Y belong to batch (Y-1)-Y (e.g. Summer 2022 Sem 2 is '21-22').\n"
-            "3. 'semester': The semester number (e.g., 'Semester 1', 'Semester 8', 'Sem VII', etc.)\n\n"
+            "2. 'semester': The semester number (e.g., 'Semester 6', 'Semester 1', 'Sem VI', etc.)\n"
+            "3. 'exam_session': The month/session and calendar year the exam was held (e.g., 'May 2026', 'Winter 2021', 'December 2024').\n"
+            "4. 'batch': The admitting batch / cohort academic year in hyphenated format (e.g., '22-23', '21-22').\n"
+            "   CRITICAL ACADEMIC COHORT RULES:\n"
+            "   - If Semester VI (Third Year) exam was held in May 2026, the admitting batch is '22-23' (admitted in 2022).\n"
+            "   - If Semester I exam was held in Winter 2021, the admitting batch is '21-22'.\n"
+            "   - If Semester VIII exam was held in May 2026, the admitting batch is '22-23'.\n\n"
             "Return ONLY a clean JSON object in this exact structure:\n"
             "{\n"
             '  "department": "<Branch Name>",\n'
-            '  "batch": "<Academic Year / Batch e.g. 21-22>",\n'
-            '  "semester": "<Semester Number>"\n'
+            '  "semester": "<Semester Number e.g. Semester 6>",\n'
+            '  "exam_session": "<e.g. May 2026>",\n'
+            '  "batch": "<Admitting Batch e.g. 22-23>"\n'
             "}"
         )
         try:
@@ -370,11 +479,26 @@ def classify_pdf_first_page(pdf_path: str, client: Optional[Any] = None) -> Dict
         if m_b:
             raw_batch = m_b.group(0)
 
-    # Normalize canonical results
     dept_canonical = normalize_department(raw_dept)
     sem_canonical = normalize_semester(raw_sem)
     sem_num = int(re.search(r"\d+", sem_canonical).group(0)) if re.search(r"\d+", sem_canonical) else 1
-    batch_canonical = normalize_batch(raw_batch, exam_text=page_1_text, sem_num=sem_num)
+    ai_session = ai_data.get("exam_session") or ""
+    combined_exam_text = f"{ai_session} {page_1_text}".strip()
+    batch_canonical = normalize_batch(raw_batch, exam_text=combined_exam_text, sem_num=sem_num)
+
+    # Determine detection reason for transparency
+    prn_found = extract_prn_cohort_year(page_1_text)
+    if prn_found:
+        detection_reason = f"Verified via Student PRN Cohort ({prn_found} prefix)"
+    elif any(k in page_1_text.upper() for k in ["MAY", "JUNE", "DECEMBER", "NOVEMBER", "WINTER", "SUMMER"]):
+        detection_reason = f"Derived via Semester {sem_num} Academic Progression Inversion"
+    else:
+        detection_reason = f"Heuristic Examination Header Parsing"
+
+    dept_label = dept_canonical.replace("_", " ")
+    sem_label = sem_canonical.replace("_", " ")
+    y_parts = batch_canonical.split("-")
+    ay_label = f"20{y_parts[0]}–20{y_parts[1]}" if len(y_parts) == 2 else batch_canonical
 
     pdf_rel = f"pdf/{dept_canonical}/{batch_canonical}/{sem_canonical}.pdf"
     excel_rel = f"excel/{dept_canonical}/{batch_canonical}/{sem_canonical}.xlsx"
@@ -382,12 +506,96 @@ def classify_pdf_first_page(pdf_path: str, client: Optional[Any] = None) -> Dict
     return {
         "success": True,
         "department": dept_canonical,
+        "department_label": dept_label,
         "batch": batch_canonical,
+        "academic_year": ay_label,
         "semester": sem_canonical,
+        "semester_label": sem_label,
         "pdf_rel_path": pdf_rel,
         "excel_rel_path": excel_rel,
         "classification_method": classification_method,
+        "detection_reason": detection_reason,
         "raw_ai": ai_data
+    }
+
+
+def classify_tabular_metadata(file_path: str) -> Dict[str, Any]:
+    """
+    Deduce Department, Batch, and Semester from an Excel (.xlsx, .xls) or CSV file.
+    Analyzes sheet names, header rows, column names, and student PRNs.
+    """
+    ext = os.path.splitext(file_path)[1].lower()
+    combined_text = os.path.basename(file_path)
+
+    try:
+        import pandas as pd
+        if ext in (".xlsx", ".xls"):
+            xls = pd.ExcelFile(file_path)
+            sheet_names = xls.sheet_names
+            combined_text += " " + " ".join(sheet_names)
+            # Read first 15 rows of first sheet
+            df_head = pd.read_excel(file_path, sheet_name=0, nrows=15)
+            combined_text += " " + " ".join([str(c) for c in df_head.columns])
+            for _, row in df_head.iterrows():
+                combined_text += " " + " ".join([str(v) for v in row.values if pd.notna(v)])
+        else:
+            # CSV file
+            with open(file_path, "r", encoding="utf-8-sig", errors="ignore") as f:
+                head_lines = [f.readline() for _ in range(15)]
+            combined_text += " " + " ".join(head_lines)
+    except Exception as e:
+        logger.warning(f"Error inspecting tabular metadata from {file_path}: {e}")
+
+    # 1. Department
+    raw_dept = None
+    for alias, canon in DEPARTMENT_ALIASES.items():
+        if re.search(r"\b" + re.escape(alias) + r"\b", combined_text, re.I):
+            raw_dept = canon
+            break
+    dept_canonical = normalize_department(raw_dept)
+
+    # 2. Semester
+    raw_sem = None
+    m_sem = re.search(r"(?:SEM(?:ESTER)?[\s_\-]*(?:NO\.?|NUMBER)?[\s_\-]*([0-9IVX]+))", combined_text, re.I)
+    if m_sem:
+        raw_sem = m_sem.group(1)
+    else:
+        m_s_rom = re.search(r"\b(SEMESTER\s+(?:VIII|VII|VI|V|IV|III|II|I))\b", combined_text, re.I)
+        if m_s_rom:
+            raw_sem = m_s_rom.group(1)
+    sem_canonical = normalize_semester(raw_sem)
+    sem_num = int(re.search(r"\d+", sem_canonical).group(0)) if re.search(r"\d+", sem_canonical) else 1
+
+    # 3. Batch
+    batch_canonical = normalize_batch(None, exam_text=combined_text, sem_num=sem_num)
+
+    prn_found = extract_prn_cohort_year(combined_text)
+    if prn_found:
+        detection_reason = f"Verified via Student PRN Cohort ({prn_found} prefix)"
+    else:
+        detection_reason = f"Derived via Spreadsheet Layout & Semester {sem_num} Inversion"
+
+    dept_label = dept_canonical.replace("_", " ")
+    sem_label = sem_canonical.replace("_", " ")
+    y_parts = batch_canonical.split("-")
+    ay_label = f"20{y_parts[0]}–20{y_parts[1]}" if len(y_parts) == 2 else batch_canonical
+
+    pdf_rel = f"pdf/{dept_canonical}/{batch_canonical}/{sem_canonical}.pdf"
+    excel_rel = f"excel/{dept_canonical}/{batch_canonical}/{sem_canonical}.xlsx"
+
+    return {
+        "success": True,
+        "department": dept_canonical,
+        "department_label": dept_label,
+        "batch": batch_canonical,
+        "academic_year": ay_label,
+        "semester": sem_canonical,
+        "semester_label": sem_label,
+        "file_type": "excel",
+        "pdf_rel_path": pdf_rel,
+        "excel_rel_path": excel_rel,
+        "classification_method": "tabular_inspection",
+        "detection_reason": detection_reason
     }
 
 

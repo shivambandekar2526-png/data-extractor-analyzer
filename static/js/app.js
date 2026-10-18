@@ -93,7 +93,35 @@ async function initAuthGuard() {
   const btnSignOutHeader = document.getElementById("btnSignOutHeader");
   const btnSignOutSidebar = document.getElementById("btnSignOutSidebar");
 
-  function signOut() {
+  // Sign out confirmation modal elements
+  const modalBackdrop = document.getElementById("signOutModalBackdrop");
+  const btnCloseModal = document.getElementById("btnCloseSignOutModal");
+  const btnCancelModal = document.getElementById("btnCancelSignOutModal");
+  const btnConfirmModal = document.getElementById("btnConfirmSignOutModal");
+  const modalUserEmail = document.getElementById("signOutModalUserEmail");
+
+  function openSignOutModal() {
+    if (!modalBackdrop) {
+      executeSignOut();
+      return;
+    }
+    if (modalUserEmail && profileEmail) {
+      modalUserEmail.textContent = profileEmail.textContent || "Signed In User";
+    }
+    modalBackdrop.classList.remove("hidden");
+  }
+
+  function closeSignOutModal() {
+    if (modalBackdrop) {
+      modalBackdrop.classList.add("hidden");
+    }
+  }
+
+  function executeSignOut() {
+    if (btnConfirmModal) {
+      btnConfirmModal.disabled = true;
+      btnConfirmModal.innerHTML = `<span>⏳ Signing out...</span>`;
+    }
     localStorage.removeItem("data_extractor_auth_session");
     localStorage.removeItem("data_extractor_user_keys");
     fetch("/api/auth/logout", { method: "POST" })
@@ -102,13 +130,51 @@ async function initAuthGuard() {
       });
   }
 
+  // Intercept trigger buttons to open in-app modal
   if (btnSignOutHeader && !btnSignOutHeader.dataset.bound) {
     btnSignOutHeader.dataset.bound = "true";
-    btnSignOutHeader.addEventListener("click", signOut);
+    btnSignOutHeader.addEventListener("click", (e) => {
+      e.preventDefault();
+      openSignOutModal();
+    });
   }
   if (btnSignOutSidebar && !btnSignOutSidebar.dataset.bound) {
     btnSignOutSidebar.dataset.bound = "true";
-    btnSignOutSidebar.addEventListener("click", signOut);
+    btnSignOutSidebar.addEventListener("click", (e) => {
+      e.preventDefault();
+      openSignOutModal();
+    });
+  }
+
+  // Modal dismissal listeners
+  if (btnCloseModal && !btnCloseModal.dataset.bound) {
+    btnCloseModal.dataset.bound = "true";
+    btnCloseModal.addEventListener("click", closeSignOutModal);
+  }
+  if (btnCancelModal && !btnCancelModal.dataset.bound) {
+    btnCancelModal.dataset.bound = "true";
+    btnCancelModal.addEventListener("click", closeSignOutModal);
+  }
+  if (modalBackdrop && !modalBackdrop.dataset.bound) {
+    modalBackdrop.dataset.bound = "true";
+    modalBackdrop.addEventListener("click", (e) => {
+      if (e.target === modalBackdrop) {
+        closeSignOutModal();
+      }
+    });
+  }
+
+  // Escape key support
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && modalBackdrop && !modalBackdrop.classList.contains("hidden")) {
+      closeSignOutModal();
+    }
+  });
+
+  // Confirm sign out execution
+  if (btnConfirmModal && !btnConfirmModal.dataset.bound) {
+    btnConfirmModal.dataset.bound = "true";
+    btnConfirmModal.addEventListener("click", executeSignOut);
   }
 
   let token = null;
@@ -3508,11 +3574,12 @@ function handleFileSelected(file) {
   const selectedFileSize = document.getElementById("selectedFileSize");
   const selectedFileIcon = document.getElementById("selectedFileIcon");
 
+  const mbSize = (file.size / (1024 * 1024)).toFixed(2);
+
   if (uploadPrompt) uploadPrompt.classList.add("hidden");
   if (selectedFileBadge) {
     selectedFileBadge.classList.remove("hidden");
     if (selectedFileName) selectedFileName.textContent = file.name;
-    const mbSize = (file.size / (1024 * 1024)).toFixed(2);
     if (selectedFileSize) selectedFileSize.textContent = `(${mbSize} MB)`;
     if (selectedFileIcon) {
       if (ext === "pdf") selectedFileIcon.textContent = "📄";
@@ -3523,31 +3590,52 @@ function handleFileSelected(file) {
 
   updateExtractionHint();
 
-  // If PDF file, trigger quick classification probe
-  if (ext === "pdf") {
+  // Show Auto-Detected Metadata Card immediately in analyzing state
+  const detectedCard = document.getElementById("detectedMetaPreviewCard");
+  const detectedStatusBadge = document.getElementById("detectedMetaStatusBadge") || document.getElementById("metaOverrideStatusBadge");
+  const detectedReasonHint = document.getElementById("detectedMetaReasonHint");
+  if (detectedCard) {
+    detectedCard.style.display = "block";
+    if (detectedStatusBadge) {
+      detectedStatusBadge.textContent = "⏳ Analyzing Document...";
+      detectedStatusBadge.className = "detected-meta-badge";
+    }
+    if (detectedReasonHint) {
+      detectedReasonHint.textContent = "Analyzing document text & student PRNs to deduce department, admitting batch, and semester...";
+    }
+  }
+
+  // Trigger quick classification probe for PDF and Tabular files
+  if (validExts.includes(ext)) {
     window.currentClassification = null;
     const clfData = new FormData();
-    clfData.append("pdf_file", file);
+    clfData.append(ext === "pdf" ? "pdf_file" : "tabular_file", file);
     fetch("/api/classify", { method: "POST", body: clfData })
       .then(r => r.json())
       .then(d => {
         if (d.success) {
           window.currentClassification = d;
           if (selectedFileSize) {
-            const dupWarning = d.is_duplicate ? " ⚠️ [Existing Dataset]" : "";
-            selectedFileSize.textContent = `(${mbSize} MB) • 🏷️ ${d.department} | ${d.batch} | ${d.semester}${dupWarning}`;
+            selectedFileSize.textContent = `(${mbSize} MB)`;
+          }
+
+          if (detectedStatusBadge) {
+            detectedStatusBadge.textContent = "✨ Auto-Detected by AI";
+            detectedStatusBadge.className = "detected-meta-badge success";
+          }
+          if (detectedReasonHint) {
+            const reason = d.detection_reason ? ` • ${d.detection_reason}` : "";
+            detectedReasonHint.textContent = `Auto-detected from contents (admitting cohort / progression analysis)${reason}. Verify or adjust if needed:`;
           }
 
           // Automatically sync detected values into the manual override inputs
           const deptInp = document.getElementById("overrideDeptInput");
           const batchInp = document.getElementById("overrideBatchInput");
           const semInp = document.getElementById("overrideSemInput");
-          const statusBadge = document.getElementById("metaOverrideStatusBadge");
 
           if (deptInp && d.department) deptInp.value = d.department;
           if (batchInp && d.batch) batchInp.value = d.batch;
           if (semInp && d.semester) semInp.value = d.semester;
-          if (statusBadge) statusBadge.textContent = "AI Classified";
 
           const resDept = document.getElementById("resultsDeptInput");
           const resBatch = document.getElementById("resultsBatchInput");
@@ -3578,10 +3666,30 @@ function handleFileSelected(file) {
           if (stepExcelPreview) stepExcelPreview.textContent = excelPathStr;
 
           // Prompt whether to add the PDF to the designated folder
-          promptAddPdfToDesignatedFolder(file, d);
+          if (ext === "pdf") {
+            promptAddPdfToDesignatedFolder(file, d);
+          }
+        } else {
+          console.error("Classification error returned from server:", d.error);
+          if (detectedStatusBadge) {
+            detectedStatusBadge.textContent = "⚠️ Review Required";
+            detectedStatusBadge.className = "detected-meta-badge warning";
+          }
+          if (detectedReasonHint) {
+            detectedReasonHint.textContent = d.error ? `Server note: ${d.error}. Please select below:` : "Could not automatically determine all fields. Please select or verify manually below:";
+          }
         }
       })
-      .catch(err => console.warn("Background classification probe warning:", err));
+      .catch(err => {
+        console.error("Background classification probe failed:", err);
+        if (detectedStatusBadge) {
+          detectedStatusBadge.textContent = "⚠️ Manual Entry";
+          detectedStatusBadge.className = "detected-meta-badge warning";
+        }
+        if (detectedReasonHint) {
+          detectedReasonHint.textContent = `Auto-detection network error (${err.message}). You can select fields manually below:`;
+        }
+      });
   }
 
   // If tabular file, launch Tabular Inspection Modal immediately
@@ -3659,12 +3767,9 @@ function promptAddPdfToDesignatedFolder(file, clfData) {
         if (typeof initBatches === "function") {
           initBatches();
         }
-        // Update selected file badge with confirmation
-        const selectedFileSize = document.getElementById("selectedFileSize");
-        if (selectedFileSize) {
-          const mbSize = (file.size / (1024 * 1024)).toFixed(2);
-          selectedFileSize.textContent = `(${mbSize} MB) • 📁 Saved to ${data.rel_path || canonicalRel}`;
-        }
+        // Show confirmation alert instead of extending badge text
+        const savedLocation = data.rel_path || canonicalRel;
+        alert(`Document successfully saved to Supabase Storage:\n\n${savedLocation}`);
       } else {
         console.warn("Could not archive PDF:", data.error);
       }

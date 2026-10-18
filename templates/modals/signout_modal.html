@@ -1,0 +1,52 @@
+    <div class="modal-backdrop hidden" id="signOutModalBackdrop" style="z-index: 10020;" role="dialog" aria-modal="true" aria-labelledby="signOutModalTitle">
+      <div class="modal-card" style="max-width: 440px;">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <div class="tabular-modal-icon" style="background: rgba(239, 68, 68, 0.15); color: #EF4444;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                <polyline points="16 17 21 12 16 7"></polyline>
+                <line x1="21" y1="12" x2="9" y2="12"></line>
+              </svg>
+            </div>
+            <div>
+              <h3 id="signOutModalTitle">Sign Out Confirmation</h3>
+              <p class="modal-subtitle">End your current workstation session</p>
+            </div>
+          </div>
+          <button type="button" class="btn-close" id="btnCloseSignOutModal" aria-label="Close dialog">&times;</button>
+        </div>
+
+        <div class="modal-body" style="padding: 1.25rem;">
+          <p style="margin: 0 0 0.85rem 0; color: var(--text-main); font-size: 0.9rem; line-height: 1.5;">
+            Are you sure you want to sign out of <strong>Data Extractor AI</strong>?
+          </p>
+
+          <div class="signout-session-notice" style="display: flex; align-items: center; gap: 0.65rem; padding: 0.75rem 0.9rem; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 8px; margin-bottom: 0.85rem;">
+            <span style="font-size: 1.1rem;">⚠️</span>
+            <div style="font-size: 0.82rem; color: var(--text-muted); line-height: 1.4;">
+              Any uncommitted cell edits or unexported reports in active tabs will be cleared from runtime memory.
+            </div>
+          </div>
+
+          <div class="user-active-meta" style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.82rem; color: var(--text-muted);">
+            <span>Account:</span>
+            <strong id="signOutModalUserEmail" style="color: var(--text-main);">Signed In</strong>
+          </div>
+        </div>
+
+        <div class="modal-foot" style="display: flex; justify-content: flex-end; gap: 0.75rem; padding: 0.9rem 1.25rem; border-top: 1px solid rgba(255, 255, 255, 0.08);">
+          <button type="button" class="btn btn-secondary" id="btnCancelSignOutModal">
+            <span>Cancel</span>
+          </button>
+          <button type="button" class="btn" id="btnConfirmSignOutModal" style="background: #EF4444; color: #ffffff; border-color: #DC2626; font-weight: 600;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+              <polyline points="16 17 21 12 16 7"></polyline>
+              <line x1="21" y1="12" x2="9" y2="12"></line>
+            </svg>
+            <span>Sign Out</span>
+          </button>
+        </div>
+      </div>
+    </div>
