@@ -227,6 +227,12 @@ def start_extraction():
                 "message": f"Dataset for '{dept} / {batch} / {sem}' already exists. Please confirm replacement."
             }), 409
 
+    should_archive_pdf = (
+        request.form.get("archive_pdf") in ("1", "true", "yes")
+        or request.args.get("archive_pdf") in ("1", "true", "yes")
+        or json_data.get("archive_pdf") in (True, "1", 1)
+    )
+
     # 3. Add to Supabase Storage directly (or local departments_data/pdf if Supabase unconfigured)
     canonical_excel = get_canonical_excel_path(dept, batch, sem, DEPARTMENTS_DATA_DIR)
     canonical_pdf = os.path.join(DEPARTMENTS_DATA_DIR, "pdf", dept, batch, f"{sem}.pdf").replace("\\", "/")
