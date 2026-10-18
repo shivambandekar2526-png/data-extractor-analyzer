@@ -3603,9 +3603,13 @@ function promptAddPdfToDesignatedFolder(file, clfData) {
   const targetEl = document.getElementById("promptPdfTarget");
   const dupWarning = document.getElementById("promptPdfDupWarning");
 
-  const dept = clfData.department || "Artificial_Intelligence_and_Data_Science";
-  const batch = clfData.batch || "22-23";
-  const sem = clfData.semester || "Semester_1";
+  const overrideDept = document.getElementById("overrideDeptInput")?.value?.trim();
+  const overrideBatch = document.getElementById("overrideBatchInput")?.value?.trim();
+  const overrideSem = document.getElementById("overrideSemInput")?.value?.trim();
+
+  const dept = overrideDept || clfData.department || "Artificial_Intelligence_and_Data_Science";
+  const batch = overrideBatch || clfData.batch || "22-23";
+  const sem = overrideSem || clfData.semester || "Semester_1";
   const canonicalRel = `departments_data/pdf/${dept}/${batch}/${sem}.pdf`;
 
   if (deptEl) deptEl.textContent = dept.replace(/_/g, " ");
@@ -3628,12 +3632,17 @@ function promptAddPdfToDesignatedFolder(file, clfData) {
     modal.classList.add("hidden");
     pdfArchivePromptDecision = true;
 
-    // Immediately archive the file to departments_data/pdf/
+    // Read latest manual overrides if changed while modal was open
+    const targetDept = document.getElementById("overrideDeptInput")?.value?.trim() || dept;
+    const targetBatch = document.getElementById("overrideBatchInput")?.value?.trim() || batch;
+    const targetSem = document.getElementById("overrideSemInput")?.value?.trim() || sem;
+
+    // Immediately archive/overwrite the file in Supabase Storage
     const archiveData = new FormData();
     archiveData.append("pdf_file", file);
-    archiveData.append("department", dept);
-    archiveData.append("batch", batch);
-    archiveData.append("semester", sem);
+    archiveData.append("department", targetDept);
+    archiveData.append("batch", targetBatch);
+    archiveData.append("semester", targetSem);
 
     try {
       const res = await fetch("/api/archive-pdf", {
@@ -3642,7 +3651,11 @@ function promptAddPdfToDesignatedFolder(file, clfData) {
       });
       const data = await res.json();
       if (data.success) {
-        // Refresh batch options so the newly archived PDF appears immediately in the batch browser
+        // Trigger catalog sync to ensure dropdowns have fresh verified files
+        try {
+          await fetch("/api/supabase/catalog/sync");
+        } catch (e) {}
+
         if (typeof initBatches === "function") {
           initBatches();
         }
@@ -7888,13 +7901,22 @@ async function initCloudModal() {
       }
 
       try {
+        let authHeaders = { "Content-Type": "application/json" };
+        try {
+          const raw = localStorage.getItem("data_extractor_auth_session");
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed.access_token) authHeaders["Authorization"] = "Bearer " + parsed.access_token;
+          }
+        } catch (e) {}
+
         const payload = {
           provider: prov,
           api_key: liveKey
         };
         const res = await fetch("/api/cloud/test", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: authHeaders,
           body: JSON.stringify(payload)
         });
         const result = await res.json();
@@ -7961,9 +7983,18 @@ async function initCloudModal() {
         if (anthropicKeyInput && anthropicKeyInput.value.trim()) payload.api_keys.anthropic = anthropicKeyInput.value.trim();
         if (deepseekKeyInput && deepseekKeyInput.value.trim()) payload.api_keys.deepseek = deepseekKeyInput.value.trim();
 
+        let authHeaders = { "Content-Type": "application/json" };
+        try {
+          const raw = localStorage.getItem("data_extractor_auth_session");
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed.access_token) authHeaders["Authorization"] = "Bearer " + parsed.access_token;
+          }
+        } catch (e) {}
+
         const res = await fetch("/api/cloud/probe-all", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: authHeaders,
           body: JSON.stringify(payload)
         });
         const data = await res.json();
@@ -8047,15 +8078,32 @@ async function initCloudModal() {
           testKey = providerInputMap[curProv].value.trim();
         }
 
+        const inputKeys = {};
+        Object.entries(providerInputMap).forEach(([p, inp]) => {
+          if (inp && inp.value && inp.value.trim()) {
+            inputKeys[p] = inp.value.trim();
+          }
+        });
+
+        let authHeaders = { "Content-Type": "application/json" };
+        try {
+          const raw = localStorage.getItem("data_extractor_auth_session");
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed.access_token) authHeaders["Authorization"] = "Bearer " + parsed.access_token;
+          }
+        } catch (e) {}
+
         const payload = {
           provider: curProv,
           api_key: testKey,
+          api_keys: inputKeys,
           model: effectiveModel,
           custom_base_url: customUrlInput ? customUrlInput.value.trim() : ""
         };
         const res = await fetch("/api/cloud/test", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: authHeaders,
           body: JSON.stringify(payload)
         });
         const result = await res.json();

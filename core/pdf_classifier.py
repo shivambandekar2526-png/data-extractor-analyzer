@@ -452,6 +452,17 @@ def store_classified_pdf(
         if svc.is_configured:
             remote_pdf = f"pdf/{department}/{batch}/{semester}.pdf"
             svc.upload_local_file(source_pdf_path, remote_pdf)
+            # Immediately register or update in Cloud Catalog
+            try:
+                svc.upsert_dataset_record(
+                    department=department,
+                    batch=batch,
+                    semester=semester,
+                    excel_path=None,
+                    pdf_path=remote_pdf
+                )
+            except Exception as cat_err:
+                logger.debug(f"Catalog update notice during PDF upload: {cat_err}")
             return remote_pdf
     except Exception as e:
         logger.warning(f"Failed to upload classified PDF to Supabase: {e}")

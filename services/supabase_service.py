@@ -311,89 +311,132 @@ class SupabaseService:
             logger.warning(f"Could not save catalog.json to Supabase: {e}")
             return False
 
-    def _build_fresh_catalog(self) -> Dict[str, Any]:
-        """Compiles catalog from backup SQLite or initial scanned data."""
-        datasets = []
-        db_path = os.path.join(PROJECT_ROOT, "departments_data_migrated_backup", "academic_records.db")
-        if not os.path.isfile(db_path):
-            db_path = os.path.join(PROJECT_ROOT, "departments_data", "academic_records.db")
+    def _list_storage_files_recursive(self, prefix: str = "") -> List[str]:
+        """Recursively lists all object file paths in a given Supabase Storage prefix."""
+        if not self.is_configured:
+            return []
+        results = []
+        try:
+            items = self.client.storage.from_(self.bucket_name).list(prefix)
+            for item in items:
+                name = item.get("name") if isinstance(item, dict) else getattr(item, "name", None)
+                if not name or name.startswith("."):
+                    continue
+                path = f"{prefix}/{name}" if prefix else name
+                # If metadata is missing or id is None, it is a folder
+                is_folder = False
+                if isinstance(item, dict):
+                    is_folder = item.get("id") is None or not item.get("metadata")
+                else:
+                    is_folder = getattr(item, "id", None) is None or not getattr(item, "metadata", None)
 
-        if os.path.isfile(db_path):
-            try:
-                import sqlite3
-                conn = sqlite3.connect(db_path)
-                conn.row_factory = sqlite3.Row
-                cur = conn.cursor()
-                cur.execute("SELECT department, batch, semester, total_students, meta_json, created_at, updated_at FROM datasets;")
-                for r in cur.fetchall():
-                    dept = r["department"]
-                    batch = r["batch"]
-                    sem = r["semester"]
-                    meta_p = {}
-                    if r["meta_json"]:
-                        try:
-                            meta_p = json.loads(r["meta_json"])
-                        except Exception:
-                            pass
-                    datasets.append({
+                if is_folder:
+                    results.extend(self._list_storage_files_recursive(path))
+                else:
+                    results.append(path.replace("\\", "/"))
+        except Exception as e:
+            logger.debug(f"Storage listing warning for prefix '{prefix}': {e}")
+        return results
+
+    def reconcile_catalog_with_storage(self, force_save: bool = True) -> Dict[str, Any]:
+        """
+        Deep reconciliation between real Supabase Storage files and departments_catalog.json:
+        - Scans all real files in pdf/ and excel/.
+        - Purges non-existent (phantom) PDF/Excel paths.
+        - Indexes any storage files that were uploaded but missing from catalog.
+        - Persists the synchronized catalog back to Supabase Storage.
+        """
+        if not self.is_configured:
+            return {"datasets": [], "updated_at": time.strftime("%Y-%m-%d %H:%M:%S")}
+
+        logger.info("[Reconciliation] Scanning Supabase Storage for actual academic files...")
+        real_pdfs = set(self._list_storage_files_recursive("pdf"))
+        real_excels = set(self._list_storage_files_recursive("excel"))
+
+        # Fetch current catalog to preserve metadata and student counts
+        existing_meta = {}
+        try:
+            cat_bytes = self.client.storage.from_(self.bucket_name).download(CATALOG_STORAGE_PATH)
+            if cat_bytes:
+                old_cat = json.loads(cat_bytes.decode("utf-8"))
+                for d in old_cat.get("datasets", []):
+                    k = (d.get("department", "").lower(), d.get("batch", "").lower(), d.get("semester", "").lower())
+                    existing_meta[k] = d
+        except Exception:
+            pass
+
+        datasets_map: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+        now_str = time.strftime("%Y-%m-%d %H:%M:%S")
+
+        # 1. Process all verified Excels in Storage
+        for fpath in sorted(real_excels):
+            parts = fpath.split("/")
+            if len(parts) >= 4:
+                dept = parts[1]
+                batch = parts[2]
+                sem = os.path.splitext(parts[3])[0]
+                key = (dept.lower(), batch.lower(), sem.lower())
+                prev = existing_meta.get(key, {})
+                datasets_map[key] = {
+                    "department": dept,
+                    "batch": batch,
+                    "semester": sem,
+                    "excel_path": fpath,
+                    "pdf_path": None,
+                    "total_students": prev.get("total_students", 0),
+                    "meta_json": prev.get("meta_json", {}),
+                    "created_at": prev.get("created_at", now_str),
+                    "updated_at": now_str
+                }
+
+        # 2. Process all verified PDFs in Storage
+        for fpath in sorted(real_pdfs):
+            parts = fpath.split("/")
+            if len(parts) >= 4:
+                dept = parts[1]
+                batch = parts[2]
+                sem = os.path.splitext(parts[3])[0]
+                key = (dept.lower(), batch.lower(), sem.lower())
+                if key in datasets_map:
+                    datasets_map[key]["pdf_path"] = fpath
+                else:
+                    prev = existing_meta.get(key, {})
+                    datasets_map[key] = {
                         "department": dept,
                         "batch": batch,
                         "semester": sem,
-                        "excel_path": f"excel/{dept}/{batch}/{sem}.xlsx",
-                        "pdf_path": f"pdf/{dept}/{batch}/{sem}.pdf",
-                        "total_students": r["total_students"] or 0,
-                        "meta_json": meta_p,
-                        "created_at": r["created_at"],
-                        "updated_at": r["updated_at"]
-                    })
-                conn.close()
-            except Exception as e:
-                logger.warning(f"Could not read backup sqlite: {e}")
+                        "excel_path": None,
+                        "pdf_path": fpath,
+                        "total_students": prev.get("total_students", 0),
+                        "meta_json": prev.get("meta_json", {}),
+                        "created_at": prev.get("created_at", now_str),
+                        "updated_at": now_str
+                    }
 
-        # If no sqlite data, scan storage root
-        if not datasets:
-            try:
-                dept_folders = self.client.storage.from_(self.bucket_name).list(path="excel")
-                for d_item in dept_folders:
-                    d_name = d_item.get("name") if isinstance(d_item, dict) else getattr(d_item, "name", "")
-                    if not d_name or d_name.startswith("."):
-                        continue
-                    b_folders = self.client.storage.from_(self.bucket_name).list(path=f"excel/{d_name}")
-                    for b_item in b_folders:
-                        b_name = b_item.get("name") if isinstance(b_item, dict) else getattr(b_item, "name", "")
-                        if not b_name or b_name.startswith("."):
-                            continue
-                        f_files = self.client.storage.from_(self.bucket_name).list(path=f"excel/{d_name}/{b_name}")
-                        for f_item in f_files:
-                            fname = f_item.get("name") if isinstance(f_item, dict) else getattr(f_item, "name", "")
-                            if not (fname.endswith(".xlsx") or fname.endswith(".xls")):
-                                continue
-                            sem_name = os.path.splitext(fname)[0]
-                            datasets.append({
-                                "department": d_name,
-                                "batch": b_name,
-                                "semester": sem_name,
-                                "excel_path": f"excel/{d_name}/{b_name}/{fname}",
-                                "pdf_path": f"pdf/{d_name}/{b_name}/{sem_name}.pdf",
-                                "total_students": 0,
-                                "meta_json": {},
-                                "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-                                "updated_at": time.strftime("%Y-%m-%d %H:%M:%S")
-                            })
-            except Exception as e:
-                logger.warning(f"Could not compile datasets from storage: {e}")
-
-        return {
-            "datasets": datasets,
-            "updated_at": time.strftime("%Y-%m-%d %H:%M:%S")
+        clean_datasets = list(datasets_map.values())
+        clean_catalog = {
+            "datasets": clean_datasets,
+            "updated_at": now_str,
+            "verified_storage_sync": True
         }
+
+        if force_save:
+            self._save_catalog_to_cloud(clean_catalog)
+        self._catalog_cache = clean_catalog
+        self._catalog_timestamp = time.time()
+        logger.info(f"[Reconciliation] Catalog synchronized: {len(clean_datasets)} verified datasets ({len(real_pdfs)} PDFs, {len(real_excels)} Excels).")
+        return clean_catalog
+
+    def _build_fresh_catalog(self) -> Dict[str, Any]:
+        """Compiles catalog directly from Supabase Storage reconciliation."""
+        return self.reconcile_catalog_with_storage(force_save=True)
 
     def upsert_dataset_record(
         self,
         department: str,
         batch: str,
         semester: str,
-        excel_path: str,
+        excel_path: Optional[str] = None,
         pdf_path: Optional[str] = None,
         total_students: int = 0,
         meta_json: Optional[Dict[str, Any]] = None
@@ -407,7 +450,8 @@ class SupabaseService:
         now_str = time.strftime("%Y-%m-%d %H:%M:%S")
 
         if existing:
-            existing["excel_path"] = excel_path.replace("\\", "/")
+            if excel_path:
+                existing["excel_path"] = excel_path.replace("\\", "/")
             if pdf_path:
                 existing["pdf_path"] = pdf_path.replace("\\", "/")
             if total_students:
@@ -420,7 +464,7 @@ class SupabaseService:
                 "department": department,
                 "batch": batch,
                 "semester": semester,
-                "excel_path": excel_path.replace("\\", "/"),
+                "excel_path": excel_path.replace("\\", "/") if excel_path else None,
                 "pdf_path": pdf_path.replace("\\", "/") if pdf_path else None,
                 "total_students": total_students,
                 "meta_json": meta_json or {},
@@ -435,15 +479,18 @@ class SupabaseService:
 
         # Also try PostgreSQL table if it exists
         try:
-            self.client.table("department_datasets").upsert({
+            row_data = {
                 "department": department,
                 "batch": batch,
                 "semester": semester,
-                "excel_path": excel_path.replace("\\", "/"),
-                "pdf_path": pdf_path.replace("\\", "/") if pdf_path else None,
                 "total_students": total_students,
                 "meta_json": meta_json or {}
-            }, on_conflict="department,batch,semester").execute()
+            }
+            if excel_path:
+                row_data["excel_path"] = excel_path.replace("\\", "/")
+            if pdf_path:
+                row_data["pdf_path"] = pdf_path.replace("\\", "/")
+            self.client.table("department_datasets").upsert(row_data, on_conflict="department,batch,semester").execute()
         except Exception:
             pass
 
@@ -552,70 +599,72 @@ class SupabaseService:
             dept_label = dept.replace("_", " ")
             batch = ds["batch"]
             sem_name = ds["semester"]
-            excel_path = ds.get("excel_path") or f"excel/{dept}/{batch}/{sem_name}.xlsx"
-            pdf_path = ds.get("pdf_path") or f"pdf/{dept}/{batch}/{sem_name}.pdf"
+            excel_path = ds.get("excel_path")
+            pdf_path = ds.get("pdf_path")
 
-            # 1. Excel item
-            sem_excel_file = os.path.basename(excel_path)
-            excel_group = f"📁 {dept_label} ({batch}) - EXCEL"
-            excel_meta = {
-                "rel_path": excel_path,
-                "filename": f"{sem_excel_file} (EXCEL)",
-                "display_name": f"{sem_name.replace('_', ' ')} ({sem_excel_file})",
-                "file_type": "excel",
-                "full_path": excel_path,
-                "department": dept,
-                "department_label": dept_label,
-                "batch": batch,
-                "semester": sem_name
-            }
-            batches.setdefault(excel_group, []).append(excel_meta)
+            # 1. Excel item (only if Excel actually exists in storage)
+            if excel_path:
+                sem_excel_file = os.path.basename(excel_path)
+                excel_group = f"📁 {dept_label} ({batch}) - EXCEL"
+                excel_meta = {
+                    "rel_path": excel_path,
+                    "filename": f"{sem_excel_file} (EXCEL)",
+                    "display_name": f"{sem_name.replace('_', ' ')} ({sem_excel_file})",
+                    "file_type": "excel",
+                    "full_path": excel_path,
+                    "department": dept,
+                    "department_label": dept_label,
+                    "batch": batch,
+                    "semester": sem_name
+                }
+                batches.setdefault(excel_group, []).append(excel_meta)
 
-            structured["excel"].setdefault(dept, {
-                "department": dept,
-                "label": dept_label,
-                "batches": {}
-            })
-            structured["excel"][dept]["batches"].setdefault(batch, []).append({
-                "rel_path": excel_path,
-                "filename": sem_excel_file,
-                "display_name": f"{sem_name.replace('_', ' ')} ({sem_excel_file})",
-                "semester": sem_name,
-                "batch": batch,
-                "department": dept,
-                "file_type": "excel"
-            })
+                structured["excel"].setdefault(dept, {
+                    "department": dept,
+                    "label": dept_label,
+                    "batches": {}
+                })
+                structured["excel"][dept]["batches"].setdefault(batch, []).append({
+                    "rel_path": excel_path,
+                    "filename": sem_excel_file,
+                    "display_name": f"{sem_name.replace('_', ' ')} ({sem_excel_file})",
+                    "semester": sem_name,
+                    "batch": batch,
+                    "department": dept,
+                    "file_type": "excel"
+                })
 
-            # 2. PDF item
-            sem_pdf_file = os.path.basename(pdf_path)
-            pdf_group = f"📁 {dept_label} ({batch}) - PDF"
-            pdf_meta = {
-                "rel_path": pdf_path,
-                "filename": f"{sem_pdf_file} (PDF)",
-                "display_name": f"{sem_name.replace('_', ' ')} ({sem_pdf_file})",
-                "file_type": "pdf",
-                "full_path": pdf_path,
-                "department": dept,
-                "department_label": dept_label,
-                "batch": batch,
-                "semester": sem_name
-            }
-            batches.setdefault(pdf_group, []).append(pdf_meta)
+            # 2. PDF item (only if PDF actually exists in storage)
+            if pdf_path:
+                sem_pdf_file = os.path.basename(pdf_path)
+                pdf_group = f"📁 {dept_label} ({batch}) - PDF"
+                pdf_meta = {
+                    "rel_path": pdf_path,
+                    "filename": f"{sem_pdf_file} (PDF)",
+                    "display_name": f"{sem_name.replace('_', ' ')} ({sem_pdf_file})",
+                    "file_type": "pdf",
+                    "full_path": pdf_path,
+                    "department": dept,
+                    "department_label": dept_label,
+                    "batch": batch,
+                    "semester": sem_name
+                }
+                batches.setdefault(pdf_group, []).append(pdf_meta)
 
-            structured["pdf"].setdefault(dept, {
-                "department": dept,
-                "label": dept_label,
-                "batches": {}
-            })
-            structured["pdf"][dept]["batches"].setdefault(batch, []).append({
-                "rel_path": pdf_path,
-                "filename": sem_pdf_file,
-                "display_name": f"{sem_name.replace('_', ' ')} ({sem_pdf_file})",
-                "semester": sem_name,
-                "batch": batch,
-                "department": dept,
-                "file_type": "pdf"
-            })
+                structured["pdf"].setdefault(dept, {
+                    "department": dept,
+                    "label": dept_label,
+                    "batches": {}
+                })
+                structured["pdf"][dept]["batches"].setdefault(batch, []).append({
+                    "rel_path": pdf_path,
+                    "filename": sem_pdf_file,
+                    "display_name": f"{sem_name.replace('_', ' ')} ({sem_pdf_file})",
+                    "semester": sem_name,
+                    "batch": batch,
+                    "department": dept,
+                    "file_type": "pdf"
+                })
 
         return {
             "batches": batches,

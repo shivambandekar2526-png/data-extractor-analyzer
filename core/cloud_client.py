@@ -24,6 +24,12 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+# Prevent socket connect hangs on containerized cloud hosts (e.g. Render)
+try:
+    socket.setdefaulttimeout(6.0)
+except Exception:
+    pass
+
 logger = logging.getLogger(__name__)
 
 CONFIG_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "config"))
@@ -759,8 +765,8 @@ class CloudClient:
                         "message": f"Probe error: {e}"
                     }
 
-        # Select and lock best model
-        best = self.get_best_working_model(force_refresh=True, probe=True)
+        # Select and lock best model based on existing probe report (probe=False to prevent 90s freeze)
+        best = self.get_best_working_model(force_refresh=True, probe=False)
         report["best_locked_model"] = best
         return report
 
@@ -777,7 +783,7 @@ class CloudClient:
                 prov = CloudClient._locked_model["provider"].lower()
                 mod = model or CloudClient._locked_model.get("model")
             elif self.is_configured():
-                best = self.get_best_working_model()
+                best = self.get_best_working_model(force_refresh=False, probe=False)
                 prov = best.get("provider", self.config.get("provider", "gemini")).lower()
                 mod = model or best.get("model")
             else:
@@ -794,15 +800,7 @@ class CloudClient:
 
         key = (api_key or self.get_api_key(prov)).strip()
         if not key and prov != "custom":
-            # If specified provider has no key, check if any configured provider exists
-            if (not provider or provider == "active") and self.is_configured():
-                best = self.get_best_working_model()
-                prov = best.get("provider", "gemini").lower()
-                mod = best.get("model")
-                key = self.get_api_key(prov).strip()
-
-        if not key and prov != "custom":
-            return False, f"No API key provided for {prov.upper()}."
+            return False, f"No API key provided or configured for {prov.upper()}. Please enter or save your key first."
 
         raw_pool = [t.strip() for t in re.split(r"[\n,;]+", key) if t.strip()]
         pool_str = f" (Key pool of {len(raw_pool)} keys active)" if len(raw_pool) > 1 else ""

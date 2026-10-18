@@ -149,7 +149,11 @@ def archive_classified_pdf():
         canonical_pdf = store_classified_pdf(
             target_pdf_path, dept, batch, sem, DEPARTMENTS_DATA_DIR, overwrite=True
         )
-        canonical_rel = os.path.relpath(canonical_pdf, DEPARTMENTS_DATA_DIR).replace("\\", "/")
+        if canonical_pdf.startswith("pdf/") or canonical_pdf.startswith("excel/"):
+            canonical_rel = canonical_pdf
+        else:
+            canonical_rel = os.path.relpath(canonical_pdf, DEPARTMENTS_DATA_DIR).replace("\\", "/")
+
         return jsonify({
             "success": True,
             "message": f"Successfully stored PDF in departments_data/{canonical_rel}",

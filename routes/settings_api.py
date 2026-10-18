@@ -83,8 +83,18 @@ def save_cloud_config():
 def probe_all_cloud_providers():
     """Probe all configured API keys across providers and return health report."""
     data = request.get_json(silent=True) or {}
-    client = CloudClient()
-    keys_dict = data.get("api_keys")
+    user = get_current_user_from_request()
+    user_keys = {}
+    if user:
+        try:
+            auth_svc = get_auth_service()
+            settings = auth_svc.get_user_settings(user["id"])
+            user_keys = settings.get("api_keys", {})
+        except Exception:
+            pass
+
+    client = CloudClient(config_override={"api_keys": user_keys} if user_keys else None)
+    keys_dict = data.get("api_keys") or user_keys
     report = client.probe_all_providers(keys_dict=keys_dict)
     return jsonify({
         "success": True,
@@ -97,9 +107,33 @@ def probe_all_cloud_providers():
 def test_cloud_connection():
     """Test remote connection to the specified or configured Cloud AI."""
     data = request.get_json(silent=True) or {}
-    client = CloudClient()
+    user = get_current_user_from_request()
+    user_keys = {}
+    if user:
+        try:
+            auth_svc = get_auth_service()
+            settings = auth_svc.get_user_settings(user["id"])
+            user_keys = settings.get("api_keys", {})
+        except Exception:
+            pass
+
+    input_keys = data.get("api_keys") or {}
+    for k, v in input_keys.items():
+        if v and isinstance(v, str) and v.strip():
+            user_keys[k.lower()] = v.strip()
+
+    client = CloudClient(config_override={"api_keys": user_keys} if user_keys else None)
     provider = data.get("provider")
     api_key = data.get("api_key")
+    # If no inline key was passed, resolve from user's persistent keys
+    if not api_key and provider and provider != "active":
+        api_key = user_keys.get(provider.lower()) or client.get_api_key(provider.lower())
+    elif not api_key and (not provider or provider == "active"):
+        prov_cand = client.config.get("provider", "gemini").lower()
+        if CloudClient._locked_model and CloudClient._locked_model.get("provider"):
+            prov_cand = CloudClient._locked_model["provider"].lower()
+        api_key = user_keys.get(prov_cand) or client.get_api_key(prov_cand)
+
     model = data.get("model")
 
     ok, msg = client.test_connection(provider=provider, api_key=api_key, model=model)

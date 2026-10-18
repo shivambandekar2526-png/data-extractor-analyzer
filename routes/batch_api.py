@@ -24,6 +24,27 @@ from core.excel_csv_ingester import sanitize_dict_for_json
 
 batch_bp = Blueprint("batch_api", __name__)
 
+@batch_bp.route("/api/supabase/catalog/sync", methods=["POST", "GET"])
+def sync_supabase_catalog():
+    """Trigger deep reconciliation between Supabase Storage and departments_catalog.json."""
+    try:
+        from services.supabase_service import get_supabase_service
+        svc = get_supabase_service()
+        if not svc.is_configured:
+            return jsonify({"success": False, "error": "Supabase not configured."}), 400
+        cat = svc.reconcile_catalog_with_storage(force_save=True)
+        batches_map = svc.get_cloud_batches_map()
+        return jsonify({
+            "success": True,
+            "message": f"Successfully synchronized catalog: {len(cat.get('datasets', []))} verified datasets.",
+            "total_datasets": len(cat.get("datasets", [])),
+            "batches_map": batches_map
+        })
+    except Exception as e:
+        logger.error(f"Catalog reconciliation error: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @batch_bp.route("/api/batches", methods=["GET"])
 def list_batches():
     """List batch datasets with structured hierarchy and backward-compatible batches."""
