@@ -376,7 +376,7 @@ class SupabaseService:
     # Storage Operations
     # ---------------------------------------------------------
     def ensure_bucket_exists(self) -> bool:
-        """Verifies or creates the departments_data bucket."""
+        """Verifies or creates the departments_data bucket and core historical_data structure."""
         if not self.is_configured:
             return False
         with self._lock:
@@ -386,6 +386,24 @@ class SupabaseService:
                 if self.bucket_name not in names:
                     self.client.storage.create_bucket(self.bucket_name, options={"public": True})
                     logger.info(f"Created Supabase bucket: {self.bucket_name}")
+
+                # Ensure historical_data folder is always visible in Supabase Storage UI
+                try:
+                    root_items = [i.get("name") if isinstance(i, dict) else getattr(i, "name", "") for i in self.client.storage.from_(self.bucket_name).list("")]
+                    if "historical_data" not in root_items:
+                        manifest = {
+                            "archive_name": "historical_data",
+                            "description": "Automated Supabase storage execution audit log with FIFO 30 retention",
+                            "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
+                        }
+                        self.upload_file_bytes(
+                            json.dumps(manifest, indent=2).encode("utf-8"),
+                            "historical_data/archive_manifest.json",
+                            content_type="application/json"
+                        )
+                except Exception as m_e:
+                    logger.debug(f"Could not check/create historical_data manifest: {m_e}")
+
                 return True
             except Exception as e:
                 logger.warning(f"Could not check/create bucket: {e}")
