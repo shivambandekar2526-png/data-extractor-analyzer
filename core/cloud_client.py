@@ -24,11 +24,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-# Prevent socket connect hangs on containerized cloud hosts (e.g. Render)
-try:
-    socket.setdefaulttimeout(6.0)
-except Exception:
-    pass
+# Per-request timeouts are handled explicitly via urlopen(..., timeout=timeout)
 
 logger = logging.getLogger(__name__)
 

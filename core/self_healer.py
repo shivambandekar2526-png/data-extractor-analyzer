@@ -76,22 +76,4 @@ def heal_student(
 
     # Re-verify after deterministic healing
     check2 = verify_student(student, catalog)
-    if check2.all_passed:
-        return student
-
-    # 2. Targeted LLM Re-prompting if Ollama is connected
-    if client and client.is_available() and max_retries > 0:
-        try:
-            failures_str = "\n".join(check2.failures)
-            prompt = (
-                f"The following student record for seat {student.seat_no} ({student.student_name}) "
-                f"has mathematical checksum mismatches:\n{failures_str}\n\n"
-                f"Please inspect this relevant page text carefully:\n{page_text[:2500]}\n\n"
-                "Return a JSON object with ONLY the corrected course marks and semester totals for this student."
-            )
-            resp = client.generate(prompt, temperature=0.0, format_json=True)
-            # Re-parse if needed
-        except Exception:
-            pass
-
     return student

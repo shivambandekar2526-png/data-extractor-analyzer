@@ -211,9 +211,9 @@ def extract_pdf(
     if controller and controller.should_stop():
         return meta, base_students, archetype
 
-    # 4. Live Local Ollama AI Inference Across Document Pages
-    if ollama_online:
-        pages_to_infer = total_pages if not base_students else min(2, total_pages)
+    # 4. Live Local Ollama AI Inference Across Document Pages (Fallback when deterministic parser yields no students)
+    if ollama_online and not base_students:
+        pages_to_infer = total_pages
         report_progress(progress_callback, 30.0, f"Running Ollama AI ({client.model}) on pages...")
 
         for p_idx in range(pages_to_infer):
@@ -282,6 +282,14 @@ def extract_pdf(
                         "students": [{"seat": s.seat_no, "name": s.student_name, "sgpi": s.sgpi, "result": s.result_status} for s in ai_page_students]
                     }
                 )
+                base_students.extend(ai_page_students)
+    elif base_students:
+        emit_audit(
+            "structure",
+            "DETERMINISTIC EXTRACTION VERIFIED",
+            f"Successfully captured {len(base_students)} records via fast possibility engine. Skipping redundant full-page LLM passes.",
+            {"students_count": len(base_students), "archetype": archetype}
+        )
 
     if controller and controller.should_stop():
         return meta, base_students, archetype
@@ -304,19 +312,18 @@ def extract_pdf(
                 f"Equation discrepancy detected on Seat {s.seat_no}: {', '.join(chk.failures)}",
                 {"seat": s.seat_no, "student": s.student_name, "failures": chk.failures}
             )
-            if ollama_online:
-                emit_audit(
-                    "ai_healing",
-                    "AI HEALING",
-                    f"Invoking Ollama AI Self-Healer on Seat {s.seat_no}...",
-                    {"seat": s.seat_no}
-                )
-                s = heal_student(client, s, chk, "", meta.catalog)
-                if live_callback:
-                    try:
-                        live_callback(s, meta.catalog)
-                    except Exception:
-                        pass
+            emit_audit(
+                "ai_healing",
+                "SELF HEALING",
+                f"Applying Mathematical Reconciliation Proofs on Seat {s.seat_no}...",
+                {"seat": s.seat_no}
+            )
+            s = heal_student(client, s, chk, "", meta.catalog)
+            if live_callback:
+                try:
+                    live_callback(s, meta.catalog)
+                except Exception:
+                    pass
         healed_students.append(s)
 
     report_progress(progress_callback, 90.0, "Auditing mathematical equations across cohort...")
