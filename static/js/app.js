@@ -75,7 +75,8 @@ document.addEventListener("DOMContentLoaded", () => {
     ["initLiveFolderActionListener", initLiveFolderActionListener],
     ["initSubjectPrintAndExportHandlers", initSubjectPrintAndExportHandlers],
     ["initSemesterPrintAndExportHandlers", initSemesterPrintAndExportHandlers],
-    ["initBatchPrintAndExportHandlers", initBatchPrintAndExportHandlers]
+    ["initBatchPrintAndExportHandlers", initBatchPrintAndExportHandlers],
+    ["checkCloudStorageStatus", checkCloudStorageStatus]
   ];
   for (const [name, fn] of initFns) {
     try {
@@ -2863,6 +2864,80 @@ async function initStatus() {
     }
     if (cloudText) cloudText.textContent = "Cloud AI: Inactive";
   }
+}
+
+async function checkCloudStorageStatus() {
+  try {
+    const res = await fetch("/api/supabase/status");
+    const data = await res.json();
+    const existingBanner = document.getElementById("cloudStorageAlertBanner");
+
+    if (!data.configured) {
+      if (!existingBanner) {
+        const banner = document.createElement("div");
+        banner.id = "cloudStorageAlertBanner";
+        banner.style.cssText = "background: linear-gradient(135deg, #1e1b4b, #312e81); border: 1px solid #6366f1; border-radius: 8px; padding: 12px 18px; margin: 12px 20px; color: #fff; display: flex; align-items: center; justify-content: space-between; gap: 14px; z-index: 1000; box-shadow: 0 4px 14px rgba(0,0,0,0.25);";
+        banner.innerHTML = `
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span style="font-size: 24px;">☁️</span>
+            <div>
+              <div style="font-weight: 600; font-size: 14px; color: #e0e7ff;">Supabase Cloud Disconnected</div>
+              <div style="font-size: 12px; color: #cbd5e1; margin-top: 2px;">
+                Department records and batch data require <code>SUPABASE_URL</code> and <code>SUPABASE_KEY</code> in Render's Environment settings.
+              </div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button id="btnQuickConnectSupabase" style="background: #4f46e5; border: none; color: #fff; padding: 7px 14px; border-radius: 6px; font-size: 12px; cursor: pointer; font-weight: 600;">Connect Now</button>
+            <button id="btnDismissSupabaseBanner" style="background: transparent; border: 1px solid rgba(255,255,255,0.2); color: #cbd5e1; padding: 7px 10px; border-radius: 6px; font-size: 12px; cursor: pointer;">✕</button>
+          </div>
+        `;
+
+        const topContainer = document.querySelector(".app-container") || document.querySelector("main") || document.body;
+        topContainer.insertBefore(banner, topContainer.firstChild);
+
+        document.getElementById("btnDismissSupabaseBanner")?.addEventListener("click", () => {
+          banner.remove();
+        });
+
+        document.getElementById("btnQuickConnectSupabase")?.addEventListener("click", () => {
+          promptSupabaseConfig();
+        });
+      }
+    } else {
+      if (existingBanner) existingBanner.remove();
+    }
+  } catch (e) {
+    console.debug("Supabase status check bypassed:", e);
+  }
+}
+
+function promptSupabaseConfig() {
+  const url = prompt("Enter your Supabase URL (e.g. https://your-ref.supabase.co):", "");
+  if (!url) return;
+  const key = prompt("Enter your Supabase Secret or Service Key:", "");
+  if (!key) return;
+
+  fetch("/api/supabase/config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ supabase_url: url.trim(), supabase_key: key.trim() })
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.success) {
+      alert("✅ Supabase successfully connected! Refreshing datasets...");
+      const banner = document.getElementById("cloudStorageAlertBanner");
+      if (banner) banner.remove();
+      if (typeof initBatches === "function") initBatches();
+      if (typeof initHistory === "function") initHistory();
+      if (typeof loadSubjectAnalysisOptions === "function") loadSubjectAnalysisOptions();
+      if (typeof loadSemesterAnalysisOptions === "function") loadSemesterAnalysisOptions();
+    } else {
+      alert("❌ Connection failed: " + (data.error || "Unknown error"));
+    }
+  })
+  .catch(err => alert("Error: " + err.message));
 }
 
 // 2. Load Batch Files (Structured Browser: Format -> Batch -> File)

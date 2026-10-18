@@ -76,6 +76,10 @@ class SupabaseService:
                 self._client = None
         else:
             self._client = None
+            logger.warning(
+                "[!] Supabase credentials not found in environment. "
+                "Cloud departments and storage will be unavailable until SUPABASE_URL and SUPABASE_KEY are set."
+            )
 
     @property
     def is_configured(self) -> bool:
@@ -92,6 +96,47 @@ class SupabaseService:
                 if not self._client:
                     self._init_client()
         return self._client
+
+    def configure(self, url: str, key: str, bucket: Optional[str] = None) -> bool:
+        """Update Supabase configuration dynamically at runtime."""
+        with self._lock:
+            self._config["supabase_url"] = (url or "").strip()
+            self._config["supabase_key"] = (key or "").strip()
+            if bucket:
+                self._config["storage_bucket"] = bucket.strip()
+            self._client = None
+            self._catalog_cache = None
+            self._init_client()
+            return self.is_configured
+
+    def get_connection_status(self) -> Dict[str, Any]:
+        """Returns connection health and summary for diagnostics."""
+        url = self._config.get("supabase_url", "")
+        masked_url = url[:22] + "..." if len(url) > 22 else url
+        has_key = bool(self._config.get("supabase_key"))
+        configured = self.is_configured
+
+        connected = False
+        dataset_count = 0
+        error_msg = None
+
+        if configured:
+            try:
+                cat = self.get_cloud_catalog()
+                dataset_count = len(cat.get("datasets", []))
+                connected = True
+            except Exception as e:
+                error_msg = str(e)
+
+        return {
+            "configured": configured,
+            "connected": connected,
+            "url": masked_url,
+            "bucket": self.bucket_name,
+            "has_key": has_key,
+            "total_datasets": dataset_count,
+            "error": error_msg
+        }
 
     # ---------------------------------------------------------
     # Storage Operations

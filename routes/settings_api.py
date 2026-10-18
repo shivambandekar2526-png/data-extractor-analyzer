@@ -110,4 +110,50 @@ def switch_model():
     if not new_model:
         return jsonify({"success": False, "error": "Model name is required."}), 400
     os.environ["OLLAMA_MODEL"] = new_model
+    return jsonify({"success": True, "active_model": new_model})
+
+
+@settings_bp.route("/api/supabase/status", methods=["GET"])
+def get_supabase_status():
+    """Return Supabase Cloud connection status and diagnostics."""
+    try:
+        from services.supabase_service import get_supabase_service
+        svc = get_supabase_service()
+        status = svc.get_connection_status()
+        return jsonify({"success": True, **status})
+    except Exception as e:
+        return jsonify({"success": False, "configured": False, "connected": False, "error": str(e)}), 500
+
+
+@settings_bp.route("/api/supabase/config", methods=["POST"])
+def update_supabase_config():
+    """Dynamically configure Supabase credentials at runtime."""
+    data = request.get_json(silent=True) or {}
+    url = data.get("supabase_url", "").strip()
+    key = data.get("supabase_key", "").strip()
+    bucket = data.get("storage_bucket", "departments_data").strip()
+
+    if not url or not key:
+        return jsonify({"success": False, "error": "Both supabase_url and supabase_key are required."}), 400
+
+    try:
+        from services.supabase_service import get_supabase_service
+        svc = get_supabase_service()
+        ok = svc.configure(url=url, key=key, bucket=bucket)
+        if ok:
+            os.environ["SUPABASE_URL"] = url
+            os.environ["SUPABASE_KEY"] = key
+            os.environ["SUPABASE_STORAGE_BUCKET"] = bucket
+            return jsonify({
+                "success": True,
+                "message": "Supabase configured successfully.",
+                "status": svc.get_connection_status()
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": "Failed to connect to Supabase with provided credentials."
+            }), 400
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 

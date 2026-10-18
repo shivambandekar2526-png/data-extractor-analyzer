@@ -106,13 +106,17 @@ app = create_app()
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Data Extractor AI Server")
     parser.add_argument("pdf_path", nargs="?", default=None, help="Optional PDF path to extract directly")
-    parser.add_argument("--port", type=int, default=5001, help="Server port (default: 5001)")
+    parser.add_argument("--port", type=int, default=None, help="Server port (default: 5001)")
+    parser.add_argument("--host", type=str, default=None, help="Server host (default: 127.0.0.1 or 0.0.0.0 on cloud)")
     parser.add_argument("--no-browser", action="store_true", help="Do not open browser automatically")
     args = parser.parse_args()
 
-    port = args.port
-    print(f"Starting Data Extractor AI on http://127.0.0.1:{port}")
-    if not args.no_browser:
+    port = args.port or int(os.environ.get("PORT", 5001))
+    is_cloud = bool(os.environ.get("RENDER") or os.environ.get("PORT"))
+    host = args.host or os.environ.get("HOST", "0.0.0.0" if is_cloud else "127.0.0.1")
+
+    print(f"Starting Data Extractor AI on http://{host}:{port}")
+    if not args.no_browser and not is_cloud:
         threading.Timer(1.2, lambda: webbrowser.open(f"http://127.0.0.1:{port}")).start()
 
-    app.run(host="127.0.0.1", port=port, debug=False)
+    app.run(host=host, port=port, debug=False)
