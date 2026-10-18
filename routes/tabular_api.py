@@ -1,7 +1,6 @@
 import os
 import time
 import logging
-import threading
 import pandas as pd
 from flask import Blueprint, request, jsonify
 from werkzeug.utils import secure_filename
@@ -11,7 +10,6 @@ logger = logging.getLogger("app")
 from services.config import INPUT_DIR, DEPARTMENTS_DATA_DIR, OUTPUT_DIR
 from services.state import tabular_ingester
 from services.academic_service import resolve_tabular_file_path
-from services.extraction_service import auto_sort_into_app_batch_store
 from core.ollama_client import OllamaClient
 from core.cloud_client import CloudClient
 from core.data_cleaning_engine import DataCleaningEngine
@@ -95,15 +93,6 @@ def import_tabular_direct():
     target_path, target_filename = resolved
 
     result = tabular_ingester.direct_import(target_path, sheet_name=sheet_name, header_row=header_row)
-    if result.get("success") and result.get("students"):
-        try:
-            threading.Thread(
-                target=auto_sort_into_app_batch_store,
-                kwargs={"source_path": target_path, "students": result.get("students")},
-                daemon=True
-            ).start()
-        except Exception as e:
-            logger.warning(f"Failed to start async auto_sort_into_app_batch_store: {e}")
     return jsonify(sanitize_dict_for_json(result))
 
 
@@ -134,15 +123,6 @@ def ai_fix_tabular():
         ollama_client=oc,
         cloud_client=cc
     )
-    if result.get("success") and result.get("students"):
-        try:
-            threading.Thread(
-                target=auto_sort_into_app_batch_store,
-                kwargs={"source_path": target_path, "students": result.get("students")},
-                daemon=True
-            ).start()
-        except Exception as e:
-            logger.warning(f"Failed to start async auto_sort_into_app_batch_store: {e}")
     return jsonify(sanitize_dict_for_json(result))
 
 
