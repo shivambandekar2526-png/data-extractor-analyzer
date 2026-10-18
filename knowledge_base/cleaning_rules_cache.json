@@ -4376,5 +4376,30 @@
       }
     },
     "source": "ai_determined"
+  },
+  "39035e75bd123381": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "gender": null,
+      "sgpi": null,
+      "cgpi": null,
+      "total_marks": null,
+      "max_marks": null,
+      "result": "Result_Status",
+      "candidate_type": null
+    },
+    "courses": {},
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      }
+    },
+    "source": "ai_determined"
   }
 }
