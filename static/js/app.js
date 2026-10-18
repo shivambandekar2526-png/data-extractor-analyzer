@@ -3799,8 +3799,8 @@ function promptAddPdfToDesignatedFolder(file, clfData) {
   // Show modal
   modal.classList.remove("hidden");
 
-  // Handler for Yes
-  const handleYes = async () => {
+  // Handler for Yes: Accept metadata without premature upload (uploads strictly on Extract)
+  const handleYes = () => {
     modal.classList.add("hidden");
     pdfArchivePromptDecision = true;
 
@@ -3809,37 +3809,11 @@ function promptAddPdfToDesignatedFolder(file, clfData) {
     const targetBatch = document.getElementById("overrideBatchInput")?.value?.trim() || batch;
     const targetSem = document.getElementById("overrideSemInput")?.value?.trim() || sem;
 
-    // Immediately archive/overwrite the file in Supabase Storage
-    const archiveData = new FormData();
-    archiveData.append("pdf_file", file);
-    archiveData.append("department", targetDept);
-    archiveData.append("batch", targetBatch);
-    archiveData.append("semester", targetSem);
+    if (document.getElementById("overrideDeptInput")) document.getElementById("overrideDeptInput").value = targetDept;
+    if (document.getElementById("overrideBatchInput")) document.getElementById("overrideBatchInput").value = targetBatch;
+    if (document.getElementById("overrideSemInput")) document.getElementById("overrideSemInput").value = targetSem;
 
-    try {
-      const res = await fetch("/api/archive-pdf", {
-        method: "POST",
-        body: archiveData
-      });
-      const data = await res.json();
-      if (data.success) {
-        // Trigger catalog sync to ensure dropdowns have fresh verified files
-        try {
-          await fetch("/api/supabase/catalog/sync");
-        } catch (e) {}
-
-        if (typeof initBatches === "function") {
-          initBatches();
-        }
-        // Show confirmation alert instead of extending badge text
-        const savedLocation = data.rel_path || canonicalRel;
-        alert(`Document successfully saved to Supabase Storage:\n\n${savedLocation}`);
-      } else {
-        console.warn("Could not archive PDF:", data.error);
-      }
-    } catch (e) {
-      console.warn("Archive PDF request failed:", e);
-    }
+    console.log(`[BatchModal] Accepted academic metadata: ${targetDept} / ${targetBatch} / ${targetSem}. PDF will be archived upon extraction.`);
   };
 
   // Handler for No

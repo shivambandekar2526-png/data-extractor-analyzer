@@ -236,13 +236,16 @@ def start_extraction():
     # 3. Add to Supabase Storage directly (or local departments_data/pdf if Supabase unconfigured)
     canonical_excel = get_canonical_excel_path(dept, batch, sem, DEPARTMENTS_DATA_DIR)
     canonical_pdf = os.path.join(DEPARTMENTS_DATA_DIR, "pdf", dept, batch, f"{sem}.pdf").replace("\\", "/")
+    pdf_url = ""
 
     try:
         from services.supabase_service import get_supabase_service
         svc = get_supabase_service()
         if svc.is_configured:
             remote_pdf = f"pdf/{dept}/{batch}/{sem}.pdf"
-            if target_pdf_path and os.path.isfile(target_pdf_path):
+            # Only upload if this is a direct user file upload (not already selected from Department Library)
+            if is_direct_upload and target_pdf_path and os.path.isfile(target_pdf_path):
+                logger.info(f"[ExtractAPI] Archiving uploaded PDF directly to Supabase Storage: {remote_pdf}")
                 svc.upload_local_file(target_pdf_path, remote_pdf)
                 svc.upsert_dataset_record(
                     department=dept,
@@ -252,6 +255,11 @@ def start_extraction():
                     pdf_path=remote_pdf
                 )
                 canonical_pdf = remote_pdf
+            else:
+                # If chosen from library, it is already in Supabase Storage
+                canonical_pdf = remote_pdf
+
+            pdf_url = svc.get_public_url(remote_pdf) or svc.get_signed_url(remote_pdf) or ""
     except Exception as sup_err:
         logger.warning(f"Could not auto-archive PDF to Supabase: {sup_err}")
 
@@ -270,7 +278,8 @@ def start_extraction():
         "batch": batch,
         "semester": sem,
         "pdf_path": canonical_pdf,
-        "excel_path": canonical_excel
+        "excel_path": canonical_excel,
+        "pdf_url": pdf_url
     }
 
     job_id = str(uuid.uuid4())

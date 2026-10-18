@@ -183,22 +183,24 @@ def auto_sort_into_app_batch_store(
                     supabase_svc.upload_local_file(src_to_upload, supabase_rel_excel)
 
                 supabase_rel_pdf = f"pdf/{dept_name}/{batch_slug}/{sem_canonical}.pdf"
-                cand_pdfs = [
-                    source_path if (source_path and str(source_path).lower().endswith(".pdf") and os.path.isfile(source_path)) else None,
-                    dataset_meta.get("pdf_path") if (dataset_meta and dataset_meta.get("pdf_path") and os.path.isfile(str(dataset_meta["pdf_path"]))) else None,
-                    os.path.join(DEPARTMENTS_DATA_DIR, "pdf", dept_name, batch_slug, f"{sem_canonical}.pdf"),
-                    os.path.join(INPUT_DIR, f"{source_path}.pdf") if source_path else None,
-                    os.path.join(INPUT_DIR, os.path.basename(str(source_path))) if source_path else None
-                ]
-                pdf_uploaded = None
-                for cp in cand_pdfs:
-                    if cp and os.path.isfile(cp):
-                        supabase_svc.upload_local_file(cp, supabase_rel_pdf)
-                        pdf_uploaded = supabase_rel_pdf
-                        break
+                pdf_uploaded = supabase_rel_pdf
 
-                if not pdf_uploaded and supabase_svc.download_file_bytes(supabase_rel_pdf):
-                    pdf_uploaded = supabase_rel_pdf
+                # Only upload local PDF if it was NOT already uploaded to Supabase Storage before extraction
+                meta_pdf = str(dataset_meta.get("pdf_path") or "") if dataset_meta else ""
+                already_in_cloud = meta_pdf.startswith("pdf/") or meta_pdf.startswith("http")
+                if not already_in_cloud:
+                    cand_pdfs = [
+                        source_path if (source_path and str(source_path).lower().endswith(".pdf") and os.path.isfile(source_path)) else None,
+                        dataset_meta.get("pdf_path") if (dataset_meta and dataset_meta.get("pdf_path") and os.path.isfile(str(dataset_meta["pdf_path"]))) else None,
+                        os.path.join(DEPARTMENTS_DATA_DIR, "pdf", dept_name, batch_slug, f"{sem_canonical}.pdf"),
+                        os.path.join(INPUT_DIR, f"{source_path}.pdf") if source_path else None,
+                        os.path.join(INPUT_DIR, os.path.basename(str(source_path))) if source_path else None
+                    ]
+                    for cp in cand_pdfs:
+                        if cp and os.path.isfile(cp):
+                            supabase_svc.upload_local_file(cp, supabase_rel_pdf)
+                            pdf_uploaded = supabase_rel_pdf
+                            break
 
                 cat_payload = catalog if isinstance(catalog, dict) else (catalog.to_dict() if hasattr(catalog, "to_dict") else {})
                 supabase_svc.upsert_dataset_record(
