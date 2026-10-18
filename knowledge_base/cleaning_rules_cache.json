@@ -4326,5 +4326,55 @@
       }
     },
     "source": "ai_determined"
+  },
+  "d54a5370b0c2121e": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "gender": null,
+      "sgpi": "SGPI",
+      "cgpi": null,
+      "total_marks": "Total_Marks_Col_8",
+      "max_marks": null,
+      "result": "Result_Status",
+      "candidate_type": null
+    },
+    "courses": {},
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      }
+    },
+    "source": "ai_determined"
+  },
+  "721b2ddb1c470c55": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "gender": null,
+      "sgpi": "SGPI",
+      "cgpi": null,
+      "total_marks": "Total_Marks",
+      "max_marks": null,
+      "result": "Result_Status",
+      "candidate_type": null
+    },
+    "courses": {},
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      }
+    },
+    "source": "ai_determined"
   }
 }
