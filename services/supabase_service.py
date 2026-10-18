@@ -32,7 +32,7 @@ class SupabaseService:
     """Thread-safe service to interact with Supabase Storage and PostgreSQL."""
 
     def __init__(self):
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._client: Optional[Client] = None
         self._config: Dict[str, Any] = self._load_config()
         self._realtime_started = False

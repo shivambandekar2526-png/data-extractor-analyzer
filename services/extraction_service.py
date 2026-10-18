@@ -154,23 +154,24 @@ def auto_sort_into_app_batch_store(
                 analyzer.save_clean_semester_excel(students, normalize_batch_slug(batch_slug), sem_num, target_dir=l_dir)
 
         # Save to SQLite database (optional local cache)
-        try:
-            pdf_path = os.path.join(DEPARTMENTS_DATA_DIR, "pdf", dept_name, batch_slug, f"{sem_canonical}.pdf")
-            if not os.path.isfile(pdf_path):
-                pdf_path = None
-            cat_payload = catalog if isinstance(catalog, dict) else (catalog.to_dict() if hasattr(catalog, "to_dict") else {})
-            save_dataset_to_db(
-                db_path=DB_PATH,
-                department=dept_name,
-                batch=batch_slug,
-                semester=sem_canonical,
-                excel_path=canonical_excel,
-                pdf_path=pdf_path,
-                students=students or [],
-                catalog=cat_payload
-            )
-        except Exception as db_err:
-            logger.warning(f"Failed to persist dataset to SQLite: {db_err}")
+        if DB_PATH:
+            try:
+                pdf_path = os.path.join(DEPARTMENTS_DATA_DIR, "pdf", dept_name, batch_slug, f"{sem_canonical}.pdf")
+                if not os.path.isfile(pdf_path):
+                    pdf_path = None
+                cat_payload = catalog if isinstance(catalog, dict) else (catalog.to_dict() if hasattr(catalog, "to_dict") else {})
+                save_dataset_to_db(
+                    db_path=DB_PATH,
+                    department=dept_name,
+                    batch=batch_slug,
+                    semester=sem_canonical,
+                    excel_path=canonical_excel,
+                    pdf_path=pdf_path,
+                    students=students or [],
+                    catalog=cat_payload
+                )
+            except Exception as db_err:
+                logger.warning(f"Failed to persist dataset to SQLite: {db_err}")
 
         # Supabase Cloud Sync (Primary Cloud Storage & Catalog)
         try:
@@ -178,23 +179,26 @@ def auto_sort_into_app_batch_store(
             supabase_svc = get_supabase_service()
             if supabase_svc.is_configured:
                 supabase_rel_excel = f"excel/{dept_name}/{batch_slug}/{sem_canonical}.xlsx"
-                src_to_upload = canonical_excel if (canonical_excel and os.path.isfile(canonical_excel)) else excel_path
+                source_is_excel = bool(source_path and str(source_path).lower().endswith((".xlsx", ".xls", ".csv")) and os.path.isfile(str(source_path)))
+                src_to_upload = canonical_excel if (canonical_excel and os.path.isfile(canonical_excel)) else (excel_path if (excel_path and os.path.isfile(str(excel_path))) else (source_path if source_is_excel else None))
                 if src_to_upload and os.path.isfile(src_to_upload):
                     supabase_svc.upload_local_file(src_to_upload, supabase_rel_excel)
 
                 supabase_rel_pdf = f"pdf/{dept_name}/{batch_slug}/{sem_canonical}.pdf"
-                pdf_uploaded = supabase_rel_pdf
+                pdf_uploaded = None
 
                 # Only upload local PDF if it was NOT already uploaded to Supabase Storage before extraction
                 meta_pdf = str(dataset_meta.get("pdf_path") or "") if dataset_meta else ""
                 already_in_cloud = meta_pdf.startswith("pdf/") or meta_pdf.startswith("http")
-                if not already_in_cloud:
+                if already_in_cloud:
+                    pdf_uploaded = meta_pdf
+                else:
                     cand_pdfs = [
-                        source_path if (source_path and str(source_path).lower().endswith(".pdf") and os.path.isfile(source_path)) else None,
-                        dataset_meta.get("pdf_path") if (dataset_meta and dataset_meta.get("pdf_path") and os.path.isfile(str(dataset_meta["pdf_path"]))) else None,
+                        source_path if (source_path and str(source_path).lower().endswith(".pdf") and os.path.isfile(str(source_path))) else None,
+                        dataset_meta.get("pdf_path") if (dataset_meta and dataset_meta.get("pdf_path") and str(dataset_meta["pdf_path"]).lower().endswith(".pdf") and os.path.isfile(str(dataset_meta["pdf_path"]))) else None,
                         os.path.join(DEPARTMENTS_DATA_DIR, "pdf", dept_name, batch_slug, f"{sem_canonical}.pdf"),
-                        os.path.join(INPUT_DIR, f"{source_path}.pdf") if source_path else None,
-                        os.path.join(INPUT_DIR, os.path.basename(str(source_path))) if source_path else None
+                        os.path.join(INPUT_DIR, f"{source_path}.pdf") if (source_path and not str(source_path).lower().endswith((".xlsx", ".xls", ".csv", ".pdf"))) else None,
+                        os.path.join(INPUT_DIR, os.path.basename(str(source_path))) if (source_path and str(source_path).lower().endswith(".pdf")) else None
                     ]
                     for cp in cand_pdfs:
                         if cp and os.path.isfile(cp):

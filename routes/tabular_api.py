@@ -1,6 +1,7 @@
 import os
 import time
 import logging
+import threading
 import pandas as pd
 from flask import Blueprint, request, jsonify
 from werkzeug.utils import secure_filename
@@ -96,9 +97,13 @@ def import_tabular_direct():
     result = tabular_ingester.direct_import(target_path, sheet_name=sheet_name, header_row=header_row)
     if result.get("success") and result.get("students"):
         try:
-            auto_sort_into_app_batch_store(source_path=target_path, students=result.get("students"))
-        except Exception:
-            pass
+            threading.Thread(
+                target=auto_sort_into_app_batch_store,
+                kwargs={"source_path": target_path, "students": result.get("students")},
+                daemon=True
+            ).start()
+        except Exception as e:
+            logger.warning(f"Failed to start async auto_sort_into_app_batch_store: {e}")
     return jsonify(sanitize_dict_for_json(result))
 
 
@@ -131,9 +136,13 @@ def ai_fix_tabular():
     )
     if result.get("success") and result.get("students"):
         try:
-            auto_sort_into_app_batch_store(source_path=target_path, students=result.get("students"))
-        except Exception:
-            pass
+            threading.Thread(
+                target=auto_sort_into_app_batch_store,
+                kwargs={"source_path": target_path, "students": result.get("students")},
+                daemon=True
+            ).start()
+        except Exception as e:
+            logger.warning(f"Failed to start async auto_sort_into_app_batch_store: {e}")
     return jsonify(sanitize_dict_for_json(result))
 
 
