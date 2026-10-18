@@ -26,7 +26,6 @@ except ImportError:
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG_FILE = os.path.join(PROJECT_ROOT, "config", "supabase_config.json")
-CATALOG_STORAGE_PATH = "catalog/departments_catalog.json"
 
 
 class SupabaseService:
@@ -36,12 +35,13 @@ class SupabaseService:
         self._lock = threading.Lock()
         self._client: Optional[Client] = None
         self._config: Dict[str, Any] = self._load_config()
+        self._realtime_started = False
         self._init_client()
 
-        # In-memory thread-safe cache
+        # In-memory thread-safe cache (single source of truth in RAM)
         self._catalog_cache: Optional[Dict[str, Any]] = None
         self._catalog_timestamp: float = 0.0
-        self._cache_ttl: float = 30.0  # seconds
+        self._cache_ttl: float = 300.0  # seconds (long TTL because changes are push-invalidated)
 
     def _load_config(self) -> Dict[str, Any]:
         cfg = {
@@ -71,6 +71,8 @@ class SupabaseService:
             try:
                 self._client = create_client(url, key)
                 logger.info(f"Supabase client initialized successfully for {url}")
+                if not self._realtime_started:
+                    self._start_realtime_listener()
             except Exception as e:
                 logger.error(f"Failed to initialize Supabase client: {e}")
                 self._client = None
@@ -139,6 +141,179 @@ class SupabaseService:
         }
 
     # ---------------------------------------------------------
+    # Real-Time Push Synchronization (Zero Polling Queries)
+    # ---------------------------------------------------------
+    def _start_realtime_listener(self):
+        """
+        Runs a persistent, push-based WebSocket connection to Supabase Realtime
+        to receive instant storage.objects notifications.
+        While idle, consumes ZERO database calls and ZERO HTTP requests.
+        """
+        url = self._config.get("supabase_url", "")
+        key = self._config.get("supabase_key", "")
+        if not url or not key:
+            return
+
+        self._realtime_started = True
+
+        def _run_realtime_loop():
+            import asyncio
+            try:
+                import websockets
+            except ImportError:
+                logger.warning("websockets not installed; Supabase Realtime push listener disabled.")
+                return
+
+            base_ws = url.replace("https://", "wss://").replace("http://", "ws://")
+            ws_url = f"{base_ws}/realtime/v1/websocket?apikey={key}&vsn=1.0.0"
+
+            async def _listen():
+                retry_delay = 3.0
+                while True:
+                    try:
+                        async with websockets.connect(ws_url, ping_interval=20, ping_timeout=20) as ws:
+                            logger.info("[Supabase Realtime] Connected to push stream. Listening for storage events.")
+                            retry_delay = 3.0
+                            # Join storage changes channel
+                            join_msg = {
+                                "topic": "realtime:storage_channel",
+                                "event": "phx_join",
+                                "payload": {
+                                    "config": {
+                                        "postgres_changes": [
+                                            {"event": "*", "schema": "storage", "table": "objects"}
+                                        ]
+                                    }
+                                },
+                                "ref": "1"
+                            }
+                            await ws.send(json.dumps(join_msg))
+
+                            while True:
+                                raw = await ws.recv()
+                                msg = json.loads(raw)
+                                evt = msg.get("event")
+                                payload = msg.get("payload", {})
+
+                                if evt == "postgres_changes":
+                                    data = payload.get("data", {})
+                                    change_type = data.get("type", "")
+                                    record = data.get("record") or {}
+                                    old_record = data.get("old_record") or {}
+                                    path = record.get("name") or old_record.get("name") or ""
+                                    bucket = record.get("bucket_id") or old_record.get("bucket_id") or ""
+                                    if path and (not bucket or bucket == self.bucket_name):
+                                        logger.info(f"[Supabase Realtime] Pushed change: {change_type} on {path}")
+                                        self.handle_storage_event(change_type, path)
+                    except Exception as e:
+                        logger.debug(f"[Supabase Realtime] Reconnecting in {retry_delay:.1f}s... ({e})")
+                        await asyncio.sleep(retry_delay)
+                        retry_delay = min(retry_delay * 1.5, 60.0)
+
+            try:
+                asyncio.run(_listen())
+            except Exception as loop_err:
+                logger.debug(f"[Supabase Realtime] Loop exited: {loop_err}")
+
+        t = threading.Thread(target=_run_realtime_loop, daemon=True, name="SupabaseRealtimeThread")
+        t.start()
+        logger.info("Supabase Realtime push listener thread launched.")
+
+    def handle_storage_event(self, event_type: str, file_path: str) -> bool:
+        """
+        Directly mutates the in-memory catalog cache when a file is created,
+        updated, or deleted in Supabase Storage.
+        Requires ZERO calls to Supabase.
+        """
+        if not file_path:
+            return False
+
+        clean_path = file_path.replace("\\", "/").strip("/")
+        parts = clean_path.split("/")
+        # We track pdf/<dept>/<batch>/<file> and excel/<dept>/<batch>/<file>
+        if len(parts) < 4 or parts[0] not in ("pdf", "excel"):
+            return False
+
+        fmt = parts[0]  # "pdf" or "excel"
+        dept = parts[1]
+        batch = parts[2]
+        filename = parts[3]
+        sem = os.path.splitext(filename)[0]
+        event_upper = event_type.upper()
+
+        with self._lock:
+            if not self._catalog_cache:
+                # If cache is not yet built, it will compile fresh on first query
+                return True
+
+            datasets = self._catalog_cache.get("datasets", [])
+            key = (dept.lower(), batch.lower(), sem.lower())
+            matched = next(
+                (d for d in datasets
+                 if d.get("department", "").lower() == key[0]
+                 and d.get("batch", "").lower() == key[1]
+                 and d.get("semester", "").lower() == key[2]),
+                None
+            )
+
+            if "DELETE" in event_upper:
+                if matched:
+                    if fmt == "excel" and matched.get("excel_path") == clean_path:
+                        matched["excel_path"] = None
+                    elif fmt == "pdf" and matched.get("pdf_path") == clean_path:
+                        matched["pdf_path"] = None
+
+                    # If neither excel nor pdf exists anymore, remove the dataset record entirely
+                    if not matched.get("excel_path") and not matched.get("pdf_path"):
+                        datasets.remove(matched)
+
+                    self._catalog_cache["datasets"] = datasets
+                    self._catalog_cache["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                    logger.info(f"[LiveSync] In-memory catalog pruned deleted file: {clean_path}")
+            elif "INSERT" in event_upper or "UPDATE" in event_upper:
+                now_str = time.strftime("%Y-%m-%d %H:%M:%S")
+                if matched:
+                    if fmt == "excel":
+                        matched["excel_path"] = clean_path
+                    elif fmt == "pdf":
+                        matched["pdf_path"] = clean_path
+                    matched["updated_at"] = now_str
+                else:
+                    datasets.append({
+                        "department": dept,
+                        "batch": batch,
+                        "semester": sem,
+                        "excel_path": clean_path if fmt == "excel" else None,
+                        "pdf_path": clean_path if fmt == "pdf" else None,
+                        "total_students": 0,
+                        "meta_json": {},
+                        "created_at": now_str,
+                        "updated_at": now_str
+                    })
+                self._catalog_cache["datasets"] = datasets
+                self._catalog_cache["updated_at"] = now_str
+                logger.info(f"[LiveSync] In-memory catalog registered new file: {clean_path}")
+
+        # Broadcast change event to folder_watcher (triggers SSE stream to browser UI)
+        try:
+            from core.folder_watcher import folder_watcher
+            folder_watcher.notify_event({
+                "event": "file_deleted" if "DELETE" in event_upper else "file_created",
+                "category": "supabase_storage",
+                "file": clean_path,
+                "filename": filename,
+                "department": dept,
+                "batch": batch,
+                "semester": sem,
+                "file_type": fmt,
+                "timestamp": time.time()
+            })
+        except Exception as e:
+            logger.debug(f"Could not notify folder_watcher: {e}")
+
+        return True
+
+    # ---------------------------------------------------------
     # Storage Operations
     # ---------------------------------------------------------
     def ensure_bucket_exists(self) -> bool:
@@ -175,6 +350,7 @@ class SupabaseService:
                     file=data,
                     file_options=opts
                 )
+                self.handle_storage_event("INSERT", clean_path)
                 return True
             except Exception as e:
                 logger.error(f"Failed to upload {clean_path} to Supabase Storage: {e}")
@@ -243,6 +419,7 @@ class SupabaseService:
         with self._lock:
             try:
                 self.client.storage.from_(self.bucket_name).remove([clean_path])
+                self.handle_storage_event("DELETE", clean_path)
                 return True
             except Exception as e:
                 logger.error(f"Error deleting file {clean_path} from Supabase: {e}")
@@ -265,8 +442,9 @@ class SupabaseService:
     # ---------------------------------------------------------
     def get_cloud_catalog(self, force_refresh: bool = False) -> Dict[str, Any]:
         """
-        Retrieves the unified department catalog directly from Supabase Cloud.
-        Cached in memory to avoid repetitive network calls and socket exhaustion.
+        Retrieves the unified department catalog directly from the verified in-memory cache.
+        Cached in memory to eliminate useless database calls.
+        Only performs a live bucket scan on initial startup or explicit force_refresh.
         """
         now = time.time()
         if not force_refresh and self._catalog_cache and (now - self._catalog_timestamp) < self._cache_ttl:
@@ -276,40 +454,11 @@ class SupabaseService:
             if not force_refresh and self._catalog_cache and (now - self._catalog_timestamp) < self._cache_ttl:
                 return self._catalog_cache
 
-            # 1. Try reading catalog/departments_catalog.json from Supabase Storage
-            try:
-                cat_bytes = self.client.storage.from_(self.bucket_name).download(CATALOG_STORAGE_PATH)
-                if cat_bytes:
-                    cat_data = json.loads(cat_bytes.decode("utf-8"))
-                    if isinstance(cat_data, dict) and "datasets" in cat_data:
-                        self._catalog_cache = cat_data
-                        self._catalog_timestamp = now
-                        return cat_data
-            except Exception:
-                pass
-
-            # 2. If catalog.json does not exist in cloud storage yet, build it
-            cat_data = self._build_fresh_catalog()
-            self._save_catalog_to_cloud(cat_data)
+            # Reconcile directly with real storage objects (no static catalog JSON)
+            cat_data = self.reconcile_catalog_with_storage(force_save=False)
             self._catalog_cache = cat_data
             self._catalog_timestamp = now
             return cat_data
-
-    def _save_catalog_to_cloud(self, catalog_data: Dict[str, Any]) -> bool:
-        """Uploads catalog JSON to Supabase Storage."""
-        if not self.is_configured:
-            return False
-        try:
-            payload = json.dumps(catalog_data, indent=2).encode("utf-8")
-            self.client.storage.from_(self.bucket_name).upload(
-                path=CATALOG_STORAGE_PATH,
-                file=payload,
-                file_options={"upsert": "true", "contentType": "application/json"}
-            )
-            return True
-        except Exception as e:
-            logger.warning(f"Could not save catalog.json to Supabase: {e}")
-            return False
 
     def _list_storage_files_recursive(self, prefix: str = "") -> List[str]:
         """Recursively lists all object file paths in a given Supabase Storage prefix."""
@@ -338,13 +487,13 @@ class SupabaseService:
             logger.debug(f"Storage listing warning for prefix '{prefix}': {e}")
         return results
 
-    def reconcile_catalog_with_storage(self, force_save: bool = True) -> Dict[str, Any]:
+    def reconcile_catalog_with_storage(self, force_save: bool = False) -> Dict[str, Any]:
         """
-        Deep reconciliation between real Supabase Storage files and departments_catalog.json:
-        - Scans all real files in pdf/ and excel/.
+        Builds the active catalog directly from real Supabase Storage files:
+        - Scans all verified files in pdf/ and excel/.
         - Purges non-existent (phantom) PDF/Excel paths.
-        - Indexes any storage files that were uploaded but missing from catalog.
-        - Persists the synchronized catalog back to Supabase Storage.
+        - Preserves existing student counts and metadata in memory.
+        - Zero reliance on static catalog JSON files in cloud storage.
         """
         if not self.is_configured:
             return {"datasets": [], "updated_at": time.strftime("%Y-%m-%d %H:%M:%S")}
@@ -353,17 +502,12 @@ class SupabaseService:
         real_pdfs = set(self._list_storage_files_recursive("pdf"))
         real_excels = set(self._list_storage_files_recursive("excel"))
 
-        # Fetch current catalog to preserve metadata and student counts
+        # Fetch existing in-memory metadata to preserve student counts
         existing_meta = {}
-        try:
-            cat_bytes = self.client.storage.from_(self.bucket_name).download(CATALOG_STORAGE_PATH)
-            if cat_bytes:
-                old_cat = json.loads(cat_bytes.decode("utf-8"))
-                for d in old_cat.get("datasets", []):
-                    k = (d.get("department", "").lower(), d.get("batch", "").lower(), d.get("semester", "").lower())
-                    existing_meta[k] = d
-        except Exception:
-            pass
+        if self._catalog_cache and "datasets" in self._catalog_cache:
+            for d in self._catalog_cache.get("datasets", []):
+                k = (d.get("department", "").lower(), d.get("batch", "").lower(), d.get("semester", "").lower())
+                existing_meta[k] = d
 
         datasets_map: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
         now_str = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -420,16 +564,14 @@ class SupabaseService:
             "verified_storage_sync": True
         }
 
-        if force_save:
-            self._save_catalog_to_cloud(clean_catalog)
         self._catalog_cache = clean_catalog
         self._catalog_timestamp = time.time()
-        logger.info(f"[Reconciliation] Catalog synchronized: {len(clean_datasets)} verified datasets ({len(real_pdfs)} PDFs, {len(real_excels)} Excels).")
+        logger.info(f"[Reconciliation] In-memory catalog synchronized: {len(clean_datasets)} verified datasets ({len(real_pdfs)} PDFs, {len(real_excels)} Excels).")
         return clean_catalog
 
     def _build_fresh_catalog(self) -> Dict[str, Any]:
         """Compiles catalog directly from Supabase Storage reconciliation."""
-        return self.reconcile_catalog_with_storage(force_save=True)
+        return self.reconcile_catalog_with_storage(force_save=False)
 
     def upsert_dataset_record(
         self,
@@ -441,8 +583,8 @@ class SupabaseService:
         total_students: int = 0,
         meta_json: Optional[Dict[str, Any]] = None
     ) -> bool:
-        """Upserts a dataset record into Cloud Catalog and Database."""
-        cat_data = self.get_cloud_catalog(force_refresh=True)
+        """Upserts a dataset record directly into in-memory catalog (and Database if table exists)."""
+        cat_data = self.get_cloud_catalog(force_refresh=False)
         datasets = cat_data.get("datasets", [])
 
         # Update or append
@@ -474,10 +616,10 @@ class SupabaseService:
 
         cat_data["datasets"] = datasets
         cat_data["updated_at"] = now_str
-        self._save_catalog_to_cloud(cat_data)
         self._catalog_cache = cat_data
+        self._catalog_timestamp = time.time()
 
-        # Also try PostgreSQL table if it exists
+        # Also try PostgreSQL table if configured
         try:
             row_data = {
                 "department": department,
@@ -503,7 +645,7 @@ class SupabaseService:
 
     def delete_dataset_record(self, department: str, batch: str, semester: str) -> bool:
         """Deletes dataset entry from Cloud Catalog and Storage."""
-        cat_data = self.get_cloud_catalog(force_refresh=True)
+        cat_data = self.get_cloud_catalog(force_refresh=False)
         datasets = cat_data.get("datasets", [])
         matched = next((d for d in datasets if d["department"].lower() == department.lower() and d["batch"].lower() == batch.lower() and d["semester"].lower() == semester.lower()), None)
 
@@ -511,8 +653,8 @@ class SupabaseService:
             datasets.remove(matched)
             cat_data["datasets"] = datasets
             cat_data["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-            self._save_catalog_to_cloud(cat_data)
             self._catalog_cache = cat_data
+            self._catalog_timestamp = time.time()
 
             if matched.get("excel_path"):
                 self.delete_file(matched["excel_path"])

@@ -32,7 +32,7 @@ def sync_supabase_catalog():
         svc = get_supabase_service()
         if not svc.is_configured:
             return jsonify({"success": False, "error": "Supabase not configured."}), 400
-        cat = svc.reconcile_catalog_with_storage(force_save=True)
+        cat = svc.reconcile_catalog_with_storage(force_save=False)
         batches_map = svc.get_cloud_batches_map()
         return jsonify({
             "success": True,
@@ -54,7 +54,7 @@ def list_batches():
         supabase_svc = get_supabase_service()
         if supabase_svc.is_configured:
             if refresh:
-                supabase_svc.reconcile_catalog_with_storage(force_save=True)
+                supabase_svc.reconcile_catalog_with_storage(force_save=False)
             cloud_map = supabase_svc.get_cloud_batches_map()
             return jsonify(cloud_map or {"batches": {}, "structured": {"pdf": {}, "excel": {}}})
     except Exception as e:

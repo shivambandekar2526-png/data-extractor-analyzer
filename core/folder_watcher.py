@@ -135,6 +135,26 @@ class FolderWatcher:
 
         return detected_events
 
+    def notify_event(self, event_data: Dict[str, Any]):
+        """
+        Pushes an external event (e.g. Supabase Storage change or Webhook)
+        to all active SSE listeners and updates the version counter.
+        Requires ZERO disk or database polling calls.
+        """
+        now = time.time()
+        with self._lock:
+            self._version += 1
+            self._last_change_time = now
+            self._recent_events.append(event_data)
+            self._recent_events = self._recent_events[-50:]
+
+            # Wake up any waiting SSE listeners immediately
+            for listener in list(self._listeners):
+                try:
+                    listener.set()
+                except Exception:
+                    pass
+
     def get_status(self) -> Dict[str, Any]:
         """Returns current status and recent events."""
         with self._lock:

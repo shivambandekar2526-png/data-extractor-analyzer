@@ -2759,6 +2759,16 @@ function initLiveFolderActionListener() {
     console.log("[LiveFolderWatcher] Live folder change detected:", data);
     triggerLiveFlash();
 
+    // 0. Live refresh the Extraction Batch dropdowns and format count badges
+    if (typeof initBatches === "function") {
+      initBatches(true).catch(e => console.warn("Live initBatches error:", e));
+    }
+
+    // 0b. Live refresh Department Library if loaded
+    if (typeof loadAcademicCatalog === "function") {
+      try { loadAcademicCatalog(true); } catch (e) {}
+    }
+
     // 1. Refresh Subject-wise Analysis options live
     if (typeof window.reloadSubjectAnalysisHierarchy === "function") {
       window.reloadSubjectAnalysisHierarchy(true);
@@ -2777,6 +2787,19 @@ function initLiveFolderActionListener() {
     // 3. Dispatch global custom DOM event for other listeners
     document.dispatchEvent(new CustomEvent("folderUpdate", { detail: data }));
   }
+
+  // Window focus listener: if user deleted/uploaded a file in Supabase dashboard and switches back
+  window.addEventListener("focus", () => {
+    fetch("/api/live-watcher/status")
+      .then(r => r.json())
+      .then(d => {
+        if (d && d.version && d.version !== lastKnownWatcherVersion) {
+          lastKnownWatcherVersion = d.version;
+          handleFolderUpdate(d);
+        }
+      })
+      .catch(() => {});
+  });
 
   // Attempt Server-Sent Events (SSE)
   if (typeof EventSource !== "undefined") {

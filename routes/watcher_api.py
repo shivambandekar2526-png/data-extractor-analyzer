@@ -56,10 +56,12 @@ def stream_live_watcher_events():
                 curr_version = status.get("version", 0)
                 if curr_version != last_version or events:
                     last_version = curr_version
+                    recent = status.get("recent_events", [])
+                    out_events = events if events else recent[-5:]
                     payload = {
                         "version": curr_version,
                         "timestamp": status.get("last_change_time"),
-                        "events": events
+                        "events": out_events
                     }
                     yield f"event: folder_update\ndata: {json.dumps(payload)}\n\n"
             else:
@@ -74,6 +76,29 @@ def stream_live_watcher_events():
             "Connection": "keep-alive"
         }
     )
+
+
+@watcher_bp.route("/api/live-watcher/supabase-webhook", methods=["POST"])
+def supabase_storage_webhook():
+    """
+    Receives push notifications from Supabase Storage / Database Webhook
+    when a file is uploaded, modified, or deleted in the bucket.
+    Zero polling, instant live UI update.
+    """
+    payload = request.get_json(silent=True) or {}
+    logger.info(f"[Supabase Webhook] Received event: {payload}")
+
+    record = payload.get("record") or {}
+    old_record = payload.get("old_record") or {}
+    event_type = payload.get("type") or payload.get("event") or ""
+
+    file_path = record.get("name") or old_record.get("name") or payload.get("path") or ""
+    if file_path:
+        from services.supabase_service import get_supabase_service
+        svc = get_supabase_service()
+        svc.handle_storage_event(event_type, file_path)
+
+    return jsonify({"success": True})
 
 
 # =================================================================
