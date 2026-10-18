@@ -157,8 +157,17 @@ class CloudClient:
     # Global cumulative token metrics across all CloudClient instances in the process
     _global_token_usage: Dict[str, int] = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
 
-    def __init__(self):
+    def __init__(self, config_override: Optional[Dict[str, Any]] = None):
         self.config = self.load_config()
+        if config_override and isinstance(config_override, dict):
+            if "api_keys" in config_override and isinstance(config_override["api_keys"], dict):
+                for p, k in config_override["api_keys"].items():
+                    if k:
+                        self.config["api_keys"][str(p).lower()] = k
+            for k in ["provider", "model", "routing_mode", "auto_orchestrate", "custom_base_url", "temperature"]:
+                if k in config_override and config_override[k]:
+                    self.config[k] = config_override[k]
+
         self.token_usage: Dict[str, int] = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
         self.last_call_tokens: Dict[str, int] = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
         if CloudClient._locked_model is None and self.config.get("auto_orchestrate", True):

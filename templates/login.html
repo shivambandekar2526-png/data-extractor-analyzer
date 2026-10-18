@@ -1,0 +1,1072 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In — Data Extractor AI Studio</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=4.3">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  <script>
+    (function() {
+      try {
+        const savedTheme = localStorage.getItem('data-extractor-ai-theme') || localStorage.getItem('theme');
+        let theme = savedTheme;
+        if (!theme) {
+          theme = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+        }
+        document.documentElement.setAttribute('data-theme', theme);
+        if (theme === 'light') {
+          document.documentElement.classList.add('light-theme');
+          document.documentElement.classList.remove('dark-theme');
+        } else {
+          document.documentElement.classList.add('dark-theme');
+          document.documentElement.classList.remove('light-theme');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <style>
+    /* Dedicated Login Page Visual Styling */
+    .login-body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      position: relative;
+      overflow-x: hidden;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    /* Ambient Background Glow */
+    .login-ambient-glow {
+      position: absolute;
+      top: 15%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 600px;
+      height: 350px;
+      background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, rgba(139, 92, 246, 0.05) 50%, transparent 70%);
+      filter: blur(60px);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    body.light-theme .login-ambient-glow {
+      background: radial-gradient(circle, rgba(99, 102, 241, 0.08) 0%, rgba(139, 92, 246, 0.03) 50%, transparent 70%);
+    }
+
+    /* Top Navigation Bar */
+    .login-top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 2rem;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-color);
+      position: relative;
+      z-index: 10;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    .login-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+    }
+
+    .login-brand .logo-mark {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+    }
+
+    .login-brand-text h1 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: var(--text-main);
+    }
+
+    .login-brand-text p {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin: 0;
+    }
+
+    .login-top-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+    }
+
+    /* Main Container */
+    .login-page-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2.5rem 1.25rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    .login-card {
+      width: 100%;
+      max-width: 480px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.04);
+      padding: 2rem 2.25rem;
+      position: relative;
+      transition: all 0.3s ease;
+    }
+
+    body.light-theme .login-card {
+      background: #FFFFFF;
+      box-shadow: 0 20px 40px -15px rgba(15, 23, 42, 0.12), 0 1px 3px rgba(0, 0, 0, 0.05);
+      border-color: #E2E8F0;
+    }
+
+    .login-card-header {
+      text-align: center;
+      margin-bottom: 1.75rem;
+    }
+
+    .login-badge-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: rgba(99, 102, 241, 0.12);
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      color: #818CF8;
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 0.25rem 0.65rem;
+      border-radius: 9999px;
+      margin-bottom: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    body.light-theme .login-badge-wrap {
+      background: rgba(79, 70, 229, 0.08);
+      border-color: rgba(79, 70, 229, 0.25);
+      color: #4F46E5;
+    }
+
+    .login-card-title {
+      font-size: 1.45rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin: 0 0 0.4rem 0;
+      color: var(--text-main);
+    }
+
+    .login-card-subtitle {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin: 0;
+      line-height: 1.45;
+    }
+
+    /* Auth Tab Switcher */
+    .auth-tab-switch {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      background: var(--bg-elevated);
+      padding: 4px;
+      border-radius: 10px;
+      border: 1px solid var(--border-color);
+      margin-bottom: 1.5rem;
+    }
+
+    .auth-tab-btn {
+      padding: 0.6rem 0.75rem;
+      font-size: 0.84rem;
+      font-weight: 600;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      border-radius: 7px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+    }
+
+    .auth-tab-btn:hover {
+      color: var(--text-main);
+    }
+
+    .auth-tab-btn.active {
+      background: var(--bg-card);
+      color: var(--text-main);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    }
+
+    body.light-theme .auth-tab-btn.active {
+      background: #FFFFFF;
+      box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+    }
+
+    /* Form Groups & Inputs */
+    .auth-form-group {
+      margin-bottom: 1.15rem;
+      text-align: left;
+    }
+
+    .auth-form-label {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 600;
+      margin-bottom: 0.4rem;
+      color: var(--text-main);
+    }
+
+    .auth-input-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .auth-input-icon {
+      position: absolute;
+      left: 0.85rem;
+      color: var(--text-muted);
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+    }
+
+    .auth-input {
+      width: 100%;
+      height: 42px;
+      padding: 0 2.6rem 0 2.5rem;
+      font-size: 0.875rem;
+      background: var(--bg-input);
+      border: 1px solid var(--border-color);
+      border-radius: 9px;
+      color: var(--text-main);
+      transition: all 0.2s ease;
+      outline: none;
+      box-sizing: border-box;
+    }
+
+    .auth-input:focus {
+      border-color: #6366F1;
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+    }
+
+    body.light-theme .auth-input {
+      background: #FFFFFF;
+      border-color: #CBD5E1;
+    }
+
+    .auth-pwd-toggle {
+      position: absolute;
+      right: 0.75rem;
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 4px;
+      display: flex;
+      align-items: center;
+      transition: color 0.15s ease;
+    }
+
+    .auth-pwd-toggle:hover {
+      color: var(--text-main);
+    }
+
+    /* Remember Me & Secondary Row */
+    .auth-options-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.35rem;
+      font-size: 0.8rem;
+    }
+
+    .auth-remember-label {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      color: var(--text-main);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .auth-remember-label input[type="checkbox"] {
+      accent-color: #6366F1;
+      width: 15px;
+      height: 15px;
+      cursor: pointer;
+    }
+
+    .auth-link {
+      color: #818CF8;
+      text-decoration: none;
+      font-weight: 500;
+      transition: color 0.15s ease;
+    }
+
+    .auth-link:hover {
+      color: #A5B4FC;
+      text-decoration: underline;
+    }
+
+    body.light-theme .auth-link {
+      color: #4F46E5;
+    }
+
+    /* Action Buttons */
+    .auth-submit-btn {
+      width: 100%;
+      height: 44px;
+      background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+      color: #FFFFFF;
+      border: none;
+      border-radius: 9px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 4px 14px rgba(79, 70, 229, 0.35);
+    }
+
+    .auth-submit-btn:hover:not(:disabled) {
+      background: linear-gradient(135deg, #4338ca 0%, #4f46e5 100%);
+      transform: translateY(-1px);
+      box-shadow: 0 6px 18px rgba(79, 70, 229, 0.45);
+    }
+
+    .auth-submit-btn:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* Alert Banner */
+    .auth-alert-banner {
+      padding: 0.75rem 0.9rem;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      margin-bottom: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      line-height: 1.4;
+      animation: fadeIn 0.2s ease;
+    }
+
+    .auth-alert-banner.error {
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #F87171;
+    }
+
+    body.light-theme .auth-alert-banner.error {
+      background: rgba(239, 68, 68, 0.08);
+      border-color: rgba(239, 68, 68, 0.25);
+      color: #DC2626;
+    }
+
+    .auth-alert-banner.success {
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: #34D399;
+    }
+
+    body.light-theme .auth-alert-banner.success {
+      background: rgba(16, 185, 129, 0.08);
+      border-color: rgba(16, 185, 129, 0.25);
+      color: #059669;
+    }
+
+    /* Optional API Key Setup Accordion */
+    .auth-keys-accordion {
+      margin-top: 1.35rem;
+      padding-top: 1.15rem;
+      border-top: 1px dashed var(--border-color);
+      text-align: left;
+    }
+
+    .auth-keys-toggle-btn {
+      width: 100%;
+      background: none;
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 0;
+      transition: color 0.15s ease;
+    }
+
+    .auth-keys-toggle-btn:hover {
+      color: var(--text-main);
+    }
+
+    .auth-keys-body {
+      margin-top: 0.85rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      animation: fadeIn 0.2s ease;
+    }
+
+    .auth-key-row {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .auth-key-row label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .auth-key-row input {
+      height: 36px;
+      padding: 0 0.75rem;
+      font-size: 0.8rem;
+      font-family: 'Fira Code', monospace;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-color);
+      border-radius: 7px;
+      color: var(--text-main);
+      outline: none;
+      box-sizing: border-box;
+    }
+
+    .auth-key-row input:focus {
+      border-color: #6366F1;
+    }
+
+    /* Card Footer */
+    .login-card-footer {
+      margin-top: 1.5rem;
+      padding-top: 1.25rem;
+      border-top: 1px solid var(--border-color);
+      text-align: center;
+      font-size: 0.74rem;
+      color: var(--text-muted);
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .login-card-footer .security-tag {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+      color: #10B981;
+      font-weight: 500;
+    }
+
+    /* Spinner */
+    .btn-spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top-color: #FFFFFF;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body class="login-body dark-theme">
+
+  <div class="login-ambient-glow" aria-hidden="true"></div>
+
+  <!-- Top Navigation Bar with Brand and Day/Night Mode Toggle -->
+  <header class="login-top-bar">
+    <a href="/login" class="login-brand" title="Data Extractor AI Studio">
+      <div class="logo-mark">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <line x1="16" y1="13" x2="8" y2="13"></line>
+          <line x1="16" y1="17" x2="8" y2="17"></line>
+          <polyline points="10 9 9 9 8 9"></polyline>
+        </svg>
+      </div>
+      <div class="login-brand-text">
+        <h1>Data Extractor <span class="badge-ai">AI Studio</span></h1>
+        <p>Autonomous Academic Intelligence &amp; Tabulation</p>
+      </div>
+    </a>
+
+    <div class="login-top-actions">
+      <!-- Supabase Cloud Connection Status Badge -->
+      <div class="status-pill status-active" title="Supabase Cloud Database Connected">
+        <span class="status-dot green"></span>
+        <span>Supabase Cloud</span>
+      </div>
+
+      <!-- Day / Night Mode Toggle (Identical to Dashboard Header) -->
+      <button type="button" id="themeToggleBtn" class="btn-theme-toggle" title="Toggle Day / Night mode" aria-label="Toggle Day / Night mode">
+        <span class="theme-icon icon-sun" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+        </span>
+        <span class="theme-icon icon-moon" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </span>
+        <span class="theme-label" id="themeLabelText">Theme</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Login Card Viewport -->
+  <main class="login-page-container">
+    <div class="login-card">
+      
+      <!-- Card Header -->
+      <div class="login-card-header">
+        <div class="login-badge-wrap">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+          </svg>
+          <span>Secured Supabase Access</span>
+        </div>
+        <h2 class="login-card-title" id="authTitle">Welcome Back</h2>
+        <p class="login-card-subtitle" id="authSubtitle">Sign in to access your departmental database, analysis tools, and neural models.</p>
+      </div>
+
+      <!-- Tab Switcher: Sign In vs Create Account -->
+      <div class="auth-tab-switch" role="tablist">
+        <button type="button" class="auth-tab-btn active" id="tabBtnSignIn" role="tab" aria-selected="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
+            <polyline points="10 17 15 12 10 7"></polyline>
+            <line x1="15" y1="12" x2="3" y2="12"></line>
+          </svg>
+          <span>Sign In</span>
+        </button>
+        <button type="button" class="auth-tab-btn" id="tabBtnSignUp" role="tab" aria-selected="false">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+            <circle cx="8.5" cy="7" r="4"></circle>
+            <line x1="20" y1="8" x2="20" y2="14"></line>
+            <line x1="23" y1="11" x2="17" y2="11"></line>
+          </svg>
+          <span>Create Account</span>
+        </button>
+      </div>
+
+      <!-- Dynamic Alert Banner for feedback -->
+      <div id="authAlertBanner" class="auth-alert-banner hidden" role="alert">
+        <span id="authAlertMessage"></span>
+      </div>
+
+      <!-- 1. SIGN IN FORM -->
+      <form id="signInForm" autocomplete="on">
+        <div class="auth-form-group">
+          <label class="auth-form-label" for="signInEmail">Email Address</label>
+          <div class="auth-input-wrap">
+            <span class="auth-input-icon">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                <polyline points="22,6 12,13 2,6"></polyline>
+              </svg>
+            </span>
+            <input type="email" id="signInEmail" class="auth-input" placeholder="name@ternaengg.ac.in" required autocomplete="username">
+          </div>
+        </div>
+
+        <div class="auth-form-group">
+          <label class="auth-form-label" for="signInPassword">Password</label>
+          <div class="auth-input-wrap">
+            <span class="auth-input-icon">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+              </svg>
+            </span>
+            <input type="password" id="signInPassword" class="auth-input" placeholder="••••••••" required autocomplete="current-password">
+            <button type="button" class="auth-pwd-toggle" data-target="signInPassword" title="Show/Hide Password" aria-label="Toggle Password Visibility">
+              <svg class="eye-open" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg class="eye-closed hidden" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="auth-options-row">
+          <label class="auth-remember-label">
+            <input type="checkbox" id="rememberMeCheck" checked>
+            <span>Remember this device</span>
+          </label>
+          <span style="font-size: 0.74rem; color: var(--text-muted);">Permanent login</span>
+        </div>
+
+        <button type="submit" id="btnSubmitSignIn" class="auth-submit-btn">
+          <span id="signInBtnText">Sign In to Workspace</span>
+          <span id="signInBtnSpinner" class="btn-spinner hidden"></span>
+        </button>
+      </form>
+
+      <!-- 2. CREATE ACCOUNT FORM (Hidden by default) -->
+      <form id="signUpForm" class="hidden" autocomplete="on">
+        <div class="auth-form-group">
+          <label class="auth-form-label" for="signUpName">Full Name</label>
+          <div class="auth-input-wrap">
+            <span class="auth-input-icon">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+              </svg>
+            </span>
+            <input type="text" id="signUpName" class="auth-input" placeholder="Prof. Jane Doe" required autocomplete="name">
+          </div>
+        </div>
+
+        <div class="auth-form-group">
+          <label class="auth-form-label" for="signUpEmail">Email Address</label>
+          <div class="auth-input-wrap">
+            <span class="auth-input-icon">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                <polyline points="22,6 12,13 2,6"></polyline>
+              </svg>
+            </span>
+            <input type="email" id="signUpEmail" class="auth-input" placeholder="name@ternaengg.ac.in" required autocomplete="email">
+          </div>
+        </div>
+
+        <div class="auth-form-group">
+          <label class="auth-form-label" for="signUpPassword">Create Password</label>
+          <div class="auth-input-wrap">
+            <span class="auth-input-icon">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+              </svg>
+            </span>
+            <input type="password" id="signUpPassword" class="auth-input" placeholder="Minimum 6 characters" minlength="6" required autocomplete="new-password">
+            <button type="button" class="auth-pwd-toggle" data-target="signUpPassword" title="Show/Hide Password">
+              <svg class="eye-open" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg class="eye-closed hidden" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Optional: Import API Keys during registration -->
+        <div class="auth-keys-accordion">
+          <button type="button" id="btnToggleRegKeys" class="auth-keys-toggle-btn">
+            <span>+ Import Personal AI API Keys (Optional)</span>
+            <svg id="keysToggleArrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+          
+          <div id="regKeysBody" class="auth-keys-body hidden">
+            <div class="auth-key-row">
+              <label for="regKeyGemini">Google Gemini API Key:</label>
+              <input type="password" id="regKeyGemini" placeholder="AIzaSy...">
+            </div>
+            <div class="auth-key-row">
+              <label for="regKeyGroq">Groq API Key:</label>
+              <input type="password" id="regKeyGroq" placeholder="gsk_...">
+            </div>
+            <div class="auth-key-row">
+              <label for="regKeyOpenAI">OpenAI API Key:</label>
+              <input type="password" id="regKeyOpenAI" placeholder="sk-...">
+            </div>
+            <span style="font-size: 0.7rem; color: var(--text-muted);">
+              You can also add or change keys at any time later in Settings.
+            </span>
+          </div>
+        </div>
+
+        <button type="submit" id="btnSubmitSignUp" class="auth-submit-btn" style="margin-top: 1.25rem;">
+          <span id="signUpBtnText">Create Account &amp; Access</span>
+          <span id="signUpBtnSpinner" class="btn-spinner hidden"></span>
+        </button>
+      </form>
+
+      <!-- Card Footer -->
+      <footer class="login-card-footer">
+        <div class="security-tag">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+          </svg>
+          <span>All API keys persist securely on this device &amp; your account</span>
+        </div>
+        <div>Each user brings their own API keys; academic databases remain shared.</div>
+      </footer>
+
+    </div>
+  </main>
+
+  <!-- Login Page Controller Script -->
+  <script>
+    (function() {
+      // 1. Theme Controller Initialization (Day / Night Mode Toggle)
+      const themeBtn = document.getElementById("themeToggleBtn");
+      const themeLabel = document.getElementById("themeLabelText");
+
+      function applyTheme(theme, save = true) {
+        const isLight = theme === "light";
+        document.documentElement.setAttribute("data-theme", theme);
+        document.body.classList.remove("dark-theme", "light-theme");
+        document.body.classList.add(isLight ? "light-theme" : "dark-theme");
+
+        if (themeBtn) {
+          themeBtn.setAttribute("data-theme", theme);
+          themeBtn.setAttribute("title", isLight ? "Switch to Night mode (Dark)" : "Switch to Day mode (Light)");
+          themeBtn.setAttribute("aria-label", isLight ? "Switch to Night mode (Dark)" : "Switch to Day mode (Light)");
+        }
+        if (themeLabel) {
+          themeLabel.textContent = isLight ? "Night" : "Day";
+        }
+        if (save) {
+          localStorage.setItem("data-extractor-ai-theme", theme);
+        }
+      }
+
+      const initialTheme = localStorage.getItem("data-extractor-ai-theme") || 
+        (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+      applyTheme(initialTheme, false);
+
+      if (themeBtn) {
+        themeBtn.addEventListener("click", () => {
+          const current = document.documentElement.getAttribute("data-theme") || "dark";
+          const next = current === "light" ? "dark" : "light";
+          applyTheme(next, true);
+        });
+      }
+
+      // 2. Tab Navigation: Sign In vs Create Account
+      const tabSignIn = document.getElementById("tabBtnSignIn");
+      const tabSignUp = document.getElementById("tabBtnSignUp");
+      const signInForm = document.getElementById("signInForm");
+      const signUpForm = document.getElementById("signUpForm");
+      const authTitle = document.getElementById("authTitle");
+      const authSubtitle = document.getElementById("authSubtitle");
+      const alertBanner = document.getElementById("authAlertBanner");
+      const alertMessage = document.getElementById("authAlertMessage");
+
+      function showAlert(msg, isError = true) {
+        if (!alertBanner || !alertMessage) return;
+        alertMessage.textContent = msg;
+        alertBanner.className = "auth-alert-banner " + (isError ? "error" : "success");
+        alertBanner.classList.remove("hidden");
+      }
+
+      function hideAlert() {
+        if (alertBanner) alertBanner.classList.add("hidden");
+      }
+
+      function switchTab(isSignIn) {
+        hideAlert();
+        if (isSignIn) {
+          tabSignIn.classList.add("active");
+          tabSignUp.classList.remove("active");
+          tabSignIn.setAttribute("aria-selected", "true");
+          tabSignUp.setAttribute("aria-selected", "false");
+          signInForm.classList.remove("hidden");
+          signUpForm.classList.add("hidden");
+          authTitle.textContent = "Welcome Back";
+          authSubtitle.textContent = "Sign in to access your departmental database, analysis tools, and neural models.";
+        } else {
+          tabSignUp.classList.add("active");
+          tabSignIn.classList.remove("active");
+          tabSignUp.setAttribute("aria-selected", "true");
+          tabSignIn.setAttribute("aria-selected", "false");
+          signUpForm.classList.remove("hidden");
+          signInForm.classList.add("hidden");
+          authTitle.textContent = "Create Account";
+          authSubtitle.textContent = "Register a new account to unlock the shared university database and AI engines.";
+        }
+      }
+
+      if (tabSignIn) tabSignIn.addEventListener("click", () => switchTab(true));
+      if (tabSignUp) tabSignUp.addEventListener("click", () => switchTab(false));
+
+      // 3. Password Show / Hide Toggles
+      document.querySelectorAll(".auth-pwd-toggle").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const targetId = btn.getAttribute("data-target");
+          const input = document.getElementById(targetId);
+          if (!input) return;
+          const openIcon = btn.querySelector(".eye-open");
+          const closeIcon = btn.querySelector(".eye-closed");
+
+          if (input.type === "password") {
+            input.type = "text";
+            if (openIcon) openIcon.classList.add("hidden");
+            if (closeIcon) closeIcon.classList.remove("hidden");
+          } else {
+            input.type = "password";
+            if (openIcon) openIcon.classList.remove("hidden");
+            if (closeIcon) closeIcon.classList.add("hidden");
+          }
+        });
+      });
+
+      // 4. Registration API Keys Accordion Toggle
+      const btnToggleRegKeys = document.getElementById("btnToggleRegKeys");
+      const regKeysBody = document.getElementById("regKeysBody");
+      const keysToggleArrow = document.getElementById("keysToggleArrow");
+      if (btnToggleRegKeys && regKeysBody) {
+        btnToggleRegKeys.addEventListener("click", () => {
+          const isHidden = regKeysBody.classList.contains("hidden");
+          if (isHidden) {
+            regKeysBody.classList.remove("hidden");
+            if (keysToggleArrow) keysToggleArrow.style.transform = "rotate(180deg)";
+          } else {
+            regKeysBody.classList.add("hidden");
+            if (keysToggleArrow) keysToggleArrow.style.transform = "rotate(0deg)";
+          }
+        });
+      }
+
+      // 5. Auto-Login Check on Load: Check localStorage
+      try {
+        const storedSession = localStorage.getItem("data_extractor_auth_session");
+        if (storedSession) {
+          const parsed = JSON.parse(storedSession);
+          if (parsed && parsed.access_token) {
+            // Verify token with server
+            fetch("/api/auth/me", {
+              headers: { "Authorization": "Bearer " + parsed.access_token }
+            })
+            .then(res => res.json())
+            .then(data => {
+              if (data.authenticated) {
+                // If keys exist in server response, refresh local keys cache
+                if (data.api_keys) {
+                  localStorage.setItem("data_extractor_user_keys", JSON.stringify(data.api_keys));
+                }
+                window.location.replace("/");
+              }
+            })
+            .catch(() => {});
+          }
+        }
+      } catch (e) {}
+
+      // 6. Sign In Form Submission
+      if (signInForm) {
+        signInForm.addEventListener("submit", async (e) => {
+          e.preventDefault();
+          hideAlert();
+
+          const email = document.getElementById("signInEmail").value.trim();
+          const password = document.getElementById("signInPassword").value;
+          const rememberMe = document.getElementById("rememberMeCheck").checked;
+          const submitBtn = document.getElementById("btnSubmitSignIn");
+          const btnText = document.getElementById("signInBtnText");
+          const spinner = document.getElementById("signInBtnSpinner");
+
+          if (!email || !password) {
+            showAlert("Please enter your email and password.");
+            return;
+          }
+
+          submitBtn.disabled = true;
+          btnText.textContent = "Authenticating...";
+          spinner.classList.remove("hidden");
+
+          try {
+            const res = await fetch("/api/auth/login", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ email, password, remember_me: rememberMe })
+            });
+
+            const data = await res.json();
+            if (data.success) {
+              // Persist session to localStorage for device memory
+              const sessionPayload = {
+                access_token: data.access_token,
+                refresh_token: data.refresh_token,
+                user: data.user,
+                expires_at: data.expires_at
+              };
+              localStorage.setItem("data_extractor_auth_session", JSON.stringify(sessionPayload));
+
+              // Persist API keys to localStorage
+              if (data.api_keys) {
+                localStorage.setItem("data_extractor_user_keys", JSON.stringify(data.api_keys));
+              }
+
+              showAlert("Login successful! Redirecting to workspace...", false);
+              setTimeout(() => {
+                window.location.replace("/");
+              }, 400);
+            } else {
+              showAlert(data.error || "Authentication failed. Please verify your credentials.");
+              submitBtn.disabled = false;
+              btnText.textContent = "Sign In to Workspace";
+              spinner.classList.add("hidden");
+            }
+          } catch (err) {
+            showAlert("Network error communicating with authentication service.");
+            submitBtn.disabled = false;
+            btnText.textContent = "Sign In to Workspace";
+            spinner.classList.add("hidden");
+          }
+        });
+      }
+
+      // 7. Sign Up Form Submission
+      if (signUpForm) {
+        signUpForm.addEventListener("submit", async (e) => {
+          e.preventDefault();
+          hideAlert();
+
+          const fullName = document.getElementById("signUpName").value.trim();
+          const email = document.getElementById("signUpEmail").value.trim();
+          const password = document.getElementById("signUpPassword").value;
+          const submitBtn = document.getElementById("btnSubmitSignUp");
+          const btnText = document.getElementById("signUpBtnText");
+          const spinner = document.getElementById("signUpBtnSpinner");
+
+          // Extract optional API keys
+          const initialKeys = {};
+          const geminiKey = (document.getElementById("regKeyGemini")?.value || "").trim();
+          const groqKey = (document.getElementById("regKeyGroq")?.value || "").trim();
+          const openaiKey = (document.getElementById("regKeyOpenAI")?.value || "").trim();
+          if (geminiKey) initialKeys.gemini = geminiKey;
+          if (groqKey) initialKeys.groq = groqKey;
+          if (openaiKey) initialKeys.openai = openaiKey;
+
+          if (!email || !password) {
+            showAlert("Email and password are required.");
+            return;
+          }
+
+          if (password.length < 6) {
+            showAlert("Password must be at least 6 characters long.");
+            return;
+          }
+
+          submitBtn.disabled = true;
+          btnText.textContent = "Creating Account...";
+          spinner.classList.remove("hidden");
+
+          try {
+            const res = await fetch("/api/auth/register", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                email,
+                password,
+                full_name: fullName,
+                api_keys: initialKeys
+              })
+            });
+
+            const data = await res.json();
+            if (data.success) {
+              if (data.access_token) {
+                // Auto-logged in!
+                const sessionPayload = {
+                  access_token: data.access_token,
+                  refresh_token: data.refresh_token,
+                  user: data.user,
+                  expires_at: data.expires_at
+                };
+                localStorage.setItem("data_extractor_auth_session", JSON.stringify(sessionPayload));
+                if (data.api_keys) {
+                  localStorage.setItem("data_extractor_user_keys", JSON.stringify(data.api_keys));
+                }
+                showAlert("Account created! Redirecting to your workspace...", false);
+                setTimeout(() => {
+                  window.location.replace("/");
+                }, 500);
+              } else {
+                showAlert(data.message || "Account created! Please sign in with your password.", false);
+                setTimeout(() => {
+                  switchTab(true);
+                  document.getElementById("signInEmail").value = email;
+                  submitBtn.disabled = false;
+                  btnText.textContent = "Create Account & Access";
+                  spinner.classList.add("hidden");
+                }, 1000);
+              }
+            } else {
+              showAlert(data.error || "Registration failed.");
+              submitBtn.disabled = false;
+              btnText.textContent = "Create Account & Access";
+              spinner.classList.add("hidden");
+            }
+          } catch (err) {
+            showAlert("Network error during registration.");
+            submitBtn.disabled = false;
+            btnText.textContent = "Create Account & Access";
+            spinner.classList.add("hidden");
+          }
+        });
+      }
+
+    })();
+  </script>
+</body>
+</html>

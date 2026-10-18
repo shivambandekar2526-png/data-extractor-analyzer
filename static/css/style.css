@@ -9122,3 +9122,95 @@ html[data-theme="light"] .excel-coord-badge {
   cursor: not-allowed;
   box-shadow: none;
 }
+
+/* ==========================================================================
+   USER PROFILE PILL & SIGN OUT CONTROLS
+   ========================================================================== */
+.user-profile-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 34px;
+  padding: 0 0.5rem 0 0.75rem;
+  border-radius: var(--radius-full);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  font-size: 0.78rem;
+  color: var(--text-main);
+  box-sizing: border-box;
+  user-select: none;
+}
+
+body.light-theme .user-profile-pill,
+html[data-theme="light"] .user-profile-pill {
+  background: #F1F5F9;
+  border-color: #E2E8F0;
+  color: #0F172A;
+}
+
+.user-avatar-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10B981;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+  flex-shrink: 0;
+}
+
+.user-email-text {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--text-main);
+  font-size: 0.78rem;
+}
+
+.btn-signout-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  height: 24px;
+  padding: 0 0.55rem;
+  border-radius: 9999px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #F87171;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-signout-action:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #EF4444;
+  transform: translateY(-0.5px);
+}
+
+body.light-theme .btn-signout-action,
+html[data-theme="light"] .btn-signout-action {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.25);
+  color: #DC2626;
+}
+
+body.light-theme .btn-signout-action:hover,
+html[data-theme="light"] .btn-signout-action:hover {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #B91C1C;
+}
+
+.drawer-nav-btn {
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  color: inherit;
+}
+

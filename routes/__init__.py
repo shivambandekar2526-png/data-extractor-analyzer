@@ -21,8 +21,10 @@ def register_blueprints(app: Flask) -> None:
     from routes.settings_api import settings_bp
     from routes.eda_api import eda_bp
     from routes.watcher_api import watcher_bp
+    from routes.auth_api import auth_bp
 
     app.register_blueprint(views_bp)
+    app.register_blueprint(auth_bp)
     app.register_blueprint(extract_bp)
     app.register_blueprint(batch_bp)
     app.register_blueprint(classify_bp)

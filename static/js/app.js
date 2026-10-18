@@ -51,6 +51,7 @@ let batchChartInstances = {};
 document.addEventListener("DOMContentLoaded", () => {
   const initFns = [
     ["initTheme", initTheme],
+    ["initAuthGuard", initAuthGuard],
     ["initDensityMode", initDensityMode],
     ["initAppRouting", initAppRouting],
     ["initDrawerCollapse", initDrawerCollapse],
@@ -85,6 +86,109 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 });
+
+// 0.0 Authentication, Device Memory & Persistent Key Hydration Guard
+async function initAuthGuard() {
+  const profileEmail = document.getElementById("userProfileEmail");
+  const btnSignOutHeader = document.getElementById("btnSignOutHeader");
+  const btnSignOutSidebar = document.getElementById("btnSignOutSidebar");
+
+  function signOut() {
+    localStorage.removeItem("data_extractor_auth_session");
+    localStorage.removeItem("data_extractor_user_keys");
+    fetch("/api/auth/logout", { method: "POST" })
+      .finally(() => {
+        window.location.replace("/login");
+      });
+  }
+
+  if (btnSignOutHeader && !btnSignOutHeader.dataset.bound) {
+    btnSignOutHeader.dataset.bound = "true";
+    btnSignOutHeader.addEventListener("click", signOut);
+  }
+  if (btnSignOutSidebar && !btnSignOutSidebar.dataset.bound) {
+    btnSignOutSidebar.dataset.bound = "true";
+    btnSignOutSidebar.addEventListener("click", signOut);
+  }
+
+  let token = null;
+  let refreshToken = null;
+  try {
+    const raw = localStorage.getItem("data_extractor_auth_session");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      token = parsed.access_token;
+      refreshToken = parsed.refresh_token;
+    }
+  } catch (e) {}
+
+  try {
+    const headers = {};
+    if (token) headers["Authorization"] = "Bearer " + token;
+    const res = await fetch("/api/auth/me", { headers });
+    const data = await res.json();
+
+    if (data && data.authenticated && data.user) {
+      const user = data.user;
+      const email = user.email || (user.user_metadata && user.user_metadata.full_name) || "User";
+      if (profileEmail) {
+        profileEmail.textContent = email;
+        profileEmail.title = `Signed in as ${email}`;
+      }
+
+      // Sync keys between Supabase and local device cache
+      if (data.api_keys && Object.keys(data.api_keys).length > 0) {
+        localStorage.setItem("data_extractor_user_keys", JSON.stringify(data.api_keys));
+      } else {
+        try {
+          const cachedKeys = JSON.parse(localStorage.getItem("data_extractor_user_keys") || "{}");
+          if (cachedKeys && Object.keys(cachedKeys).length > 0) {
+            fetch("/api/auth/keys", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                ...(token ? { "Authorization": "Bearer " + token } : {})
+              },
+              body: JSON.stringify({ api_keys: cachedKeys })
+            }).catch(() => {});
+          }
+        } catch (e) {}
+      }
+    } else {
+      // If token verification returned false, try silent refresh with refresh_token
+      if (refreshToken) {
+        try {
+          const refRes = await fetch("/api/auth/refresh", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ refresh_token: refreshToken })
+          });
+          const refData = await refRes.json();
+          if (refData.success && refData.access_token) {
+            const sessionPayload = {
+              access_token: refData.access_token,
+              refresh_token: refData.refresh_token,
+              user: refData.user,
+              expires_at: refData.expires_at
+            };
+            localStorage.setItem("data_extractor_auth_session", JSON.stringify(sessionPayload));
+            if (profileEmail && refData.user) {
+              profileEmail.textContent = refData.user.email || "User";
+            }
+            if (refData.api_keys) {
+              localStorage.setItem("data_extractor_user_keys", JSON.stringify(refData.api_keys));
+            }
+            return;
+          }
+        } catch (e) {}
+      }
+      // If not authenticated, redirect to /login
+      window.location.replace("/login");
+    }
+  } catch (err) {
+    console.warn("[AuthGuard] Warning during authentication verification:", err);
+  }
+}
 
 // 0. Theme Toggle & Palette Controller (Day / Night Mode)
 function initTheme() {
@@ -7634,7 +7738,16 @@ async function initCloudModal() {
   async function loadCloudConfig() {
     try {
       clearedKeys.clear();
-      const res = await fetch("/api/cloud/config");
+      let authHeaders = {};
+      try {
+        const raw = localStorage.getItem("data_extractor_auth_session");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed.access_token) authHeaders["Authorization"] = "Bearer " + parsed.access_token;
+        }
+      } catch (e) {}
+
+      const res = await fetch("/api/cloud/config", { headers: authHeaders });
       const data = await res.json();
       if (!data) return;
 
@@ -7996,14 +8109,35 @@ async function initCloudModal() {
         if (anthropicKeyInput && anthropicKeyInput.value.trim()) payload.api_keys.anthropic = anthropicKeyInput.value.trim();
         if (deepseekKeyInput && deepseekKeyInput.value.trim()) payload.api_keys.deepseek = deepseekKeyInput.value.trim();
 
+        let authHeaders = { "Content-Type": "application/json" };
+        try {
+          const raw = localStorage.getItem("data_extractor_auth_session");
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed.access_token) authHeaders["Authorization"] = "Bearer " + parsed.access_token;
+          }
+        } catch (e) {}
+
         const res = await fetch("/api/cloud/config", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: authHeaders,
           body: JSON.stringify(payload)
         });
         const data = await res.json();
 
         if (data.success) {
+          // Persist user keys in localStorage so device remembers them permanently
+          try {
+            const cachedKeys = JSON.parse(localStorage.getItem("data_extractor_user_keys") || "{}");
+            if (payload.api_keys) {
+              Object.assign(cachedKeys, payload.api_keys);
+            }
+            if (payload.clear_keys && Array.isArray(payload.clear_keys)) {
+              payload.clear_keys.forEach(k => delete cachedKeys[k.toLowerCase()]);
+            }
+            localStorage.setItem("data_extractor_user_keys", JSON.stringify(cachedKeys));
+          } catch (e) {}
+
           clearedKeys.clear();
           if (groqKeyInput) groqKeyInput.value = "";
           if (geminiKeyInput) geminiKeyInput.value = "";

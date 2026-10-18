@@ -14,12 +14,22 @@ logger = logging.getLogger("app")
 from core.cloud_client import CloudClient
 from core.ollama_client import OllamaClient
 
+from routes.auth_api import get_current_user_from_request
+from services.auth_service import get_auth_service
+
 settings_bp = Blueprint("settings_api", __name__)
 
 @settings_bp.route("/api/cloud/config", methods=["GET"])
 def get_cloud_config():
     """Get Cloud AI settings safe for frontend display."""
-    client = CloudClient()
+    user = get_current_user_from_request()
+    user_keys = {}
+    if user:
+        auth_svc = get_auth_service()
+        settings = auth_svc.get_user_settings(user["id"])
+        user_keys = settings.get("api_keys", {})
+
+    client = CloudClient(config_override={"api_keys": user_keys} if user_keys else None)
     return jsonify(client.get_safe_config())
 
 
@@ -27,6 +37,35 @@ def get_cloud_config():
 def save_cloud_config():
     """Save Cloud AI API keys and settings."""
     data = request.get_json(silent=True) or {}
+    user = get_current_user_from_request()
+
+    # If authenticated, persist to user's Supabase account
+    if user and "api_keys" in data and isinstance(data["api_keys"], dict):
+        try:
+            auth_svc = get_auth_service()
+            existing_settings = auth_svc.get_user_settings(user["id"])
+            merged_keys = existing_settings.get("api_keys", {})
+            for p, k in data["api_keys"].items():
+                if k == "__CLEAR__":
+                    merged_keys.pop(p.lower(), None)
+                elif isinstance(k, str) and k.strip():
+                    merged_keys[p.lower()] = k.strip()
+                elif isinstance(k, list) and k:
+                    merged_keys[p.lower()] = k
+
+            auth_svc.save_user_settings(
+                user_id=user["id"],
+                api_keys=merged_keys,
+                preferences={
+                    "provider": data.get("provider"),
+                    "model": data.get("model"),
+                    "auto_orchestrate": data.get("auto_orchestrate", True),
+                    "routing_mode": data.get("routing_mode", "auto_hybrid")
+                }
+            )
+        except Exception as e:
+            logger.warning(f"Failed to persist keys to user profile in Supabase: {e}")
+
     client = CloudClient()
     ok, msg = client.save_config(data)
     if not ok:
