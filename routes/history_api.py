@@ -77,51 +77,47 @@ def list_history():
     history_entries = []
     seen_keys = set()
 
-    # 1. Primary source: Datasets from Supabase Cloud
+    force_scan = request.args.get("scan") in ("1", "true", "True") or request.args.get("force") in ("1", "true", "True")
+
+    # 1. Primary source: Dedicated historical_data/ archive in Supabase Storage (FIFO 30)
     try:
         from services.supabase_service import get_supabase_service
         supabase_svc = get_supabase_service()
         if supabase_svc.is_configured:
-            cloud_hier = supabase_svc.get_cloud_departments_hierarchy()
-            for dept_item in cloud_hier:
-                d_dept = dept_item["id"]
-                for b_item in dept_item.get("batches", []):
-                    d_batch = b_item["id"]
-                    for s_item in b_item.get("semesters", []):
-                        d_sem = s_item.get("semester_name") or os.path.splitext(s_item.get("file_name", ""))[0]
-                        ds_key = f"{d_dept}_{d_batch}_{d_sem}".lower()
-                        if ds_key in seen_keys:
-                            continue
-                        seen_keys.add(ds_key)
-                        d_sem_clean = str(d_sem).replace(" ", "_")
-                        synth_id = f"db_{d_dept}_{d_batch}_{d_sem_clean}"
-                        created_val = s_item.get("created_at") or time.strftime("%Y-%m-%d %H:%M:%S")
-                        mtime_approx = 0.0
-                        try:
-                            import datetime
-                            mtime_approx = datetime.datetime.strptime(str(created_val)[:19], "%Y-%m-%d %H:%M:%S").timestamp()
-                        except Exception:
-                            mtime_approx = time.time()
+            cloud_runs = supabase_svc.list_historical_runs(force_refresh=force_scan)
+            for r in cloud_runs:
+                r_id = r.get("id") or r.get("folder_name")
+                if not r_id or r_id.lower() in seen_keys:
+                    continue
+                seen_keys.add(r_id.lower())
+                created_val = r.get("created_at") or r.get("timestamp") or time.strftime("%Y-%m-%d %H:%M:%S")
+                mtime_approx = 0.0
+                try:
+                    import datetime
+                    mtime_approx = datetime.datetime.strptime(str(created_val)[:19], "%Y-%m-%d %H:%M:%S").timestamp()
+                except Exception:
+                    mtime_approx = time.time()
 
-                        history_entries.append({
-                            "id": synth_id,
-                            "folder_name": synth_id,
-                            "display_name": f"{dept_item.get('name', d_dept)} - {d_batch} ({d_sem})",
-                            "department": d_dept,
-                            "batch": d_batch,
-                            "semester": d_sem,
-                            "total_students": s_item.get("total_students", 0),
-                            "archetype": "tabulation",
-                            "source_type": "Supabase Cloud",
-                            "status": "Verified",
-                            "created_at": created_val,
-                            "timestamp": created_val,
-                            "pdf_path": s_item.get("pdf_storage_path"),
-                            "excel_path": s_item.get("storage_path"),
-                            "_mtime": mtime_approx
-                        })
+                history_entries.append({
+                    "id": r_id,
+                    "folder_name": r_id,
+                    "display_name": r.get("display_name") or r.get("source_name") or r_id,
+                    "source_name": r.get("source_name") or r_id,
+                    "department": r.get("department", "General"),
+                    "batch": r.get("batch", "--"),
+                    "semester": r.get("semester", "--"),
+                    "total_students": r.get("total_students", 0),
+                    "archetype": r.get("archetype", "tabulation"),
+                    "source_type": r.get("source_type", "Cloud Archive"),
+                    "status": r.get("status", "Verified"),
+                    "created_at": created_val,
+                    "timestamp": created_val,
+                    "pdf_path": r.get("pdf_path"),
+                    "excel_path": r.get("excel_path"),
+                    "_mtime": mtime_approx
+                })
     except Exception as sup_e:
-        logger.warning(f"Error querying Supabase datasets for history: {sup_e}")
+        logger.warning(f"Error querying Supabase historical_data: {sup_e}")
 
     # 2. Inspect output/ directory (only if not already present in Supabase)
     if os.path.isdir(OUTPUT_DIR):
@@ -243,6 +239,17 @@ def load_history_entry(folder_name):
     Supports Supabase Cloud datasets, SQLite synth_ids, or ephemeral output/ folder names.
     """
     clean_folder = safe_folder_name(folder_name)
+
+    # 0. Check dedicated Supabase historical_data/ runs
+    try:
+        from services.supabase_service import get_supabase_service
+        supabase_svc = get_supabase_service()
+        if supabase_svc.is_configured:
+            hist_run = supabase_svc.get_historical_run(folder_name) or supabase_svc.get_historical_run(clean_folder)
+            if hist_run and hist_run.get("students"):
+                return jsonify(hist_run)
+    except Exception as e:
+        logger.debug(f"Historical run check: {e}")
 
     # 1. Try finding match in SQLite database if DB exists
     try:
@@ -425,6 +432,16 @@ def delete_history_entry(folder_name):
                 break
     except Exception as e:
         logger.warning(f"Error checking/removing dataset from SQLite: {e}")
+
+    # 0. Check Supabase historical_data/ runs
+    try:
+        from services.supabase_service import get_supabase_service
+        supabase_svc = get_supabase_service()
+        if supabase_svc.is_configured:
+            if supabase_svc.delete_historical_run(clean_folder) or supabase_svc.delete_historical_run(folder_name):
+                deleted_any = True
+    except Exception as e:
+        logger.debug(f"Historical run delete notice: {e}")
 
     # 2. Check Supabase Cloud catalog and storage
     try:
@@ -828,6 +845,28 @@ def export_excel_stream():
     except Exception as e:
         logger.error(f"Error streaming excel export: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@history_bp.route("/api/history/scan", methods=["GET", "POST"])
+def scan_historical_runs():
+    """Forces an immediate live scan of historical_data/ in Supabase Storage."""
+    try:
+        from services.supabase_service import get_supabase_service
+        supabase_svc = get_supabase_service()
+        if not supabase_svc.is_configured:
+            return jsonify({"success": False, "error": "Supabase is not configured."}), 400
+
+        runs = supabase_svc.list_historical_runs(force_refresh=True)
+        return jsonify({
+            "success": True,
+            "message": f"Successfully scanned Supabase historical_data. Found {len(runs)} runs.",
+            "count": len(runs),
+            "runs": runs
+        })
+    except Exception as e:
+        logger.error(f"Error scanning historical runs: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
 
 
 

@@ -1,6 +1,7 @@
 import os
 import time
 import logging
+import threading
 import pandas as pd
 from flask import Blueprint, request, jsonify
 from werkzeug.utils import secure_filename
@@ -10,6 +11,7 @@ logger = logging.getLogger("app")
 from services.config import INPUT_DIR, DEPARTMENTS_DATA_DIR, OUTPUT_DIR
 from services.state import tabular_ingester
 from services.academic_service import resolve_tabular_file_path
+from services.extraction_service import safe_folder_name
 from core.ollama_client import OllamaClient
 from core.cloud_client import CloudClient
 from core.data_cleaning_engine import DataCleaningEngine
@@ -93,6 +95,29 @@ def import_tabular_direct():
     target_path, target_filename = resolved
 
     result = tabular_ingester.direct_import(target_path, sheet_name=sheet_name, header_row=header_row)
+
+    # Auto-archive run to dedicated historical_data/ on Supabase Storage (FIFO 30)
+    if result.get("success") and result.get("students"):
+        try:
+            from services.supabase_service import get_supabase_service
+            supabase_svc = get_supabase_service()
+            if supabase_svc.is_configured:
+                source_display = target_filename or os.path.basename(str(target_path))
+                folder_slug = safe_folder_name(result.get("folder_name", "tabular"))
+                threading.Thread(
+                    target=supabase_svc.save_historical_run,
+                    kwargs={
+                        "source_name": source_display,
+                        "students": result.get("students", []),
+                        "catalog": result.get("catalog", {}),
+                        "run_id": f"run_{time.strftime('%Y%m%d_%H%M%S')}_{folder_slug}"
+                    },
+                    daemon=True,
+                    name="HistoricalArchive-TabularDirect"
+                ).start()
+        except Exception as arc_e:
+            logger.debug(f"Historical archive notice: {arc_e}")
+
     return jsonify(sanitize_dict_for_json(result))
 
 
@@ -123,6 +148,29 @@ def ai_fix_tabular():
         ollama_client=oc,
         cloud_client=cc
     )
+
+    # Auto-archive run to dedicated historical_data/ on Supabase Storage (FIFO 30)
+    if result.get("success") and result.get("students"):
+        try:
+            from services.supabase_service import get_supabase_service
+            supabase_svc = get_supabase_service()
+            if supabase_svc.is_configured:
+                source_display = target_filename or os.path.basename(str(target_path))
+                folder_slug = safe_folder_name(result.get("folder_name", "tabular"))
+                threading.Thread(
+                    target=supabase_svc.save_historical_run,
+                    kwargs={
+                        "source_name": source_display,
+                        "students": result.get("students", []),
+                        "catalog": result.get("catalog", {}),
+                        "run_id": f"run_{time.strftime('%Y%m%d_%H%M%S')}_{folder_slug}"
+                    },
+                    daemon=True,
+                    name="HistoricalArchive-TabularAiFix"
+                ).start()
+        except Exception as arc_e:
+            logger.debug(f"Historical archive notice: {arc_e}")
+
     return jsonify(sanitize_dict_for_json(result))
 
 

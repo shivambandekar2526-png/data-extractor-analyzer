@@ -639,6 +639,28 @@ def _run_ai_extraction_worker(job_id: str, target_pdf_path: str, cloud_crosschec
                     jobs[job_id]["message"] = f"Extraction complete: {len(students)} students processed in {duration}s."
                 jobs[job_id]["result"] = res_payload
 
+        # Auto-archive to dedicated historical_data/ in Supabase Storage (FIFO 30)
+        try:
+            import threading
+            from services.supabase_service import get_supabase_service
+            supabase_svc = get_supabase_service()
+            if supabase_svc.is_configured and flat_records:
+                threading.Thread(
+                    target=supabase_svc.save_historical_run,
+                    kwargs={
+                        "source_name": os.path.basename(str(pdf_path)),
+                        "students": flat_records,
+                        "catalog": meta.catalog.to_dict() if (meta and hasattr(meta, "catalog") and meta.catalog) else {},
+                        "meta": meta,
+                        "dataset_meta": ds_meta,
+                        "run_id": f"run_{time.strftime('%Y%m%d_%H%M%S')}_{safe_folder_name(folder_name)}"
+                    },
+                    daemon=True,
+                    name=f"HistoricalArchive-{job_id}"
+                ).start()
+        except Exception as arc_e:
+            logger.debug(f"Historical archive notice: {arc_e}")
+
     except Exception as e:
         with jobs_lock:
             if job_id in jobs:

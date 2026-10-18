@@ -9,17 +9,17 @@
         </div>
         <div>
           <h1 class="workspace-title">Historical Data</h1>
-          <p class="workspace-subtitle">Review, open, export, or analyze previously extracted academic datasets.</p>
+          <p class="workspace-subtitle">Review, open, export, or analyze recent extraction runs (Cloud Storage FIFO 30 • Auto-syncs every 1 min).</p>
         </div>
       </div>
       <div class="workspace-header-actions">
-        <button type="button" id="refreshHistoryBtn" class="btn btn-sm btn-outline" title="Refresh extraction history archive">
+        <button type="button" id="refreshHistoryBtn" class="btn btn-sm btn-outline" title="Rescan Supabase Cloud Storage historical_data (FIFO 30)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="23 4 23 10 17 10"></polyline>
             <polyline points="1 20 1 14 7 14"></polyline>
             <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
           </svg>
-          <span>Refresh History</span>
+          <span id="refreshHistoryBtnText">Scan History</span>
         </button>
         <button type="button" class="btn btn-sm btn-primary" onclick="navigateTo('/extract')" title="Start a new extraction">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

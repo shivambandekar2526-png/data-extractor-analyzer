@@ -7,6 +7,7 @@ departmental academic records, clean Excel files, and PDFs directly in Supabase 
 
 import os
 import io
+import re
 import time
 import json
 import logging
@@ -42,6 +43,8 @@ class SupabaseService:
         # In-memory thread-safe cache (single source of truth in RAM)
         self._catalog_cache: Optional[Dict[str, Any]] = None
         self._catalog_timestamp: float = 0.0
+        self._historical_cache: Optional[List[Dict[str, Any]]] = None
+        self._historical_timestamp: float = 0.0
         self._cache_ttl: float = 60.0  # seconds (1 minute live sync)
 
     def _load_config(self) -> Dict[str, Any]:
@@ -250,13 +253,19 @@ class SupabaseService:
                             for d in new_cat.get("datasets", [])
                         }
 
-                        if old_datasets != new_datasets:
-                            logger.info("[1-Min Cloud Listener] Storage changes detected! Syncing UI...")
+                        # Also check historical runs in cloud
+                        old_hist = [h.get("id") for h in (self._historical_cache or [])]
+                        new_hist = self.list_historical_runs(force_refresh=True)
+                        new_hist_ids = [h.get("id") for h in new_hist]
+
+                        if old_datasets != new_datasets or old_hist != new_hist_ids:
+                            logger.info("[1-Min Cloud Listener] Cloud Storage or History changes detected! Syncing UI...")
                             try:
                                 from core.folder_watcher import folder_watcher
                                 folder_watcher.notify_event({
                                     "event": "storage_reconciled",
                                     "category": "supabase_storage",
+                                    "history_changed": old_hist != new_hist_ids,
                                     "timestamp": time.time()
                                 })
                             except Exception:
@@ -862,6 +871,290 @@ class SupabaseService:
             "batches": batches,
             "structured": structured
         }
+
+    # ---------------------------------------------------------
+    # Dedicated Historical Data Archive (historical_data/ FIFO 30)
+    # ---------------------------------------------------------
+
+    def save_historical_run(
+        self,
+        source_name: str,
+        students: List[Dict[str, Any]],
+        catalog: Optional[Dict[str, Any]] = None,
+        meta: Optional[Any] = None,
+        excel_bytes: Optional[bytes] = None,
+        dataset_meta: Optional[Dict[str, Any]] = None,
+        run_id: Optional[str] = None
+    ) -> Optional[str]:
+        """
+        Automatically archives an extraction or import run into historical_data/ on Supabase Storage.
+        Enforces 30-run FIFO pruning.
+        """
+        if not self.is_configured or not students:
+            return None
+
+        clean_slug = re.sub(r"[^\w\-]", "_", os.path.splitext(os.path.basename(str(source_name)))[0])[:30]
+        timestamp_slug = time.strftime("%Y%m%d_%H%M%S")
+        if not run_id:
+            run_id = f"run_{timestamp_slug}_{clean_slug}"
+
+        base_prefix = f"historical_data/{run_id}"
+
+        # Resolve department, batch, semester
+        dept = (dataset_meta and dataset_meta.get("department")) or (meta and getattr(meta, "college_name", None)) or (meta and isinstance(meta, dict) and meta.get("college_name")) or "General"
+        batch = (dataset_meta and dataset_meta.get("batch")) or (meta and getattr(meta, "academic_year", None)) or (meta and isinstance(meta, dict) and meta.get("academic_year")) or "--"
+        sem = (dataset_meta and dataset_meta.get("semester")) or (meta and getattr(meta, "semester", None)) or (meta and isinstance(meta, dict) and meta.get("semester")) or "--"
+        is_pdf = str(source_name).lower().endswith(".pdf")
+
+        meta_payload = {
+            "id": run_id,
+            "folder_name": run_id,
+            "display_name": f"{source_name} ({len(students)} students)",
+            "source_name": os.path.basename(str(source_name)),
+            "department": dept,
+            "batch": batch,
+            "semester": sem,
+            "total_students": len(students),
+            "columns": list(students[0].keys()) if students else [],
+            "status": "Verified",
+            "source_type": "PDF Gazette" if is_pdf else "Tabular Spreadsheet",
+            "archetype": "tabulation" if is_pdf else "tabular",
+            "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "dataset_meta": dataset_meta or {},
+            "excel_path": f"{base_prefix}/extracted_data.xlsx",
+            "courses": catalog.get("courses", []) if isinstance(catalog, dict) else []
+        }
+
+        with self._lock:
+            try:
+                # 1. Upload meta.json
+                meta_bytes = json.dumps(meta_payload, indent=2).encode("utf-8")
+                self.upload_file_bytes(meta_bytes, f"{base_prefix}/meta.json", content_type="application/json")
+
+                # 2. Upload records.json for instant hydration
+                records_bytes = json.dumps(students, indent=2).encode("utf-8")
+                self.upload_file_bytes(records_bytes, f"{base_prefix}/records.json", content_type="application/json")
+
+                # 3. Upload extracted_data.xlsx
+                if not excel_bytes and students:
+                    try:
+                        import pandas as pd
+                        out = io.BytesIO()
+                        with pd.ExcelWriter(out, engine="openpyxl") as writer:
+                            pd.DataFrame(students).to_excel(writer, index=False, sheet_name="Students")
+                        excel_bytes = out.getvalue()
+                    except Exception as ex:
+                        logger.warning(f"Could not construct excel bytes for historical run: {ex}")
+
+                if excel_bytes:
+                    self.upload_file_bytes(
+                        excel_bytes,
+                        f"{base_prefix}/extracted_data.xlsx",
+                        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+
+                logger.info(f"[Historical Archive] Successfully saved run '{run_id}' to Supabase Storage.")
+
+                # 4. Enforce FIFO retention (keep newest 30)
+                self.enforce_historical_fifo(max_runs=30)
+
+                # Invalidate cache
+                self._historical_cache = None
+                return run_id
+            except Exception as e:
+                logger.error(f"Failed saving historical run {run_id}: {e}", exc_info=True)
+                return None
+
+    def enforce_historical_fifo(self, max_runs: int = 30) -> int:
+        """
+        Enforces FIFO retention on historical_data/ in Supabase Storage.
+        Keeps strictly the most recent `max_runs` (default 30) runs,
+        deleting the oldest runs first.
+        """
+        if not self.is_configured:
+            return 0
+
+        with self._lock:
+            try:
+                files = self._list_storage_files_recursive("historical_data")
+                # Group files by run folder (second token in path: historical_data/<run_id>/...)
+                runs_map: Dict[str, List[str]] = {}
+                for f in files:
+                    parts = f.replace("\\", "/").split("/")
+                    if len(parts) >= 3 and parts[0] == "historical_data":
+                        run_id = parts[1]
+                        runs_map.setdefault(run_id, []).append(f)
+
+                if len(runs_map) <= max_runs:
+                    return 0
+
+                # Sort run folders chronologically (oldest first: run_YYYYMMDD_HHMMSS)
+                sorted_runs = sorted(runs_map.keys())
+                num_to_delete = len(runs_map) - max_runs
+                pruned_runs = sorted_runs[:num_to_delete]
+
+                logger.info(f"[Historical FIFO] Pruning {len(pruned_runs)} old runs from historical_data/ (keeping newest {max_runs})...")
+                for run_id in pruned_runs:
+                    for fpath in runs_map[run_id]:
+                        try:
+                            self.delete_file(fpath)
+                        except Exception as de:
+                            logger.debug(f"Failed deleting file {fpath}: {de}")
+
+                # Invalidate cache so list is fresh
+                self._historical_cache = None
+                return len(pruned_runs)
+            except Exception as e:
+                logger.warning(f"Error enforcing historical FIFO: {e}")
+                return 0
+
+    def list_historical_runs(self, force_refresh: bool = False) -> List[Dict[str, Any]]:
+        """
+        Lists all archived runs from historical_data/ in Supabase Storage.
+        Sorted newest first (up to 30 runs).
+        """
+        if not self.is_configured:
+            return []
+
+        now = time.time()
+        if not force_refresh and self._historical_cache is not None and (now - self._historical_timestamp) < self._cache_ttl:
+            return self._historical_cache
+
+        with self._lock:
+            if not force_refresh and self._historical_cache is not None and (now - self._historical_timestamp) < self._cache_ttl:
+                return self._historical_cache
+
+            runs_list = []
+            try:
+                files = self._list_storage_files_recursive("historical_data")
+                meta_files = [f for f in files if f.endswith("/meta.json")]
+
+                for mf in sorted(meta_files, reverse=True):
+                    parts = mf.split("/")
+                    try:
+                        data_bytes = self.download_file_bytes(mf)
+                        if data_bytes:
+                            meta_dict = json.loads(data_bytes.decode("utf-8"))
+                            runs_list.append(meta_dict)
+                    except Exception as me:
+                        logger.debug(f"Could not read historical meta file {mf}: {me}")
+
+                # If any run folder lacked meta.json, synthesize a fallback entry
+                existing_run_ids = {r.get("id") or r.get("folder_name") for r in runs_list}
+                all_run_ids = set()
+                for f in files:
+                    parts = f.split("/")
+                    if len(parts) >= 3 and parts[0] == "historical_data":
+                        all_run_ids.add(parts[1])
+
+                for r_id in sorted(all_run_ids, reverse=True):
+                    if r_id not in existing_run_ids:
+                        runs_list.append({
+                            "id": r_id,
+                            "folder_name": r_id,
+                            "display_name": r_id,
+                            "source_name": r_id,
+                            "total_students": 0,
+                            "source_type": "Cloud Archive",
+                            "status": "Verified",
+                            "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+                        })
+
+                # Sort newest first
+                runs_list.sort(key=lambda x: str(x.get("created_at") or x.get("timestamp") or x.get("id", "")), reverse=True)
+                self._historical_cache = runs_list[:30]
+                self._historical_timestamp = now
+                return self._historical_cache
+            except Exception as e:
+                logger.error(f"Error listing historical runs: {e}")
+                return self._historical_cache or []
+
+    def get_historical_run(self, run_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves full student records and catalog for a specific historical run.
+        """
+        if not self.is_configured or not run_id:
+            return None
+
+        clean_id = run_id.replace("\\", "/").strip("/").split("/")[-1]
+        base_prefix = f"historical_data/{clean_id}"
+
+        # 1. Download meta.json
+        meta_dict = {}
+        meta_bytes = self.download_file_bytes(f"{base_prefix}/meta.json")
+        if meta_bytes:
+            try:
+                meta_dict = json.loads(meta_bytes.decode("utf-8"))
+            except Exception:
+                pass
+
+        # 2. Download records.json
+        students = []
+        rec_bytes = self.download_file_bytes(f"{base_prefix}/records.json")
+        if rec_bytes:
+            try:
+                students = json.loads(rec_bytes.decode("utf-8"))
+            except Exception:
+                pass
+
+        # Fallback to excel if records.json was not present
+        if not students:
+            excel_bytes = self.download_file_bytes(f"{base_prefix}/extracted_data.xlsx")
+            if excel_bytes:
+                try:
+                    import pandas as pd
+                    df = pd.read_excel(io.BytesIO(excel_bytes))
+                    df = df.fillna("")
+                    students = df.to_dict(orient="records")
+                except Exception as ex:
+                    logger.warning(f"Could not load records from historical excel {clean_id}: {ex}")
+
+        return {
+            "success": True,
+            "folder_name": clean_id,
+            "source_name": meta_dict.get("source_name", clean_id),
+            "csv_file": f"{clean_id}_extracted_data.csv",
+            "excel_file": f"{clean_id}_extracted_data.xlsx",
+            "json_file": f"{clean_id}_catalog.json",
+            "academic_report_file": f"{clean_id}_Academic_Report.xlsx",
+            "total_students": len(students),
+            "students": students,
+            "archetype": meta_dict.get("archetype", "tabulation"),
+            "semester": meta_dict.get("semester", "--"),
+            "dataset_meta": meta_dict.get("dataset_meta") or {
+                "department": meta_dict.get("department", "General"),
+                "batch": meta_dict.get("batch", "--"),
+                "semester": meta_dict.get("semester", "--")
+            },
+            "meta": {
+                "exam_title": meta_dict.get("display_name", clean_id),
+                "semester": meta_dict.get("semester", "--"),
+                "college_name": meta_dict.get("department", "General"),
+                "archetype": meta_dict.get("archetype", "tabulation"),
+                "dataset_meta": meta_dict.get("dataset_meta")
+            }
+        }
+
+    def delete_historical_run(self, run_id: str) -> bool:
+        """Deletes all files belonging to a historical run from Supabase Storage."""
+        if not self.is_configured or not run_id:
+            return False
+
+        clean_id = run_id.replace("\\", "/").strip("/").split("/")[-1]
+        base_prefix = f"historical_data/{clean_id}"
+
+        with self._lock:
+            try:
+                files = self._list_storage_files_recursive(base_prefix)
+                for f in files:
+                    self.delete_file(f)
+                self._historical_cache = None
+                return True
+            except Exception as e:
+                logger.error(f"Failed deleting historical run {clean_id}: {e}")
+                return False
 
 
 # Global singleton instance

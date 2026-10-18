@@ -2770,6 +2770,11 @@ function initLiveFolderActionListener() {
       try { loadAcademicCatalog(true); } catch (e) {}
     }
 
+    // 0c. Live refresh Historical Runs
+    if (typeof initHistory === "function") {
+      try { initHistory(false); } catch (e) {}
+    }
+
     // 1. Refresh Subject-wise Analysis options live
     if (typeof window.reloadSubjectAnalysisHierarchy === "function") {
       window.reloadSubjectAnalysisHierarchy(true);
@@ -2792,11 +2797,17 @@ function initLiveFolderActionListener() {
   // Window focus listener: if user deleted/uploaded a file in Supabase dashboard and switches back
   window.addEventListener("focus", () => {
     initBatches(true).catch(() => {});
+    if (typeof initHistory === "function") {
+      initHistory(false).catch(() => {});
+    }
   });
 
   // 1-minute periodic listener: syncs latest Supabase cloud state automatically every 60 seconds
   setInterval(() => {
     initBatches(true).catch(() => {});
+    if (typeof initHistory === "function") {
+      initHistory(false).catch(() => {});
+    }
   }, 60000);
 
   // Attempt Server-Sent Events (SSE)
@@ -2817,6 +2828,16 @@ function initLiveFolderActionListener() {
           handleFolderUpdate(d);
         } catch (err) {
           console.warn("[LiveFolderWatcher] Error parsing folder_update:", err);
+        }
+      });
+
+      liveEventSource.addEventListener("history_changed", (e) => {
+        try {
+          if (typeof initHistory === "function") {
+            initHistory(false).catch(err => console.warn("Live initHistory error on SSE:", err));
+          }
+        } catch (err) {
+          console.warn("[LiveFolderWatcher] Error parsing history_changed:", err);
         }
       });
 
@@ -6871,8 +6892,10 @@ function openRenameColModal(colKey) {
 // 8. History Drawer
 let cachedHistoryItems = [];
 
-async function initHistory() {
+async function initHistory(forceScan = false) {
   const refreshBtn = document.getElementById("refreshHistoryBtn");
+  const refreshBtnText = document.getElementById("refreshHistoryBtnText");
+  const refreshIcon = refreshBtn ? refreshBtn.querySelector("svg") : null;
   const searchInput = document.getElementById("historySearchInput");
   const filterDept = document.getElementById("historyFilterDept");
   const filterBatch = document.getElementById("historyFilterBatch");
@@ -6880,13 +6903,26 @@ async function initHistory() {
   const filterSource = document.getElementById("historyFilterSource");
   const btnResetFilters = document.getElementById("btnResetHistoryFilters");
 
+  if (refreshBtn && forceScan) {
+    refreshBtn.disabled = true;
+    if (refreshIcon) refreshIcon.style.animation = "spin 0.8s linear infinite";
+    if (refreshBtnText) refreshBtnText.textContent = "Scanning...";
+  }
+
   try {
-    const res = await fetch(`/api/history?_t=${Date.now()}`, { cache: "no-store" });
+    const scanParam = forceScan ? "&scan=true" : "";
+    const res = await fetch(`/api/history?_t=${Date.now()}${scanParam}`, { cache: "no-store" });
     const data = await res.json();
     cachedHistoryItems = data.history || [];
     applyHistoryFilters();
   } catch (e) {
     console.error("Failed to fetch history:", e);
+  } finally {
+    if (refreshBtn && forceScan) {
+      refreshBtn.disabled = false;
+      if (refreshIcon) refreshIcon.style.animation = "";
+      if (refreshBtnText) refreshBtnText.textContent = "Scan History";
+    }
   }
 
   // Wire History Delete Modal Actions (one-time setup)
@@ -6920,7 +6956,7 @@ async function initHistory() {
 
   if (refreshBtn && !refreshBtn.dataset.bound) {
     refreshBtn.dataset.bound = "true";
-    refreshBtn.addEventListener("click", initHistory);
+    refreshBtn.addEventListener("click", () => initHistory(true));
   }
 
   const btnClearSearch = document.getElementById("btnClearHistorySearch");
