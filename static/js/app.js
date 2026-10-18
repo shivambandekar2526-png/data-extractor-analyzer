@@ -5469,31 +5469,34 @@ async function saveDatasetToServer() {
       setTimeout(() => { badge.style.transform = "scale(1)"; }, 300);
     }
     if (data.db_saved) {
-      appendChatMessage("assistant", `💾 <strong>Dataset Saved to Database:</strong> Persisted ${data.count} student records to SQLite database (<code>academic_records.db</code>) and generated deterministic Excel mirror at <code>${data.canonical_excel_path || data.excel_file}</code>.`);
+      appendChatMessage("assistant", `💾 <strong>Dataset Saved to Cloud Database:</strong> Persisted ${data.count} student records to Supabase Cloud Storage at <code>${data.canonical_excel_path || data.excel_file}</code>.`);
     }
 
     // Prominent alert confirming successful database and mirror persistence
     const savedDept = metaToPersist.department || "Artificial_Intelligence_and_Data_Science";
     const savedBatch = metaToPersist.batch || "22-23";
     const savedSem = metaToPersist.semester || "Semester_1";
-    const mirrorPath = data.canonical_excel_path || `departments_data/excel/${savedDept}/${savedBatch}/${savedSem}.xlsx`;
-    const pdfMirrorPath = data.canonical_pdf_path || `departments_data/pdf/${savedDept}/${savedBatch}/${savedSem}.pdf`;
+    const mirrorPath = data.canonical_excel_path || `excel/${savedDept}/${savedBatch}/${savedSem}.xlsx`;
+    const pdfMirrorPath = data.canonical_pdf_path || `pdf/${savedDept}/${savedBatch}/${savedSem}.pdf`;
     const recordCount = data.count || currentRecords.length;
 
-    // Refresh batch catalog so newly saved PDF and Excel appear immediately in batch selection
+    // Refresh batch catalog and history so newly saved PDF and Excel appear immediately
     if (typeof initBatches === "function") {
       initBatches();
     }
+    if (typeof loadHistory === "function") {
+      loadHistory();
+    }
 
     alert(
-      `✅ Dataset Successfully Saved to Database!\n\n` +
+      `✅ Dataset Successfully Saved to Cloud Database!\n\n` +
       `• Department: ${savedDept}\n` +
       `• Batch: ${savedBatch}\n` +
       `• Semester: ${savedSem}\n` +
       `• Records Persisted: ${recordCount} students\n` +
-      `• Database: SQLite (academic_records.db)\n` +
-      `• PDF Storage: ${pdfMirrorPath}\n` +
-      `• Excel Mirror: ${mirrorPath}`
+      `• Cloud Storage (Excel): ${mirrorPath}\n` +
+      `• Cloud Storage (PDF): ${pdfMirrorPath}\n` +
+      `• Supabase Catalog: Updated & Reconciled`
     );
 
   } catch (err) {

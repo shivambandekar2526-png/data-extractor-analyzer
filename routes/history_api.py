@@ -9,12 +9,13 @@ import shutil
 import logging
 from datetime import datetime
 from flask import Blueprint, request, jsonify, send_file, send_from_directory
+import uuid
 import pandas as pd
 
 logger = logging.getLogger("app")
 
 from services.config import (
-    OUTPUT_DIR, DEPARTMENTS_DATA_DIR, APP_DEPARTMENTS_DATA_DIR
+    OUTPUT_DIR, DEPARTMENTS_DATA_DIR, APP_DEPARTMENTS_DATA_DIR, INPUT_DIR
 )
 from services.state import DB_PATH, jobs, jobs_lock
 from services.extraction_service import safe_folder_name, auto_sort_into_app_batch_store
@@ -76,13 +77,58 @@ def list_history():
     history_entries = []
     seen_keys = set()
 
-    # 1. Inspect output/ directory (direct extraction jobs)
+    # 1. Primary source: Datasets from Supabase Cloud
+    try:
+        from services.supabase_service import get_supabase_service
+        supabase_svc = get_supabase_service()
+        if supabase_svc.is_configured:
+            cloud_hier = supabase_svc.get_cloud_departments_hierarchy()
+            for dept_item in cloud_hier:
+                d_dept = dept_item["id"]
+                for b_item in dept_item.get("batches", []):
+                    d_batch = b_item["id"]
+                    for s_item in b_item.get("semesters", []):
+                        d_sem = s_item.get("semester_name") or os.path.splitext(s_item.get("file_name", ""))[0]
+                        ds_key = f"{d_dept}_{d_batch}_{d_sem}".lower()
+                        if ds_key in seen_keys:
+                            continue
+                        seen_keys.add(ds_key)
+                        d_sem_clean = str(d_sem).replace(" ", "_")
+                        synth_id = f"db_{d_dept}_{d_batch}_{d_sem_clean}"
+                        created_val = s_item.get("created_at") or time.strftime("%Y-%m-%d %H:%M:%S")
+                        mtime_approx = 0.0
+                        try:
+                            import datetime
+                            mtime_approx = datetime.datetime.strptime(str(created_val)[:19], "%Y-%m-%d %H:%M:%S").timestamp()
+                        except Exception:
+                            mtime_approx = time.time()
+
+                        history_entries.append({
+                            "id": synth_id,
+                            "folder_name": synth_id,
+                            "display_name": f"{dept_item.get('name', d_dept)} - {d_batch} ({d_sem})",
+                            "department": d_dept,
+                            "batch": d_batch,
+                            "semester": d_sem,
+                            "total_students": s_item.get("total_students", 0),
+                            "archetype": "tabulation",
+                            "source_type": "Supabase Cloud",
+                            "status": "Verified",
+                            "created_at": created_val,
+                            "timestamp": created_val,
+                            "pdf_path": s_item.get("pdf_storage_path"),
+                            "excel_path": s_item.get("storage_path"),
+                            "_mtime": mtime_approx
+                        })
+    except Exception as sup_e:
+        logger.warning(f"Error querying Supabase datasets for history: {sup_e}")
+
+    # 2. Inspect output/ directory (only if not already present in Supabase)
     if os.path.isdir(OUTPUT_DIR):
         for entry in os.listdir(OUTPUT_DIR):
             fpath = os.path.join(OUTPUT_DIR, entry)
             if not os.path.isdir(fpath):
                 continue
-            # Batch analysis outputs are summary reports, not ledger extraction records
             if entry.startswith("batch_analysis_"):
                 continue
             cat_file = os.path.join(fpath, f"{entry}_catalog.json")
@@ -105,9 +151,13 @@ def list_history():
             dept = ds_meta.get("department") or meta.get("department") or meta.get("college_name") or "Artificial_Intelligence_and_Data_Science"
             batch = ds_meta.get("batch") or meta.get("academic_year") or "21-22"
             sem = ds_meta.get("semester") or meta.get("semester") or "Semester_1"
-            total_students = meta.get("total_students", 0)
 
-            # Check if CSV exists to verify records count
+            item_key = f"{dept}_{batch}_{sem}".lower()
+            if item_key in seen_keys:
+                continue
+            seen_keys.add(item_key)
+
+            total_students = meta.get("total_students", 0)
             csv_path = os.path.join(fpath, f"{entry}_extracted_data.csv")
             if os.path.isfile(csv_path) and not total_students:
                 try:
@@ -115,9 +165,6 @@ def list_history():
                         total_students = max(0, sum(1 for _ in cf) - 1)
                 except Exception:
                     pass
-
-            item_key = f"{dept}_{batch}_{sem}".lower()
-            seen_keys.add(item_key)
 
             history_entries.append({
                 "id": entry,
@@ -137,7 +184,7 @@ def list_history():
                 "_mtime": mtime
             })
 
-    # 2. Also incorporate saved SQLite datasets from academic_records.db if not already in history
+    # 3. Also incorporate saved SQLite datasets if not already present
     try:
         db_datasets = list_datasets_from_db(DB_PATH)
         for ds in db_datasets:
@@ -147,9 +194,9 @@ def list_history():
             ds_key = f"{d_dept}_{d_batch}_{d_sem}".lower()
             if ds_key in seen_keys:
                 continue
+            seen_keys.add(ds_key)
 
             upd_time = ds.get("updated_at") or time.strftime("%Y-%m-%d %H:%M:%S")
-            # Parse approximate timestamp for sorting
             try:
                 import datetime
                 mtime_approx = datetime.datetime.strptime(upd_time, "%Y-%m-%d %H:%M:%S").timestamp()
@@ -176,44 +223,6 @@ def list_history():
             })
     except Exception as e:
         logger.warning(f"Error querying SQLite datasets for history: {e}")
-
-    # 3. Incorporate datasets from Supabase Cloud
-    try:
-        from services.supabase_service import get_supabase_service
-        supabase_svc = get_supabase_service()
-        if supabase_svc.is_configured:
-            cloud_hier = supabase_svc.get_cloud_departments_hierarchy()
-            for dept_item in cloud_hier:
-                d_dept = dept_item["id"]
-                for b_item in dept_item.get("batches", []):
-                    d_batch = b_item["id"]
-                    for s_item in b_item.get("semesters", []):
-                        d_sem = s_item.get("semester_name") or os.path.splitext(s_item.get("file_name", ""))[0]
-                        ds_key = f"{d_dept}_{d_batch}_{d_sem}".lower()
-                        if ds_key in seen_keys:
-                            continue
-                        seen_keys.add(ds_key)
-                        d_sem_clean = str(d_sem).replace(" ", "_")
-                        synth_id = f"db_{d_dept}_{d_batch}_{d_sem_clean}"
-                        history_entries.append({
-                            "id": synth_id,
-                            "folder_name": synth_id,
-                            "display_name": f"{dept_item.get('name', d_dept)} - {d_batch} ({d_sem})",
-                            "department": d_dept,
-                            "batch": d_batch,
-                            "semester": d_sem,
-                            "total_students": s_item.get("total_students", 0),
-                            "archetype": "tabulation",
-                            "source_type": "Supabase Cloud",
-                            "status": "Verified",
-                            "created_at": s_item.get("created_at") or time.strftime("%Y-%m-%d %H:%M:%S"),
-                            "timestamp": s_item.get("created_at") or time.strftime("%Y-%m-%d %H:%M:%S"),
-                            "pdf_path": s_item.get("pdf_storage_path"),
-                            "excel_path": s_item.get("storage_path"),
-                            "_mtime": 0.0
-                        })
-    except Exception as sup_e:
-        logger.warning(f"Error querying Supabase datasets for history: {sup_e}")
 
     # Sort most recent extractions first
     history_entries.sort(key=lambda x: x.get("_mtime", 0), reverse=True)
@@ -669,170 +678,92 @@ def sync_dataset():
     clean_folder = safe_folder_name(folder_name)
     ds_meta = data.get("dataset_meta") or {}
 
-    # If it is a SQLite dataset (db_<dept>_<batch>_<sem>), update in-place without duplicating in output/
-    if clean_folder.startswith("db_"):
-        try:
-            db_datasets = list_datasets_from_db(DB_PATH)
-            matched = None
-            for ds in db_datasets:
-                test_id = f"db_{ds['department']}_{ds['batch']}_{ds['semester']}"
-                if test_id.lower() == clean_folder.lower():
-                    matched = ds
-                    break
+    # If it is a dataset (db_<dept>_<batch>_<sem> or direct), resolve canonical meta
+    d_dept = ds_meta.get("department")
+    d_batch = ds_meta.get("batch")
+    d_sem = ds_meta.get("semester")
 
-            d_dept = (ds_meta.get("department") or (matched and matched.get("department")) or "Artificial_Intelligence_and_Data_Science")
-            d_batch = (ds_meta.get("batch") or (matched and matched.get("batch")) or "21-22")
-            d_sem = (ds_meta.get("semester") or (matched and matched.get("semester")) or "Semester_1")
+    if not d_dept or not d_batch or not d_sem:
+        if clean_folder.startswith("db_"):
+            parts = clean_folder.split("_")
+            if len(parts) >= 4:
+                d_dept = d_dept or parts[1]
+                d_batch = d_batch or parts[2]
+                d_sem = d_sem or "_".join(parts[3:])
 
-            canonical_excel = (matched and matched.get("excel_path")) or os.path.join(DEPARTMENTS_DATA_DIR, "excel", d_dept, d_batch, f"{d_sem}.xlsx")
-            os.makedirs(os.path.dirname(canonical_excel), exist_ok=True)
-
-            if not columns and students:
-                columns = list(students[0].keys())
-
-            meta_obj = ExamMeta(exam_title=f"{d_dept}_{d_batch}_{d_sem}")
-            write_excel_file(students, columns, None, meta_obj, canonical_excel)
-
-            save_dataset_to_db(
-                db_path=DB_PATH,
-                department=d_dept,
-                batch=d_batch,
-                semester=d_sem,
-                excel_path=canonical_excel,
-                pdf_path=matched.get("pdf_path") if matched else None,
-                students=students or [],
-                catalog=catalog_data
-            )
-
-            return jsonify({
-                "success": True,
-                "folder_name": clean_folder,
-                "csv_file": "",
-                "excel_file": os.path.basename(canonical_excel),
-                "json_file": "",
-                "count": len(students),
-                "db_saved": True,
-                "canonical_excel_path": canonical_excel,
-                "message": f"Successfully updated dataset in database and canonical mirror."
-            })
-        except Exception as e:
-            logger.error(f"Error updating SQLite dataset in sync: {e}", exc_info=True)
-            return jsonify({"success": False, "error": f"Failed updating database dataset: {str(e)}"}), 500
-
-    folder_path = os.path.join(OUTPUT_DIR, clean_folder)
-    os.makedirs(folder_path, exist_ok=True)
+    d_dept = d_dept or "Artificial_Intelligence_and_Data_Science"
+    d_batch = d_batch or "22-23"
+    d_sem = d_sem or "Semester_1"
 
     if not columns and students:
         columns = list(students[0].keys())
 
-    csv_filename = f"{clean_folder}_extracted_data.csv"
-    csv_path = os.path.join(folder_path, csv_filename)
-    try:
-        write_csv_file(students, columns, csv_path)
-    except Exception as e:
-        return jsonify({"success": False, "error": f"Failed writing CSV: {str(e)}"}), 500
+    import tempfile
+    meta_obj = ExamMeta(exam_title=f"{d_dept}_{d_batch}_{d_sem}")
+    excel_filename = f"{clean_folder}_extracted_data.xlsx"
+    tmp_excel = os.path.join(tempfile.gettempdir(), f"{d_dept}_{d_batch}_{d_sem}_{uuid.uuid4().hex[:6]}.xlsx")
+    write_excel_file(students, columns, None, meta_obj, tmp_excel)
 
-    cat_filename = f"{clean_folder}_catalog.json"
-    cat_path = os.path.join(folder_path, cat_filename)
-    existing_cat = {}
-    if os.path.isfile(cat_path):
-        try:
-            with open(cat_path, "r", encoding="utf-8") as f:
-                existing_cat = json.load(f)
-        except Exception:
-            pass
-    if catalog_data and isinstance(catalog_data, dict):
-        existing_cat.update(catalog_data)
+    canonical_excel_path = f"excel/{d_dept}/{d_batch}/{d_sem}.xlsx"
+    canonical_pdf_path = None
+
+    from services.supabase_service import get_supabase_service
+    supabase_svc = get_supabase_service()
+
+    if supabase_svc.is_configured:
+        # 1. Primary Cloud Storage: Upload Excel to Supabase Storage
+        supabase_svc.upload_local_file(tmp_excel, canonical_excel_path)
+
+        # 2. Check and upload corresponding PDF to Supabase Storage
+        remote_pdf = f"pdf/{d_dept}/{d_batch}/{d_sem}.pdf"
+        cand_pdfs = [
+            ds_meta.get("pdf_path") if (ds_meta.get("pdf_path") and os.path.isfile(str(ds_meta["pdf_path"]))) else None,
+            _find_pdf_for_folder(clean_folder),
+            os.path.join(INPUT_DIR, f"{clean_folder}.pdf") if 'INPUT_DIR' in globals() else None,
+            os.path.join(DEPARTMENTS_DATA_DIR, "pdf", d_dept, d_batch, f"{d_sem}.pdf")
+        ]
+        for cp in cand_pdfs:
+            if cp and os.path.isfile(cp):
+                supabase_svc.upload_local_file(cp, remote_pdf)
+                canonical_pdf_path = remote_pdf
+                break
+
+        if not canonical_pdf_path and supabase_svc.download_file_bytes(remote_pdf):
+            canonical_pdf_path = remote_pdf
+
+        # 3. Update Supabase Cloud Catalog
+        cat_dict = catalog_data if isinstance(catalog_data, dict) else {}
+        supabase_svc.upsert_dataset_record(
+            department=d_dept,
+            batch=d_batch,
+            semester=d_sem,
+            excel_path=canonical_excel_path,
+            pdf_path=canonical_pdf_path,
+            total_students=len(students) if students else 0,
+            meta_json={"courses": cat_dict.get("courses", [])}
+        )
+
+    # Secondary / Offline fallback persistence
+    local_dept_excel = os.path.join(DEPARTMENTS_DATA_DIR, "excel", d_dept, d_batch, f"{d_sem}.xlsx")
     try:
-        with open(cat_path, "w", encoding="utf-8") as f:
-            json.dump(existing_cat, f, indent=2)
-    except Exception as e:
+        os.makedirs(os.path.dirname(local_dept_excel), exist_ok=True)
+        shutil.copy2(tmp_excel, local_dept_excel)
+    except Exception:
         pass
 
-    excel_filename = f"{clean_folder}_extracted_data.xlsx"
-    excel_path = os.path.join(folder_path, excel_filename)
-    canonical_excel_path = None
-    if not ds_meta:
-        ds_meta = existing_cat.get("dataset_meta")
-    if not ds_meta:
-        with jobs_lock:
-            for jid, job in jobs.items():
-                if job.get("folder_name") == clean_folder and job.get("dataset_meta"):
-                    ds_meta = job.get("dataset_meta")
-                    break
-
     try:
-        meta_obj = ExamMeta(exam_title=clean_folder)
-        write_excel_file(students, columns, None, meta_obj, excel_path)
-        canonical_excel_path = auto_sort_into_app_batch_store(
-            excel_path=excel_path,
-            meta=meta_obj,
-            source_path=clean_folder,
-            students=students,
-            catalog=existing_cat,
-            dataset_meta=ds_meta
+        save_dataset_to_db(
+            db_path=DB_PATH,
+            department=d_dept,
+            batch=d_batch,
+            semester=d_sem,
+            excel_path=local_dept_excel,
+            pdf_path=canonical_pdf_path,
+            students=students or [],
+            catalog=catalog_data
         )
-    except Exception as e:
-        print(f"[!] Note: Excel export sync warning: {e}")
-
-    # Synchronize corresponding PDF file to canonical location under departments_data/pdf/
-    canonical_pdf_path = None
-    if ds_meta and isinstance(ds_meta, dict):
-        s_dept = ds_meta.get("department")
-        s_batch = ds_meta.get("batch")
-        s_sem = ds_meta.get("semester")
-        if s_dept and s_batch and s_sem:
-            target_canonical_pdf = get_canonical_pdf_path(s_dept, s_batch, s_sem, DEPARTMENTS_DATA_DIR)
-            # Find current source PDF for this folder/job
-            source_pdf_loc = None
-            if ds_meta.get("pdf_path") and os.path.isfile(ds_meta["pdf_path"]):
-                source_pdf_loc = ds_meta["pdf_path"]
-            if not source_pdf_loc:
-                with jobs_lock:
-                    for jid, job in jobs.items():
-                        if job.get("folder_name") == clean_folder and job.get("dataset_meta", {}).get("pdf_path"):
-                            cand_p = job["dataset_meta"]["pdf_path"]
-                            if os.path.isfile(cand_p):
-                                source_pdf_loc = cand_p
-                                break
-            if not source_pdf_loc:
-                source_pdf_loc = _find_pdf_for_folder(clean_folder)
-
-            if source_pdf_loc and os.path.isfile(source_pdf_loc):
-                try:
-                    src_abs = os.path.abspath(source_pdf_loc)
-                    dst_abs = os.path.abspath(target_canonical_pdf)
-                    if src_abs != dst_abs:
-                        os.makedirs(os.path.dirname(dst_abs), exist_ok=True)
-                        shutil.copy2(src_abs, dst_abs)
-                        # If the old PDF was already in departments_data/pdf, remove the old one to avoid duplicates
-                        norm_dept_pdf = os.path.abspath(os.path.join(DEPARTMENTS_DATA_DIR, "pdf"))
-                        if src_abs.startswith(norm_dept_pdf):
-                            try:
-                                os.remove(src_abs)
-                            except Exception:
-                                pass
-                    canonical_pdf_path = target_canonical_pdf
-                    ds_meta["pdf_path"] = target_canonical_pdf
-                    # Update dataset in SQLite with refreshed pdf_path
-                    try:
-                        save_dataset_to_db(
-                            db_path=DB_PATH,
-                            department=s_dept,
-                            batch=s_batch,
-                            semester=s_sem,
-                            excel_path=canonical_excel_path,
-                            pdf_path=target_canonical_pdf,
-                            students=students or [],
-                            catalog=existing_cat
-                        )
-                    except Exception as db_e:
-                        logger.warning(f"Failed to update db with canonical pdf: {db_e}")
-                except Exception as pdf_sync_err:
-                    logger.warning(f"Failed synchronizing canonical PDF: {pdf_sync_err}")
-            elif os.path.isfile(target_canonical_pdf):
-                canonical_pdf_path = target_canonical_pdf
-                ds_meta["pdf_path"] = target_canonical_pdf
+    except Exception as db_e:
+        logger.debug(f"Optional SQLite sync notice: {db_e}")
 
     # Synchronize any matching job in memory
     with jobs_lock:
@@ -850,16 +781,22 @@ def sync_dataset():
     return jsonify({
         "success": True,
         "folder_name": clean_folder,
-        "csv_file": csv_filename,
+        "csv_file": "",
         "excel_file": excel_filename,
-        "json_file": cat_filename,
+        "json_file": "",
         "canonical_excel_path": canonical_excel_path,
         "canonical_pdf_path": canonical_pdf_path,
         "db_saved": True,
-        "dataset_meta": ds_meta,
+        "dataset_meta": {
+            "department": d_dept,
+            "batch": d_batch,
+            "semester": d_sem,
+            "pdf_path": canonical_pdf_path,
+            "excel_path": canonical_excel_path
+        },
         "count": len(students),
         "columns_count": len(columns),
-        "message": f"Successfully saved {len(students)} records to Database and Excel."
+        "message": f"Successfully synchronized {len(students)} records directly to Supabase Cloud Storage and Catalog."
     })
 
 

@@ -227,23 +227,34 @@ def start_extraction():
                 "message": f"Dataset for '{dept} / {batch} / {sem}' already exists. Please confirm replacement."
             }), 409
 
-    # 3. Add to departments_data/pdf/<Department>/<Batch>/<Semester>.pdf if confirmed by user
-    should_archive_pdf = (
-        request.form.get("archive_pdf") in ("1", "true", "yes")
-        or request.args.get("archive_pdf") in ("1", "true", "yes")
-        or json_data.get("archive_pdf") in (True, "1", 1)
-    )
-
+    # 3. Add to Supabase Storage directly (or local departments_data/pdf if Supabase unconfigured)
     canonical_excel = get_canonical_excel_path(dept, batch, sem, DEPARTMENTS_DATA_DIR)
     canonical_pdf = os.path.join(DEPARTMENTS_DATA_DIR, "pdf", dept, batch, f"{sem}.pdf").replace("\\", "/")
 
-    if should_archive_pdf:
+    try:
+        from services.supabase_service import get_supabase_service
+        svc = get_supabase_service()
+        if svc.is_configured:
+            remote_pdf = f"pdf/{dept}/{batch}/{sem}.pdf"
+            if target_pdf_path and os.path.isfile(target_pdf_path):
+                svc.upload_local_file(target_pdf_path, remote_pdf)
+                svc.upsert_dataset_record(
+                    department=dept,
+                    batch=batch,
+                    semester=sem,
+                    excel_path=None,
+                    pdf_path=remote_pdf
+                )
+                canonical_pdf = remote_pdf
+    except Exception as sup_err:
+        logger.warning(f"Could not auto-archive PDF to Supabase: {sup_err}")
+
+    if should_archive_pdf and not (canonical_pdf and canonical_pdf.startswith("pdf/")):
         try:
             stored_pdf = store_classified_pdf(
                 target_pdf_path, dept, batch, sem, DEPARTMENTS_DATA_DIR, overwrite=True
             )
             canonical_pdf = stored_pdf
-            # Use stored canonical PDF for the extraction pipeline
             target_pdf_path = canonical_pdf
         except Exception as store_err:
             logger.warning(f"Could not store classified PDF to departments_data: {store_err}")

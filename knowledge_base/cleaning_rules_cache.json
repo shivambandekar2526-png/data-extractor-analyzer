@@ -4089,5 +4089,242 @@
       }
     },
     "source": "ai_determined"
+  },
+  "bf569d6c3101032f": {
+    "canonical_columns": {
+      "seat": "Seat_No",
+      "name": "Student_Name",
+      "gender": "Gender",
+      "sgpi": "SGPI",
+      "cgpi": "CGPI",
+      "total_marks": "Total_Marks",
+      "max_marks": "Max_Marks",
+      "result": "Result_Status",
+      "candidate_type": "Candidate_Type"
+    },
+    "courses": {
+      "CSC601": {
+        "TH": "CSC601_TH",
+        "IA": "CSC601_IA",
+        "TOT": "CSC601_TOT",
+        "GRADE": "CSC601_Grade",
+        "GP": "CSC601_GP",
+        "CREDITS": "CSC601_Credits",
+        "CG": "CSC601_CG"
+      },
+      "CSC602": {
+        "TH": "CSC602_TH",
+        "IA": "CSC602_IA",
+        "TOT": "CSC602_TOT",
+        "GRADE": "CSC602_Grade",
+        "GP": "CSC602_GP",
+        "CREDITS": "CSC602_Credits",
+        "CG": "CSC602_CG"
+      },
+      "CSC603": {
+        "TH": "CSC603_TH",
+        "IA": "CSC603_IA",
+        "TOT": "CSC603_TOT",
+        "GRADE": "CSC603_Grade",
+        "GP": "CSC603_GP",
+        "CREDITS": "CSC603_Credits",
+        "CG": "CSC603_CG"
+      },
+      "CSC604": {
+        "TH": "CSC604_TH",
+        "IA": "CSC604_IA",
+        "TOT": "CSC604_TOT",
+        "GRADE": "CSC604_Grade",
+        "GP": "CSC604_GP",
+        "CREDITS": "CSC604_Credits",
+        "CG": "CSC604_CG"
+      },
+      "CSDLO601X": {
+        "TH": "CSDLO601X_TH",
+        "IA": "CSDLO601X_IA",
+        "TOT": "CSDLO601X_TOT",
+        "GRADE": "CSDLO601X_Grade",
+        "GP": "CSDLO601X_GP",
+        "CREDITS": "CSDLO601X_Credits",
+        "CG": "CSDLO601X_CG"
+      },
+      "CSL601": {
+        "TOT": "CSL601_TOT",
+        "TW": "CSL601_TW",
+        "PR": "CSL601_PR",
+        "GRADE": "CSL601_Grade",
+        "GP": "CSL601_GP",
+        "CREDITS": "CSL601_Credits",
+        "CG": "CSL601_CG"
+      },
+      "CSL602": {
+        "TW": "CSL602_TW",
+        "GRADE": "CSL602_Grade",
+        "GP": "CSL602_GP",
+        "CREDITS": "CSL602_Credits",
+        "CG": "CSL602_CG"
+      },
+      "CSL603": {
+        "TW": "CSL603_TW",
+        "GRADE": "CSL603_Grade",
+        "GP": "CSL603_GP",
+        "CREDITS": "CSL603_Credits",
+        "CG": "CSL603_CG"
+      },
+      "CSL604": {
+        "TOT": "CSL604_TOT",
+        "TW": "CSL604_TW",
+        "PR": "CSL604_PR",
+        "GRADE": "CSL604_Grade",
+        "GP": "CSL604_GP",
+        "CREDITS": "CSL604_Credits",
+        "CG": "CSL604_CG"
+      },
+      "CSL605": {
+        "TOT": "CSL605_TOT",
+        "TW": "CSL605_TW",
+        "PR": "CSL605_PR",
+        "GRADE": "CSL605_Grade",
+        "GP": "CSL605_GP",
+        "CREDITS": "CSL605_Credits",
+        "CG": "CSL605_CG"
+      },
+      "CSM601": {
+        "TOT": "CSM601_TOT",
+        "TW": "CSM601_TW",
+        "PR": "CSM601_PR",
+        "GRADE": "CSM601_Grade",
+        "GP": "CSM601_GP",
+        "CREDITS": "CSM601_Credits",
+        "CG": "CSM601_CG"
+      }
+    },
+    "bounds": {
+      "sgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "cgpi": {
+        "min": 0.0,
+        "max": 10.0
+      },
+      "CSC601_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC601_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC601_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC602_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC602_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC602_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC603_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC603_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC603_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSC604_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSC604_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSC604_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSDLO601X_TH": {
+        "min": 0.0,
+        "max": 80.0
+      },
+      "CSDLO601X_IA": {
+        "min": 0.0,
+        "max": 20.0
+      },
+      "CSDLO601X_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL601_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL601_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL601_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL602_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL603_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL604_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL604_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL604_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL605_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSL605_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSL605_PR": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSM601_TOT": {
+        "min": 0.0,
+        "max": 100.0
+      },
+      "CSM601_TW": {
+        "min": 0.0,
+        "max": 50.0
+      },
+      "CSM601_PR": {
+        "min": 0.0,
+        "max": 50.0
+      }
+    },
+    "source": "ai_determined"
   }
 }

@@ -18,7 +18,7 @@ logger = logging.getLogger("app")
 
 from services.config import (
     APP_DIR, DEPARTMENTS_DATA_DIR, APP_DEPARTMENTS_DATA_DIR,
-    OUTPUT_DIR
+    OUTPUT_DIR, INPUT_DIR
 )
 from services.state import (
     DB_PATH, jobs, jobs_lock, job_controllers, job_controllers_lock
@@ -184,9 +184,11 @@ def auto_sort_into_app_batch_store(
 
                 supabase_rel_pdf = f"pdf/{dept_name}/{batch_slug}/{sem_canonical}.pdf"
                 cand_pdfs = [
-                    os.path.join(DEPARTMENTS_DATA_DIR, "pdf", dept_name, batch_slug, f"{sem_canonical}.pdf"),
                     source_path if (source_path and str(source_path).lower().endswith(".pdf") and os.path.isfile(source_path)) else None,
-                    os.path.join(INPUT_DIR, f"{source_path}.pdf") if source_path else None
+                    dataset_meta.get("pdf_path") if (dataset_meta and dataset_meta.get("pdf_path") and os.path.isfile(str(dataset_meta["pdf_path"]))) else None,
+                    os.path.join(DEPARTMENTS_DATA_DIR, "pdf", dept_name, batch_slug, f"{sem_canonical}.pdf"),
+                    os.path.join(INPUT_DIR, f"{source_path}.pdf") if source_path else None,
+                    os.path.join(INPUT_DIR, os.path.basename(str(source_path))) if source_path else None
                 ]
                 pdf_uploaded = None
                 for cp in cand_pdfs:
@@ -194,6 +196,9 @@ def auto_sort_into_app_batch_store(
                         supabase_svc.upload_local_file(cp, supabase_rel_pdf)
                         pdf_uploaded = supabase_rel_pdf
                         break
+
+                if not pdf_uploaded and supabase_svc.download_file_bytes(supabase_rel_pdf):
+                    pdf_uploaded = supabase_rel_pdf
 
                 cat_payload = catalog if isinstance(catalog, dict) else (catalog.to_dict() if hasattr(catalog, "to_dict") else {})
                 supabase_svc.upsert_dataset_record(
