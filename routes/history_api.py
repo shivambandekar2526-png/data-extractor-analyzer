@@ -800,3 +800,34 @@ def sync_dataset():
     })
 
 
+@history_bp.route("/api/export/excel-stream", methods=["POST"])
+def export_excel_stream():
+    """Stateless export: converts in-memory client JSON records to an Excel file and streams back directly with 0 disk writes."""
+    data = request.get_json(silent=True) or {}
+    students = data.get("students", [])
+    raw_filename = data.get("filename", "extracted_data.xlsx")
+    clean_filename = os.path.basename(str(raw_filename))
+    if not clean_filename.lower().endswith((".xlsx", ".xls")):
+        clean_filename += ".xlsx"
+
+    if not students or not isinstance(students, list):
+        return jsonify({"success": False, "error": "No students provided for export."}), 400
+
+    try:
+        df = pd.DataFrame(students)
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name="Extracted_Students")
+        output.seek(0)
+        return send_file(
+            output,
+            download_name=clean_filename,
+            as_attachment=True,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    except Exception as e:
+        logger.error(f"Error streaming excel export: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+

@@ -76,7 +76,8 @@ document.addEventListener("DOMContentLoaded", () => {
     ["initLiveFolderActionListener", initLiveFolderActionListener],
     ["initSubjectPrintAndExportHandlers", initSubjectPrintAndExportHandlers],
     ["initSemesterPrintAndExportHandlers", initSemesterPrintAndExportHandlers],
-    ["initBatchPrintAndExportHandlers", initBatchPrintAndExportHandlers]
+    ["initBatchPrintAndExportHandlers", initBatchPrintAndExportHandlers],
+    ["restoreWorkingSessionFromBrowser", restoreWorkingSessionFromBrowser]
   ];
   for (const [name, fn] of initFns) {
     try {
@@ -3625,6 +3626,7 @@ function handleFileSelected(file) {
   if (typeof clearDeptDataSelection === "function") {
     clearDeptDataSelection();
   }
+  clearWorkingSessionFromBrowser();
 
   const batchSelect = document.getElementById("batchSelect");
   if (batchSelect) batchSelect.value = "";
@@ -4846,7 +4848,143 @@ function renderResults(result) {
     computeEdaDashboard();
   }
 
+  persistWorkingSessionToBrowser();
   sec.scrollIntoView({ behavior: "smooth" });
+}
+
+// ==========================================================================
+// Client-First Active Session Persistence & Instant Stateless Exports
+// ==========================================================================
+
+const WORKING_SESSION_STORAGE_KEY = "data_extractor_working_session_v1";
+
+function persistWorkingSessionToBrowser() {
+  try {
+    if (currentRecords && currentRecords.length > 0) {
+      const payload = {
+        result: {
+          ...(currentResultObj || {}),
+          students: currentRecords,
+          total_students: currentRecords.length
+        },
+        savedAt: Date.now()
+      };
+      sessionStorage.setItem(WORKING_SESSION_STORAGE_KEY, JSON.stringify(payload));
+    }
+  } catch (e) {
+    console.warn("Could not persist working session to sessionStorage:", e);
+  }
+}
+
+function clearWorkingSessionFromBrowser() {
+  try {
+    sessionStorage.removeItem(WORKING_SESSION_STORAGE_KEY);
+  } catch (e) {}
+}
+
+function restoreWorkingSessionFromBrowser() {
+  try {
+    const raw = sessionStorage.getItem(WORKING_SESSION_STORAGE_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (data && data.result && Array.isArray(data.result.students) && data.result.students.length > 0) {
+      console.log(`[SessionStorage] Restoring ${data.result.students.length} working records from browser session.`);
+      renderResults(data.result);
+      if (typeof appendChatMessage === "function") {
+        appendChatMessage("assistant", `📂 <strong>Working Session Restored!</strong> Loaded <strong>${data.result.students.length}</strong> records from your browser's active session.`);
+      }
+    }
+  } catch (e) {
+    console.warn("Could not restore working session from sessionStorage:", e);
+  }
+}
+
+function downloadActiveCsv(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  if (!currentRecords || currentRecords.length === 0) {
+    alert("No active records to download.");
+    return;
+  }
+  const keys = extractRecordKeys(currentRecords, currentCatalog);
+  const headerLine = keys.map(k => `"${String(k).replace(/"/g, '""')}"`).join(",");
+  const rowLines = currentRecords.map(row => {
+    return keys.map(k => {
+      const val = row[k] !== undefined && row[k] !== null ? String(row[k]) : "";
+      return `"${val.replace(/"/g, '""')}"`;
+    }).join(",");
+  });
+  const csvContent = "\uFEFF" + [headerLine, ...rowLines].join("\r\n");
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const baseName = (currentResultObj && currentResultObj.folder_name) ? currentResultObj.folder_name : "extracted_students";
+  a.download = `${baseName}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function downloadActiveJson(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  if (!currentRecords || currentRecords.length === 0) {
+    alert("No active records to download.");
+    return;
+  }
+  const payload = {
+    ...(currentResultObj || {}),
+    students: currentRecords,
+    total_students: currentRecords.length
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const baseName = (currentResultObj && currentResultObj.folder_name) ? currentResultObj.folder_name : "extracted_students";
+  a.download = `${baseName}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+async function downloadActiveExcel(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  if (!currentRecords || currentRecords.length === 0) {
+    alert("No active records to download.");
+    return;
+  }
+  const btn = document.getElementById("btnDownloadExcel");
+  const origHtml = btn ? btn.innerHTML : "";
+  if (btn) btn.innerHTML = `<span>⏳ Preparing Excel...</span>`;
+  const baseName = (currentResultObj && currentResultObj.folder_name) ? currentResultObj.folder_name : "extracted_students";
+  const fname = `${baseName}.xlsx`;
+  try {
+    const res = await fetch("/api/export/excel-stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        students: currentRecords,
+        filename: fname
+      })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fname;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error("Excel stream download error:", err);
+    alert(`Could not download Excel: ${err.message}`);
+  } finally {
+    if (btn) btn.innerHTML = origHtml;
+  }
 }
 
 // ==========================================================================
@@ -5436,6 +5574,7 @@ function updateExcelSaveStatus() {
     dot.className = "status-dot dot-synced";
     text.textContent = "All changes saved";
   }
+  persistWorkingSessionToBrowser();
 }
 
 // Synchronize classification metadata between Step 1 and Extracted Data inputs
@@ -6410,6 +6549,20 @@ function initInteractiveExcelGrid() {
         exportMenu.classList.add("hidden");
       }
     });
+  }
+
+  // Client-First Stateless Export Handlers (Instant browser Blob / in-memory stream)
+  const btnCsv = document.getElementById("btnDownloadCsv");
+  if (btnCsv) {
+    btnCsv.addEventListener("click", downloadActiveCsv);
+  }
+  const btnJson = document.getElementById("btnDownloadJson");
+  if (btnJson) {
+    btnJson.addEventListener("click", downloadActiveJson);
+  }
+  const btnExcel = document.getElementById("btnDownloadExcel");
+  if (btnExcel) {
+    btnExcel.addEventListener("click", downloadActiveExcel);
   }
 
   const btnReset = document.getElementById("btnExcelReset");
