@@ -36,12 +36,13 @@ class SupabaseService:
         self._client: Optional[Client] = None
         self._config: Dict[str, Any] = self._load_config()
         self._realtime_started = False
+        self._periodic_listener_started = False
         self._init_client()
 
         # In-memory thread-safe cache (single source of truth in RAM)
         self._catalog_cache: Optional[Dict[str, Any]] = None
         self._catalog_timestamp: float = 0.0
-        self._cache_ttl: float = 300.0  # seconds (long TTL because changes are push-invalidated)
+        self._cache_ttl: float = 60.0  # seconds (1 minute live sync)
 
     def _load_config(self) -> Dict[str, Any]:
         cfg = {
@@ -73,6 +74,8 @@ class SupabaseService:
                 logger.info(f"Supabase client initialized successfully for {url}")
                 if not self._realtime_started:
                     self._start_realtime_listener()
+                if not self._periodic_listener_started:
+                    self._start_periodic_cloud_sync_listener()
             except Exception as e:
                 logger.error(f"Failed to initialize Supabase client: {e}")
                 self._client = None
@@ -218,6 +221,53 @@ class SupabaseService:
         t = threading.Thread(target=_run_realtime_loop, daemon=True, name="SupabaseRealtimeThread")
         t.start()
         logger.info("Supabase Realtime push listener thread launched.")
+
+    def _start_periodic_cloud_sync_listener(self):
+        """
+        Runs a background synchronization listener timed at 1 minute (60 seconds).
+        Reconciles Supabase Storage files against memory. If any file was deleted
+        or added in the Supabase dashboard, it immediately pushes an SSE update
+        to the browser UI.
+        """
+        self._periodic_listener_started = True
+
+        def _loop():
+            # Initial wait of 60 seconds before first periodic check
+            time.sleep(60.0)
+            while True:
+                try:
+                    if self.is_configured:
+                        old_cache = self._catalog_cache or {}
+                        old_datasets = {
+                            (d.get("department", ""), d.get("batch", ""), d.get("semester", "")): (d.get("excel_path"), d.get("pdf_path"))
+                            for d in old_cache.get("datasets", [])
+                        }
+
+                        # Reconcile fresh from storage
+                        new_cat = self.reconcile_catalog_with_storage(force_save=False)
+                        new_datasets = {
+                            (d.get("department", ""), d.get("batch", ""), d.get("semester", "")): (d.get("excel_path"), d.get("pdf_path"))
+                            for d in new_cat.get("datasets", [])
+                        }
+
+                        if old_datasets != new_datasets:
+                            logger.info("[1-Min Cloud Listener] Storage changes detected! Syncing UI...")
+                            try:
+                                from core.folder_watcher import folder_watcher
+                                folder_watcher.notify_event({
+                                    "event": "storage_reconciled",
+                                    "category": "supabase_storage",
+                                    "timestamp": time.time()
+                                })
+                            except Exception:
+                                pass
+                except Exception as e:
+                    logger.debug(f"[1-Min Cloud Listener] Error: {e}")
+                time.sleep(60.0)
+
+        t = threading.Thread(target=_loop, daemon=True, name="Supabase1MinListenerThread")
+        t.start()
+        logger.info("Supabase 1-minute cloud sync listener launched.")
 
     def handle_storage_event(self, event_type: str, file_path: str) -> bool:
         """

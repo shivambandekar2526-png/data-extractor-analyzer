@@ -2790,16 +2790,13 @@ function initLiveFolderActionListener() {
 
   // Window focus listener: if user deleted/uploaded a file in Supabase dashboard and switches back
   window.addEventListener("focus", () => {
-    fetch("/api/live-watcher/status")
-      .then(r => r.json())
-      .then(d => {
-        if (d && d.version && d.version !== lastKnownWatcherVersion) {
-          lastKnownWatcherVersion = d.version;
-          handleFolderUpdate(d);
-        }
-      })
-      .catch(() => {});
+    initBatches(true).catch(() => {});
   });
+
+  // 1-minute periodic listener: syncs latest Supabase cloud state automatically every 60 seconds
+  setInterval(() => {
+    initBatches(true).catch(() => {});
+  }, 60000);
 
   // Attempt Server-Sent Events (SSE)
   if (typeof EventSource !== "undefined") {
@@ -3106,6 +3103,33 @@ async function initBatches(forceRefresh = false) {
     if (btnExcel && !btnExcel.dataset.bound) {
       btnExcel.dataset.bound = "true";
       btnExcel.addEventListener("click", () => switchBrowseFormat("excel"));
+    }
+
+    const btnScan = document.getElementById("btnScanStorage");
+    if (btnScan && !btnScan.dataset.bound) {
+      btnScan.dataset.bound = "true";
+      btnScan.addEventListener("click", async () => {
+        const icon = document.getElementById("scanStorageIcon");
+        const text = document.getElementById("scanStorageText");
+        if (icon) icon.style.animation = "spin 0.8s linear infinite";
+        if (text) text.textContent = "Scanning...";
+        btnScan.disabled = true;
+        try {
+          await initBatches(true);
+          if (text) text.textContent = "Synced!";
+          setTimeout(() => {
+            if (text) text.textContent = "Scan Database";
+          }, 2000);
+        } catch (e) {
+          if (text) text.textContent = "Scan Failed";
+          setTimeout(() => {
+            if (text) text.textContent = "Scan Database";
+          }, 2000);
+        } finally {
+          if (icon) icon.style.animation = "";
+          btnScan.disabled = false;
+        }
+      });
     }
 
     const deptBatchSelect = document.getElementById("deptBatchSelect");
